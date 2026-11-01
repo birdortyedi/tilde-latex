@@ -1,0 +1,41 @@
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+
+\begin{document}
+
+\section{Equations}
+
+Inline math $e^{i\pi} + 1 = 0$, and a numbered equation:
+\begin{equation}
+  \int_{-\infty}^{\infty} e^{-x^2}\,dx = \sqrt{\pi}.
+  \label{eq:gauss}
+\end{equation}
+
+Aligned equations:
+\begin{align}
+  (a+b)^2 &= a^2 + 2ab + b^2, \\
+  \sum_{k=1}^{n} k &= \frac{n(n+1)}{2}.
+\end{align}
+
+A matrix: $\begin{pmatrix} 1 & 0 \\ 0 & 1 \end{pmatrix} \in \mathbb{R}^{2\times 2}$.
+
+\section{Theorems}
+
+\begin{lemma}\label{lem:small}
+For every $n \in \mathbb{N}$, $n < 2^n$.
+\end{lemma}
+
+\begin{theorem}
+Equation~\eqref{eq:gauss} and Lemma~\ref{lem:small} both hold.
+\end{theorem}
+
+\begin{proof}
+See any analysis textbook.
+\end{proof}
+
+\end{document}

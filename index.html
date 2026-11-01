@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text x='16' y='26' font-size='32' font-weight='900' text-anchor='middle' font-family='sans-serif'>~</text></svg>" />
+    <title>Engine test · Tilde · LaTeX editor</title>
+    <style>
+      body { margin: 0; background: #fff; color: #111; font-family: system-ui, sans-serif; display: flex; flex-direction: column; height: 100vh; }
+      header { display: flex; gap: 12px; align-items: center; padding: 8px 16px; border-bottom: 1px solid #ddd; }
+      header strong { font-size: 20px; }
+      #status { color: #555; }
+      main { flex: 1; display: flex; min-height: 0; }
+      #pdf { flex: 2; border: 0; }
+      #log { flex: 1; margin: 0; padding: 8px; overflow: auto; font-size: 12px; background: #f6f6f6; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>~ Tilde</strong>
+      <label>Test document <select id="project"></select></label>
+      <button id="compile">Compile</button>
+      <span id="status">Ready. The first compile downloads the engine (about 125 MB).</span>
+    </header>
+    <main>
+      <iframe id="pdf" title="PDF preview"></iframe>
+      <pre id="log"></pre>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
