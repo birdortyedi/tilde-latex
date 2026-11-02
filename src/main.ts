@@ -274,7 +274,10 @@ function showProjectsPage(visible: boolean): void {
   mainArea.hidden = visible;
   document.body.classList.toggle('on-projects', visible);
   if (!visible) document.body.classList.remove('on-welcome');
-  if (visible) renderProjectsPage();
+  if (visible) {
+    renderProjectsPage();
+    if (rootId) refreshProjects().catch((error: unknown) => console.warn('Could not refresh the project list', error));
+  }
 }
 
 function renderProjectsPage(): void {
@@ -410,8 +413,16 @@ async function askProjectName(question: string, suggestion: string, unchanged?: 
   }
 }
 
+// Reads the projects folder's name and its projects again: the folder may
+// have been renamed in Drive, or projects added on another computer.
 async function refreshProjects(): Promise<void> {
-  if (rootId) driveFolders = await listProjects(googleDrive, rootId);
+  const id = rootId;
+  if (id) {
+    const [folder, projects] = await Promise.all([googleDrive.get(id), listProjects(googleDrive, id)]);
+    if (rootId !== id) return; // signed out or switched folder meanwhile
+    rootName = folder.name;
+    driveFolders = projects;
+  }
   if (!projectsPage.hidden) renderProjectsPage();
 }
 
@@ -467,14 +478,19 @@ async function createAndOpen(name: string, files: ProjectFile[]): Promise<void> 
 
 // Lets the user pick files in their Drive. Google Docs and the like are left
 // out (with a message), since they have no file content Tilde can use.
+// Brave blocks the cross-site cookies Google's Picker needs; Google then opens
+// the Picker in its own tab, from which the choice never reaches Tilde. Before
+// the first Picker in Brave, say so and how to fix it. Resolves false to cancel.
+async function readyForPicker(): Promise<boolean> {
+  if (!('brave' in navigator) || braveHintShown) return true;
+  braveHintShown = true;
+  return askConfirm('Brave blocks the cookies Google\'s file picker needs. Then the picker opens in a new tab, '
+    + 'and what you choose there does not reach Tilde.\n\nTo fix it: click the lion icon at the right of the address bar, '
+    + 'allow cross-site cookies for this site, and reload Tilde.', 'Open the picker anyway');
+}
+
 async function pickUsableFiles(title: string): Promise<PickedFile[]> {
-  // Brave blocks the cross-site cookies Google's Picker needs; Google then opens
-  // the Picker in its own tab, from which the chosen files often never arrive.
-  if ('brave' in navigator && !braveHintShown) {
-    braveHintShown = true;
-    notify('Brave blocks the cookies Google\'s file picker needs. If it opens in a new tab and nothing arrives, '
-      + 'click the lion icon in the address bar and allow cross-site cookies for this site, then try again.', 'info');
-  }
+  if (!await readyForPicker()) return [];
   const picked = await pickDriveFiles(title);
   const skipped = picked.filter(isGoogleDoc);
   if (skipped.length > 0) {
@@ -527,12 +543,39 @@ async function downloadProjectZip(id?: string): Promise<void> {
   }
 }
 
+// Renames the projects folder. Tilde created it, so this works without the
+// Picker, in every browser.
+async function renameProjectsFolder(): Promise<void> {
+  const id = rootId;
+  if (!id) return;
+  let message = 'New name for your projects folder:';
+  let name = rootName;
+  for (;;) {
+    const typed = await askText(message, name);
+    if (typed === null) return;
+    name = typed.trim();
+    if (name === rootName) return;
+    if (name && !name.includes('/')) break;
+    message = 'Type a folder name without "/".\n\nNew name for your projects folder:';
+  }
+  try {
+    await googleDrive.updateMetadata(id, { name });
+    const old = rootName;
+    rootName = name;
+    renderProjectsPage();
+    notify(`Renamed "${old}" to "${name}". To move it, drag it anywhere in your Google Drive; Tilde will still find it.`);
+  } catch (error) {
+    showError(error);
+  }
+}
+
 // "Choose another folder…": the user picks a folder in Drive, and every
 // project moves into it. The old folder stays, empty, where it was.
 async function chooseProjectsFolder(): Promise<void> {
   const fromId = rootId;
   if (!fromId) return;
   try {
+    if (!await readyForPicker()) return;
     const picked = await pickDriveFolder('Choose the folder for your LaTeX projects');
     if (!picked || picked.id === fromId) return;
     if (driveFolders.some((f) => f.id === picked.id)) {
@@ -1406,6 +1449,7 @@ window.addEventListener('keydown', (event) => {
   showProjectsPage(false);
 });
 changeFolderButton.addEventListener('click', () => void chooseProjectsFolder());
+element<HTMLButtonElement>('#rename-root').addEventListener('click', () => void renameProjectsFolder());
 importMenuButton.addEventListener('click', () => openMenu(importMenuButton, [
   { label: 'From a .zip file…', action: () => { zipInput.value = ''; zipInput.click(); } },
   { label: 'From Google Drive…', action: () => void importFromDrive() },
@@ -1476,7 +1520,10 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) void sync?.saveNow();
 });
 window.addEventListener('pagehide', () => void sync?.saveNow());
-window.addEventListener('focus', () => void sync?.checkDrive());
+window.addEventListener('focus', () => {
+  void sync?.checkDrive();
+  if (!projectsPage.hidden && rootId) refreshProjects().catch((error: unknown) => console.warn('Could not refresh the project list', error));
+});
 window.addEventListener('online', () => void sync?.saveNow());
 
 // The browser asks "Leave site?" while edits have not reached Drive yet.
