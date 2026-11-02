@@ -7,12 +7,16 @@ export class FakeDrive implements Drive {
   offline = false; // set to true to act like a lost network
   signedOut = false; // set to true to act like an expired Google token
   items = new Map<string, DriveFile & { parentId: string; content?: Uint8Array; trashed?: boolean }>();
+  // Every version ever saved, by revision id, and the ones kept forever.
+  revisions = new Map<string, { content: Uint8Array; time: string }>();
+  keptForever = new Set<string>();
   private nextId = 1;
 
   private add(name: string, parentId: string, mimeType: string, content?: Uint8Array): DriveFile {
     const id = `id${this.nextId++}`;
     const item = { id, name, parentId, mimeType, content, headRevisionId: content ? `rev${this.nextId++}` : undefined };
     this.items.set(id, item);
+    if (content && item.headRevisionId) this.revisions.set(item.headRevisionId, { content, time: new Date().toISOString() });
     return this.info(id);
   }
 
@@ -79,6 +83,20 @@ export class FakeDrive implements Drive {
     const item = this.item(fileId);
     item.content = content;
     item.headRevisionId = `rev${this.nextId++}`;
+    this.revisions.set(item.headRevisionId, { content, time: new Date().toISOString() });
     return this.info(fileId);
+  }
+  async keepRevision(_fileId: string, revisionId: string) {
+    this.check();
+    const revision = this.revisions.get(revisionId);
+    if (!revision) throw new Error(`No revision ${revisionId}`);
+    this.keptForever.add(revisionId);
+    return { id: revisionId, modifiedTime: revision.time };
+  }
+  async downloadRevision(_fileId: string, revisionId: string) {
+    this.check();
+    const revision = this.revisions.get(revisionId);
+    if (!revision) throw new Error(`No revision ${revisionId}`);
+    return revision.content;
   }
 }

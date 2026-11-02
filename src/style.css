@@ -367,6 +367,13 @@ dialog form > p { margin: 0; }
 /* The main button comes first in the page (so Enter chooses it) but is shown last, on the right. */
 dialog .actions { display: flex; flex-direction: row-reverse; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 dialog.wide { width: min(700px, 94vw); max-width: none; padding: 24px 28px; }
+/* "Go back to the version from …": the two versions side by side. */
+#restore-dialog { width: min(1080px, 94vw); }
+.restore-note { color: var(--muted); }
+.restore-heads { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin-top: 10px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.restore-heads span { padding: 0 0 4px 8px; }
+#restore-changes { height: min(56vh, 520px); overflow: auto; border: 1px solid var(--rule); border-radius: 6px; background: var(--editor); }
+#restore-changes .cm-mergeView { min-height: 100%; }
 dialog h2 { margin: 0 0 4px; font-size: 17px; font-weight: 600; }
 #ask-message { white-space: pre-line; }
 #ask-input { width: 100%; }

@@ -4,6 +4,15 @@ export interface ProjectFile {
   driveId?: string; // set once the file is in Google Drive
   revision?: string; // the Drive revision we loaded or last saved
   changed?: boolean; // edited since the last save to Drive
+  safeCopy?: SafeCopy; // a version Drive keeps for good, to go back to
+}
+
+// The version of a file from before an editing session, which Drive is asked
+// to keep forever (old versions are otherwise dropped after 30 days or 100
+// saves). Tilde offers the latest one; earlier ones stay in Drive.
+export interface SafeCopy {
+  revision: string;
+  time: string; // when that version was saved, e.g. "2026-11-02T10:42:00.000Z"
 }
 
 export interface Project {

@@ -89,7 +89,9 @@ export async function openProject(drive: Drive, folder: DriveFile): Promise<Proj
       if (isFolder(item)) return walk(item.id, `${path}/`);
       const bytes = await drive.download(item.id);
       const content = isTextFile(path) ? new TextDecoder().decode(bytes) : bytes;
-      files.push({ path, content, driveId: item.id, revision: item.headRevisionId });
+      const kept = item.appProperties?.[SAFE_COPY];
+      const keptTime = item.appProperties?.[SAFE_COPY_TIME];
+      files.push({ path, content, driveId: item.id, revision: item.headRevisionId, ...(kept && keptTime ? { safeCopy: { revision: kept, time: keptTime } } : {}) });
     }));
   };
   await walk(folder.id, '');
@@ -147,6 +149,22 @@ export async function renameFolder(drive: Drive, project: Project, dir: string, 
     if (file.path.startsWith(`${dir}/`)) file.path = newDir + file.path.slice(dir.length);
   }
   return newDir;
+}
+
+// Tilde's notes on a file about its safe copy: which version, and when it was saved.
+const SAFE_COPY = 'tildeSafeCopy';
+const SAFE_COPY_TIME = 'tildeSafeCopyTime';
+
+// Before a text file's first save in an editing session: asks Drive to keep
+// the version that was opened (the one about to be replaced) forever, and
+// notes it on the file as the one "Go back to the version from …" offers.
+// Earlier safe copies stay in Drive's version history; nothing is deleted.
+export async function keepSafeCopy(drive: Drive, file: ProjectFile): Promise<void> {
+  if (!file.driveId || !file.revision || !isTextFile(file.path) || file.safeCopy?.revision === file.revision) return;
+  const kept = await drive.keepRevision(file.driveId, file.revision);
+  const time = kept.modifiedTime ?? new Date().toISOString();
+  await drive.updateMetadata(file.driveId, { appProperties: { [SAFE_COPY]: kept.id, [SAFE_COPY_TIME]: time } });
+  file.safeCopy = { revision: kept.id, time };
 }
 
 // Moves a file to Drive's trash, where it can be restored for 30 days.

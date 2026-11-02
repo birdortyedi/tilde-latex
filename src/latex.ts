@@ -125,6 +125,26 @@ export type TexEngine = 'pdflatex' | 'xelatex';
 // Packages that only work with XeLaTeX (or LuaLaTeX): Unicode fonts and scripts.
 const XETEX_PACKAGES = ['fontspec', 'polyglossia', 'unicode-math', 'xeCJK', 'mathspec', 'xltxtra', 'xunicode'];
 
+// Whether any .tex, .sty or .cls file of the project loads one of these packages.
+export function loadsPackage(files: ProjectFile[], names: string[]): boolean {
+  for (const file of files) {
+    if (!/\.(tex|sty|cls)$/.test(file.path)) continue;
+    for (const raw of text(file).split('\n')) {
+      for (const match of withoutComment(raw).matchAll(/\\(?:usepackage|RequirePackage)(?:\[[^\]]*\])?\{([^}]*)\}/g)) {
+        if (match[1].split(',').some((name) => names.includes(name.trim()))) return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Where a new \usepackage line goes in a main file: at the start of the line
+// after \documentclass. Null if there is no \documentclass.
+export function preambleInsertAt(source: string): number | null {
+  const match = /^[ \t]*\\documentclass(?:\[[^\]]*\])?\{[^}]*\}[^\n]*(\n|$)/m.exec(source);
+  return match ? match.index + match[0].length : null;
+}
+
 // Which program compiles the project. The main file can say so with a line
 // like "% !TEX program = xelatex" (the convention other editors use too).
 // Otherwise XeLaTeX when a file loads fontspec or another package that needs
@@ -133,15 +153,7 @@ export function texEngine(files: ProjectFile[], mainPath: string): TexEngine {
   const main = files.find((f) => f.path === mainPath);
   const asked = /^\s*%\s*!\s*TEX\s+(?:TS-)?program\s*=\s*(pdflatex|xelatex)\b/im.exec(main ? text(main) : '');
   if (asked) return asked[1].toLowerCase() as TexEngine;
-  for (const file of files) {
-    if (!/\.(tex|sty|cls)$/.test(file.path)) continue;
-    for (const raw of text(file).split('\n')) {
-      for (const match of withoutComment(raw).matchAll(/\\(?:usepackage|RequirePackage)(?:\[[^\]]*\])?\{([^}]*)\}/g)) {
-        if (match[1].split(',').some((name) => XETEX_PACKAGES.includes(name.trim()))) return 'xelatex';
-      }
-    }
-  }
-  return 'pdflatex';
+  return loadsPackage(files, XETEX_PACKAGES) ? 'xelatex' : 'pdflatex';
 }
 
 export type CompletionKind = 'command' | 'environment' | 'label' | 'citation' | 'texfile' | 'image';

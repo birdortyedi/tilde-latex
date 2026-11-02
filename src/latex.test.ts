@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bibKeysIn, bibliographyTool, completionContext, foldEnd, labelsIn, outline, texEngine, unclosedEnvironment, withoutComment } from './latex';
+import { bibKeysIn, bibliographyTool, completionContext, foldEnd, labelsIn, loadsPackage, preambleInsertAt, outline, texEngine, unclosedEnvironment, withoutComment } from './latex';
 
 const files = [
   { path: 'main.tex', content: '\\documentclass{report}\n\\begin{document}\n\\chapter{Intro}\\label{chap:intro}\n% \\section{Hidden}\n\\input{chapters/method}\n\\section*{Summary}\n\\end{document}\n' },
@@ -118,5 +118,20 @@ describe('foldEnd', () => {
   it('does not fold other lines', () => {
     expect(fold(2)).toBeNull();
     expect(foldEnd(() => '% \\section{Commented out}', 1, 1)).toBeNull();
+  });
+});
+
+describe('the preamble', () => {
+  it('knows whether a package is loaded, also in a list or a .sty file', () => {
+    expect(loadsPackage([{ path: 'main.tex', content: '\\usepackage{amsmath,graphicx}' }], ['graphicx'])).toBe(true);
+    expect(loadsPackage([{ path: 'my.sty', content: '\\RequirePackage[draft]{graphicx}' }], ['graphicx'])).toBe(true);
+    expect(loadsPackage([{ path: 'main.tex', content: '% \\usepackage{graphicx}' }], ['graphicx'])).toBe(false);
+  });
+
+  it('puts a new package line right after \\documentclass', () => {
+    const source = '% A paper\n\\documentclass[11pt]{article} % comment\n\\begin{document}\n';
+    const at = preambleInsertAt(source) ?? -1;
+    expect(source.slice(at)).toBe('\\begin{document}\n');
+    expect(preambleInsertAt('no class here')).toBeNull();
   });
 });

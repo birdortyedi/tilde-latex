@@ -268,6 +268,52 @@ describe('ProjectSync', () => {
     });
   });
 
+  describe('safe copies', () => {
+    const newSession = () => new ProjectSync(drive, drafts, 'me', project, {
+      stateChanged: () => undefined, fileReplaced: () => undefined, filesChanged: () => undefined,
+    });
+
+    it('keeps the opened version forever before the first save, and only once a session', async () => {
+      const opened = file('main.tex').revision ?? '';
+      type('main.tex', 'v2');
+      await sync.saveNow();
+      type('main.tex', 'v3');
+      await sync.saveNow();
+      expect([...drive.keptForever]).toEqual([opened]);
+      expect(file('main.tex').safeCopy?.revision).toBe(opened);
+      expect(await sync.safeCopyText('main.tex')).toBe('v1');
+    });
+
+    it('makes a new safe copy in the next session and offers that one, keeping the earlier one too', async () => {
+      const first = file('main.tex').revision ?? '';
+      type('main.tex', 'v2');
+      await sync.saveNow();
+      const second = newSession();
+      const opened = file('main.tex').revision ?? '';
+      file('main.tex').content = 'v3';
+      second.edited('main.tex');
+      await second.saveNow();
+      expect([...drive.keptForever]).toEqual([first, opened]);
+      expect(await second.safeCopyText('main.tex')).toBe('v2');
+    });
+
+    it('notes the safe copy on the file in Drive, so the other computer knows it', async () => {
+      type('main.tex', 'v2');
+      await sync.saveNow();
+      const reopened = await openProject(drive, (await listProjects(drive, await findOrCreateRootFolder(drive)))[0]);
+      expect(reopened.files.find((f) => f.path === 'main.tex')?.safeCopy?.revision).toBe(file('main.tex').safeCopy?.revision);
+    });
+
+    it('still saves when the safe copy cannot be made', async () => {
+      drive.keepRevision = () => Promise.reject(new Error('Drive said no'));
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      type('main.tex', 'v2');
+      await sync.saveNow();
+      expect(onDrive('main.tex')).toBe('v2');
+      warn.mockRestore();
+    });
+  });
+
   describe('file actions', () => {
     it('adds a new file in a new folder and saves it', async () => {
       await sync.addFile('chapters/method.tex', 'Method');

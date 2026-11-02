@@ -2,6 +2,7 @@ import { completionStatus, snippetCompletion, type Completion, type CompletionCo
 import { foldService } from '@codemirror/language';
 import { EditorSelection, Prec, type Extension } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
+import { parseDoi } from './doi';
 import { bibKeysIn, completionContext, foldEnd, labelsIn, unclosedEnvironment } from './latex';
 import type { ProjectFile } from './projects';
 
@@ -35,7 +36,11 @@ const ENVIRONMENTS = ['document', 'figure', 'table', 'tabular', 'equation', 'equ
   'itemize', 'enumerate', 'description', 'center', 'abstract', 'minipage', 'quote', 'verbatim', 'tikzpicture', 'axis',
   'theorem', 'lemma', 'proof', 'definition', 'frame', 'thebibliography'].map((label) => ({ label, type: 'type' }));
 
-function completions(files: () => ProjectFile[]) {
+// Adds a paper to the project's .bib file from its DOI (or asks for one);
+// resolves to its key, or null if nothing was added.
+export type AddCitation = (doi: string | null) => Promise<string | null>;
+
+function completions(files: () => ProjectFile[], addCitation: AddCitation) {
   return (context: CompletionContext): CompletionResult | null => {
     const line = context.state.doc.lineAt(context.pos);
     const found = completionContext(line.text.slice(0, context.pos - line.from));
@@ -57,7 +62,23 @@ function completions(files: () => ProjectFile[]) {
     }
     // An argument gets its closing } too, if it is missing (for example after pasting "\begin{fig").
     const closing = context.state.sliceDoc(context.pos, context.pos + 1) === '}' ? '' : '}';
-    const withClosing = options[found.kind]().map((option) => ({ ...option, apply: option.label + closing }));
+    const withClosing: Completion[] = options[found.kind]().map((option) => ({ ...option, apply: option.label + closing }));
+    if (found.kind === 'citation') {
+      // Last in the list: add a paper from its DOI. If a DOI or an arXiv link
+      // was pasted into \cite{}, that one; else Tilde asks for it.
+      const doi = parseDoi(found.typed);
+      withClosing.push({
+        label: doi ? found.typed : 'Add a paper from its DOI…',
+        detail: doi ? 'add it from doi.org' : undefined,
+        type: 'text',
+        boost: -99,
+        apply: (view, _completion, from, to) => {
+          void addCitation(doi).then((key) => {
+            if (key) view.dispatch({ changes: { from, to: Math.min(to, view.state.doc.length), insert: key + closing } });
+          });
+        },
+      });
+    }
     return { from: line.from + found.from, options: withClosing, validFor: /^[^},\s]*$/ };
   };
 }
@@ -98,10 +119,10 @@ function wrapIn(command: string) {
   };
 }
 
-export function latexEditing(files: () => ProjectFile[]): { languageData: Record<string, unknown>; extensions: Extension } {
+export function latexEditing(files: () => ProjectFile[], addCitation: AddCitation): { languageData: Record<string, unknown>; extensions: Extension } {
   return {
     // Brackets and $ close by themselves; quotes do not, since LaTeX writes them as `` and ''.
-    languageData: { autocomplete: completions(files), closeBrackets: { brackets: ['(', '[', '{', '$'] } },
+    languageData: { autocomplete: completions(files, addCitation), closeBrackets: { brackets: ['(', '[', '{', '$'] } },
     extensions: [foldService.of((state, lineStart) => {
       const line = state.doc.lineAt(lineStart);
       const end = foldEnd((n) => state.doc.line(n).text, line.number, state.doc.lines);

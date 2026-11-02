@@ -1,7 +1,7 @@
 import { SignInNeededError } from './auth';
 import { OfflineError, type Drive } from './drive';
 import type { DraftKey, DraftStore } from './drafts';
-import { filesOnDrive, moveFile, removeEmptyFolders, renameFolder, saveProject, setMainFile, stampLastEdited, trashFile } from './driveProjects';
+import { filesOnDrive, keepSafeCopy, moveFile, removeEmptyFolders, renameFolder, saveProject, setMainFile, stampLastEdited, trashFile } from './driveProjects';
 import { isTextFile } from './fileTree';
 import type { Project, ProjectFile } from './projects';
 
@@ -55,6 +55,7 @@ export class ProjectSync {
   private queue: Promise<void> = Promise.resolve();
   private saveQueued = false;
   private closed = false;
+  private keptThisSession = new Set<ProjectFile>(); // files whose safe copy was made since the project was opened
 
   constructor(
     private drive: Drive,
@@ -267,6 +268,13 @@ export class ProjectSync {
     return this.action(() => setMainFile(this.drive, this.project, path));
   }
 
+  // The text of a file's safe copy, for "Go back to the version from …".
+  async safeCopyText(path: string): Promise<string> {
+    const file = this.file(path);
+    if (!file?.driveId || !file.safeCopy) throw new Error(`${path} has no earlier version kept.`);
+    return new TextDecoder().decode(await this.drive.downloadRevision(file.driveId, file.safeCopy.revision));
+  }
+
   // Drive's version of a file, for the conflict choice "Download both".
   async driveVersion(path: string): Promise<Uint8Array> {
     const file = this.file(path);
@@ -296,6 +304,15 @@ export class ProjectSync {
     this.uploading = true;
     this.update();
     try {
+      for (const file of pending) {
+        if (this.keptThisSession.has(file) || !file.driveId) continue;
+        // A safe copy that cannot be made must never stop the save.
+        await keepSafeCopy(this.drive, file).catch((error: unknown) => {
+          if (error instanceof OfflineError || error instanceof SignInNeededError) throw error;
+          console.warn('Could not keep a safe copy', error);
+        });
+        this.keptThisSession.add(file);
+      }
       for (const path of await saveProject(this.drive, this.project)) this.conflicts.add(path);
       if (pending.some((f) => !f.changed) && Date.now() - this.lastStamp > STAMP_INTERVAL) {
         this.lastStamp = Date.now();

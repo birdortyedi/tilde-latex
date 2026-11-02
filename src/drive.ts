@@ -38,6 +38,11 @@ export interface Drive {
   updateFile(fileId: string, content: Uint8Array): Promise<DriveFile>;
   // Changes a file's details; with `move`, also moves it to another folder.
   updateMetadata(fileId: string, changes: MetadataChanges, move?: { from: string; to: string }): Promise<DriveFile>;
+  // Asks Drive to keep one version of a file forever. Drive cannot undo this
+  // (only delete the version), so Tilde never does. Returns that version and when it was saved.
+  keepRevision(fileId: string, revisionId: string): Promise<{ id: string; modifiedTime?: string }>;
+  // The content of an old version of a file.
+  downloadRevision(fileId: string, revisionId: string): Promise<Uint8Array>;
 }
 
 // Thrown when Drive cannot be reached because the computer is offline.
@@ -149,6 +154,19 @@ export const googleDrive: Drive = {
       body: JSON.stringify(changes),
     });
     return response.json();
+  },
+
+  async keepRevision(fileId, revisionId) {
+    const response = await request(`${API}/${fileId}/revisions/${revisionId}?fields=id,modifiedTime`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keepForever: true }),
+    });
+    return response.json();
+  },
+
+  async downloadRevision(fileId, revisionId) {
+    return new Uint8Array(await (await request(`${API}/${fileId}/revisions/${revisionId}?alt=media`)).arrayBuffer());
   },
 
   // Replaces a file's content. Drive keeps the old content in its version history.

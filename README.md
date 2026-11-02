@@ -36,6 +36,8 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - Suggestions as you type: commands, environments, your `\label`s in `\ref{}`, your `.bib` keys in `\cite{}`, your files in `\input{}` and `\includegraphics{}`
 - Brackets close by themselves, and Enter after `\begin{figure}` adds the `\end{figure}`
 - Ctrl/Cmd+B and +I for `\textbf` and `\textit`, Ctrl/Cmd+/ to comment lines out
+- Paste or drop an image into the text: it is saved in the project's image folder (`figures/` if there is none yet) and a figure for it is written at the cursor, with `graphicx` loaded if needed
+- Citations from a DOI or an arXiv link: type it inside `\cite{}`, or pick "Add a paper from its DOI…" there or in the "+" menu. Tilde fetches the BibTeX from doi.org, tidies it and adds it to your `.bib` file
 - An outline of your chapters and sections, through `\input` and `\include`; click to jump
 - Find and replace in the open file, with match case, whole words and regular expressions, and a count of the matches
 - Fold environments and sections with the arrows next to the line numbers
@@ -60,7 +62,8 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - Autosave to your Google Drive a few seconds after you stop typing
 - Works from two computers: when you come back to the tab, Tilde brings in what changed on the other one: edited, added, renamed and deleted files. It never overwrites a file silently. If a file changed in both places, you choose: keep mine, keep Drive's, or download both. A file deleted elsewhere that you had edited here is kept and saved again
 - Edits not yet in Drive are kept in your browser, so a closed tab or a lost network loses nothing
-- File history comes from Drive's own version history
+- A safe copy of every file: before your first save in a session, Tilde asks Drive to keep the version you opened for good (Drive otherwise drops old versions after 30 days or 100 saves). The file's ⋯ menu then offers "Go back to the version from 10:42", which shows what changed and restores it. Earlier safe copies stay in Drive's "Manage versions"; Tilde never deletes a version
+- Older versions are in Drive's own version history
 
 **Projects**
 - Try it without signing in: seven examples (a minimal document, maths, TikZ and pgfplots, BibTeX with natbib, biblatex with Biber, a multi-file project, and Unicode text with XeLaTeX)
@@ -85,6 +88,7 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 | Double-click the PDF | Go to that line in the source |
 | Ctrl/Cmd+B, Ctrl/Cmd+I | `\textbf{…}`, `\textit{…}` around the selection |
 | Ctrl/Cmd+/ | Comment or uncomment the selected lines |
+| Ctrl/Cmd+V with an image copied | Add the image to the project, with a figure for it at the cursor |
 | Ctrl/Cmd+F | Find and replace in the open file; Enter for the next match, Shift+Enter for the previous one, Esc to close |
 | Ctrl/Cmd and + or −, over the PDF | Zoom the PDF (Ctrl/Cmd+0 fits the width) |
 | Esc, on the project page | Back to the open project |
@@ -96,11 +100,12 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 | **One person per project.** Real-time co-editing, track changes and comments need a server, and Tilde has none. | Send a co-author the project as a `.zip` (they can import it into their own Tilde) or the PDF. |
 | **No fonts from your computer.** A browser cannot read them, so `\setmainfont{Arial}` fails. | Use a font that comes with TeX Live: TeX Gyre Termes (like Times), TeX Gyre Heros (like Helvetica), Libertinus Serif or Noto Serif. |
 | **No LuaLaTeX**, only pdfLaTeX and XeLaTeX. | XeLaTeX covers Unicode text and OpenType fonts; most `fontspec` documents compile unchanged. |
+| **Images must be PNG, JPG or PDF.** LaTeX cannot include GIF, WebP or SVG. | Save or export the image as PNG (screenshots), JPG (photos) or PDF (plots and diagrams), then paste or drop it in. |
 | **No shell escape**, so no `minted`. | Use `listings` for code, which needs no shell escape. |
 | **One error at a time.** The engine stops at the first error. | Fix it and compile again; with *Auto* on, that happens by itself. |
 | **Long documents compile more slowly** than with a local TeX Live. | While writing, compile one chapter with `\includeonly{chapters/method}`, or use `\documentclass[draft]{…}`, which skips images. |
 | **The first compile downloads the TeX engine** (about 125 MB; about 30 MB more the first time Biber is used). | It happens once per browser, and starts as soon as you open a project; later visits load it from the cache. |
-| **Your Google account's storage**: 15 GB on a free account, shared with Gmail and Photos. | LaTeX projects are small; images are usually what fills it. |
+| **Your Google account's storage**: 15 GB on a free account, shared with Gmail and Photos. | LaTeX projects are small; images are usually what fills it. A safe copy of a `.tex` file takes a few KB. |
 | **Files uploaded on the Google Drive website don't appear in Tilde**, even inside a project's folder. Tilde may only see the files it made itself and the ones you pick (the `drive.file` permission). Renaming or deleting a file on the website does come through. | Add files in Tilde: upload them, drag them in, or use "Add from Google Drive". |
 | **Brave and Arc** block the cookies Google's file picker needs. | Allow cross-site cookies for Tilde (Brave: the lion icon in the address bar) to use "Add from Google Drive". |
 
@@ -110,6 +115,7 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - It asks Google only for the `drive.file` permission: Tilde can see **the files it creates and the files you pick**, nothing else in your Drive.
 - Your sign-in stays in the browser tab. Unsaved edits are kept in your browser until they reach Drive, and **signing out deletes them** (after offering to download anything unsaved).
 - TeX packages are downloaded from TeXlyre's public package server, without any of your data.
+- "Add a paper from its DOI" sends only that DOI to doi.org, which answers with the paper's citation.
 
 ## Run it yourself
 

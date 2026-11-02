@@ -17,9 +17,12 @@ import { ProjectSync, type DriveChanges, type SyncState } from './sync';
 import { cachedPackages, REMOTE_DIR, storeNewPackages } from './packageCache';
 import { lastLatexLog, parseLog, type LogProblem } from './logParser';
 import { unzipProject, zipProject } from './zipImport';
-import { timeAgo } from './time';
-import { bibliographyTool, outline, texEngine } from './latex';
+import { timeAgo, versionTime } from './time';
+import { bibKeysIn, bibliographyTool, loadsPackage, outline, preambleInsertAt, texEngine } from './latex';
 import { SyncTex } from './synctex';
+import { figureFor, imageExtension, imageFolder, imagePath } from './figures';
+import { fetchBibtex, keyWithDoi, parseDoi, tidyBibtex } from './doi';
+import { showChanges } from './changesView';
 import { isGoogleDoc, pickDriveFiles, pickDriveFolder, type PickedFile } from './picker';
 import { askConfirm, askText } from './ask';
 import { initLayout, type Pane } from './layout';
@@ -199,6 +202,143 @@ function showInPdf(): void {
   }
   reveal('pdf');
   pdfViewer.highlight(rects);
+}
+
+// Citations from a DOI, from the "+" menu or the \cite{} suggestions.
+editor.onAddCitation = addCitation;
+
+// The .bib file new citations go into: the only one, or the one the
+// document names in \bibliography{} or \addbibresource{}, or the first.
+function bibFileFor(files: ProjectFile[]): ProjectFile | undefined {
+  const bibs = files.filter((f) => f.path.endsWith('.bib') && typeof f.content === 'string');
+  if (bibs.length <= 1) return bibs[0];
+  for (const file of files) {
+    if (!file.path.endsWith('.tex') || typeof file.content !== 'string') continue;
+    const named = /\\(?:bibliography|addbibresource)\{([^},]+)/.exec(file.content)?.[1].trim();
+    const found = named && bibs.find((b) => b.path === named || b.path === `${named}.bib` || b.path.endsWith(`/${named}`) || b.path.endsWith(`/${named}.bib`));
+    if (found) return found;
+  }
+  return bibs[0];
+}
+
+async function addCitation(given: string | null): Promise<string | null> {
+  if (!project) return null;
+  let doi = given;
+  if (!doi) {
+    const answer = await askText('The DOI or arXiv link of the paper, for example 10.1145/3292500.3330701 or arxiv.org/abs/1706.03762:', '');
+    if (answer === null || !answer.trim()) return null;
+    doi = parseDoi(answer);
+    if (!doi) {
+      showError(new Error(`"${answer.trim()}" is not a DOI or an arXiv link.`));
+      return null;
+    }
+  }
+  for (const file of project.files) {
+    const key = file.path.endsWith('.bib') && typeof file.content === 'string' ? keyWithDoi(file.content, doi) : null;
+    if (key) {
+      notify(`${file.path} already has this paper, as ${key}.`);
+      return key;
+    }
+  }
+  setStatus(`Looking up ${doi} at doi.org…`);
+  let entry: { key: string; text: string } | null;
+  try {
+    entry = tidyBibtex(await fetchBibtex(doi), new Set(bibKeysIn(project.files)));
+  } catch (error) {
+    setStatus('');
+    showError(error);
+    return null;
+  }
+  setStatus('');
+  if (!entry) {
+    showError(new Error(`doi.org sent a citation for ${doi} that Tilde cannot read.`));
+    return null;
+  }
+  const bib = bibFileFor(project.files);
+  if (bib && typeof bib.content === 'string') {
+    const gap = bib.content === '' || bib.content.endsWith('\n\n') ? '' : bib.content.endsWith('\n') ? '\n' : '\n\n';
+    if (bib.path === activePath) {
+      editor.insertText(bib.content.length, gap + entry.text); // through the editor, so Ctrl/Cmd+Z undoes it
+    } else {
+      bib.content += gap + entry.text;
+      editor.replace(bib.path, bib.content);
+      sync?.edited(bib.path);
+    }
+    notify(`Added ${entry.key} to ${bib.path}.`);
+  } else {
+    const projectSync = sync;
+    const text = entry.text;
+    if (projectSync) {
+      if (!await runFileAction('Creating refs.bib', 'Created refs.bib.', () => projectSync.addFile('refs.bib', text))) return null;
+    } else {
+      project.files.push({ path: 'refs.bib', content: text });
+      renderTree();
+    }
+    notify(`Added ${entry.key} to a new file, refs.bib. To print the list of references, add \\bibliographystyle{plain} and \\bibliography{refs} before \\end{document}.`);
+  }
+  return entry.key;
+}
+
+// "+" menu → "Add citation from DOI…": adds it, then cites it at the cursor.
+async function citeFromMenu(): Promise<void> {
+  const target = activePath;
+  const key = await addCitation(null);
+  if (key && target?.endsWith('.tex') && activePath === target) editor.insertAtCursor(`\\cite{${key}}`);
+}
+
+// An image pasted or dropped into the editor: saved in the project's image
+// folder, with a figure for it written into the text.
+editor.onImages = (files, at) => void addImages(files, at);
+
+async function addImages(files: File[], at: number): Promise<void> {
+  const target = activePath;
+  if (!project || !target?.endsWith('.tex')) return;
+  let position = at;
+  let added = false;
+  for (const file of files) {
+    const extension = imageExtension(file.name, file.type);
+    if (!extension) {
+      notify(`${file.name || 'This image'} cannot go into a LaTeX document. Save it as PNG, JPG or PDF, then add it again.`, 'error');
+      continue;
+    }
+    const taken = new Set(project.files.map((f) => f.path));
+    const path = imagePath(file.name, extension, imageFolder([...taken]), taken);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const projectSync = sync;
+    if (projectSync) {
+      if (!await runFileAction(`Adding ${path}`, `Added ${path}.`, () => projectSync.addFile(path, bytes))) return;
+    } else {
+      project.files.push({ path, content: bytes }); // an example: kept in the browser only
+      renderTree();
+      notify(`Added ${path}.`);
+    }
+    if (activePath !== target) return; // another file was opened meanwhile
+    position = editor.insertBlock(position, (indent) => figureFor(path, indent));
+    added = true;
+  }
+  const mainPath = added ? loadGraphicx() : null;
+  if (mainPath) notify(`Also added \\usepackage{graphicx} to ${mainPath}, which \\includegraphics needs.`);
+}
+
+// \includegraphics needs the graphicx package. If no file of the project
+// loads it, adds it to the main file, right after \documentclass.
+// Returns the main file's path if it did.
+function loadGraphicx(): string | null {
+  if (!project || loadsPackage(project.files, ['graphicx', 'graphics'])) return null;
+  const mainPath = findMainFile(project);
+  const main = project.files.find((f) => f.path === mainPath);
+  if (!main || typeof main.content !== 'string') return null;
+  const at = preambleInsertAt(main.content);
+  if (at === null) return null;
+  const line = `${main.content[at - 1] === '\n' ? '' : '\n'}\\usepackage{graphicx}\n`;
+  if (main.path === activePath) {
+    editor.insertText(at, line); // through the editor, so Ctrl/Cmd+Z undoes it
+  } else {
+    main.content = main.content.slice(0, at) + line + main.content.slice(at);
+    editor.replace(main.path, main.content);
+    sync?.edited(main.path);
+  }
+  return main.path;
 }
 
 pdfViewer.onDoubleClick = (page, x, y) => {
@@ -1047,12 +1187,56 @@ async function renameFolderAction(dir: string): Promise<void> {
 // The "⋯" menu of a file in the tree.
 function showFileMenu(anchor: HTMLElement, path: string): void {
   const isMain = project ? path === findMainFile(project) : false;
+  const file = project?.files.find((f) => f.path === path);
+  const safeCopy = file?.safeCopy && file.safeCopy.revision !== file.revision ? file.safeCopy : undefined;
   openMenu(anchor, [
     { label: 'Rename or move…', action: () => void renameFile(path) },
     { label: 'Duplicate…', action: () => void duplicateFile(path) },
+    ...(safeCopy ? [{ label: `Go back to the version from ${versionTime(new Date(safeCopy.time))}…`, action: () => void goBack(path) }] : []),
     { label: isMain ? 'This is the main file' : 'Set as main file', action: () => void setMainFile(path), disabled: isMain || !path.endsWith('.tex') },
     { label: 'Delete…', action: () => void deleteFile(path), danger: true },
   ]);
+}
+
+// "Go back to the version from 10:42": shows what changed since that version
+// (the safe copy Drive keeps), and puts it back if the user says so. The
+// current text is not lost: Ctrl/Cmd+Z brings it back, and Drive keeps it
+// as an old version.
+async function goBack(path: string): Promise<void> {
+  const projectSync = sync;
+  const file = projectSync?.project.files.find((f) => f.path === path);
+  if (!projectSync || !file?.safeCopy || typeof file.content !== 'string') return;
+  const when = versionTime(new Date(file.safeCopy.time));
+  let before: string;
+  showBusy(`Loading the version from ${when}…`);
+  try {
+    before = await projectSync.safeCopyText(path);
+  } catch (error) {
+    showError(error);
+    return;
+  } finally {
+    hideBusy();
+  }
+  const now = file.content;
+  if (before === now) {
+    notify(`${path} is the same as the version from ${when}.`);
+    return;
+  }
+  element<HTMLElement>('#restore-title').textContent = `Go back to the version from ${when}?`;
+  element<HTMLElement>('#restore-note').textContent = `${path} as it was at ${when} on the left, as it is now on the right. `
+    + 'Only the changed parts are shown. After restoring, Ctrl/Cmd+Z brings the current text back.';
+  element<HTMLElement>('#restore-before').textContent = when;
+  const dialog = element<HTMLDialogElement>('#restore-dialog');
+  const hide = showChanges(element<HTMLElement>('#restore-changes'), before, now);
+  dialog.returnValue = '';
+  dialog.addEventListener('close', () => {
+    hide();
+    if (dialog.returnValue !== 'restore') return;
+    openFile(path);
+    editor.setText(before); // saved to Drive like any edit
+    notify(`${path} is back to the version from ${when}. Ctrl/Cmd+Z undoes this.`);
+  }, { once: true });
+  dialog.showModal();
 }
 
 // The "+" menu above the file tree.
@@ -1061,6 +1245,7 @@ function showAddMenu(): void {
     { label: 'New file…', action: () => void newFile() },
     { label: 'Upload from this computer…', action: () => chooseUploads() },
     { label: 'Add from Google Drive…', action: () => void addFromDrive() },
+    { label: 'Add citation from DOI…', action: () => void citeFromMenu() },
   ]);
 }
 

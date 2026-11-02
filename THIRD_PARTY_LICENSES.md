@@ -13,6 +13,7 @@ This file lists everything Tilde uses that was written by others.
 | codemirror | 6.0.2 | MIT | https://codemirror.net | The code editor |
 | @codemirror/language | 6.13.1 | MIT | https://codemirror.net | Language support for the editor |
 | @codemirror/legacy-modes | 6.5.5 | MIT | https://codemirror.net | LaTeX syntax highlighting (`stex` mode) |
+| @codemirror/merge | 6.12.3 | MIT | https://codemirror.net | The two versions side by side in "Go back to the version from …" |
 | pdfjs-dist | 6.5.438 | Apache-2.0 | https://mozilla.github.io/pdf.js/ | PDF viewer |
 | fflate | 0.8.3 | MIT | https://github.com/101arrowz/fflate | Unpacking .zip files when importing a project |
 | IBM Plex Sans (`@fontsource/ibm-plex-sans`) | 5.3.0 | OFL-1.1 (font); license file in the package | https://github.com/IBM/plex | Font for the interface |

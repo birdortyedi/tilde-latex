@@ -31,7 +31,7 @@ The project owner is not a professional web developer. They will test every chan
 - XeLaTeX for Unicode text and the OpenType fonts that come with TeX Live, chosen by itself when a project loads `fontspec`, `polyglossia` or `unicode-math`, or by a `% !TEX program = …` line (decided before Milestone 6). Fonts installed on the user's computer cannot be used.
 - Clickable error messages that jump to the file and line
 - Autosave to Google Drive, with conflict detection between devices
-- File history through Drive's own version history (no history system of our own)
+- File history through Drive's own version history (no history system of our own). A "safe copy" per file and editing session: Tilde asks Drive to keep the opened version forever and offers it in the file menu. Drive cannot un-keep a version, and Tilde never deletes one (decided before Milestone 6)
 
 **Possible later, only when the owner asks:**
 - Project templates
