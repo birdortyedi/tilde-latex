@@ -88,6 +88,13 @@ describe('ProjectSync', () => {
     expect(states.filter((s, i) => s !== states[i - 1])).toEqual(['unsaved', 'saving', 'saved']);
   });
 
+  it('notes the last edit time on the project folder', async () => {
+    type('main.tex', 'v2');
+    await sync.saveNow();
+    const folder = drive.items.get(project.driveId ?? '');
+    expect(Date.now() - Date.parse(folder?.appProperties?.lastEdited ?? '')).toBeLessThan(60_000);
+  });
+
   it('keeps a copy in the browser until the edit is in Drive', async () => {
     type('main.tex', 'v2');
     expect(drafts.get('main.tex')?.content).toBe('v2');

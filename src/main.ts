@@ -5,11 +5,14 @@ import { Editor, type LineMark } from './editor';
 import { PdfViewer } from './pdfViewer';
 import { forgetToken, restoreSignIn, signIn, SignInNeededError, signOut } from './auth';
 import { googleDrive, type DriveFile } from './drive';
-import { createProject, findOrCreateRootFolder, listProjects, openProject } from './driveProjects';
+import { createProject, findOrCreateRootFolder, lastEdited, listProjects, openProject } from './driveProjects';
 import { browserDrafts, forgetOtherAccounts, type Draft } from './drafts';
 import { ProjectSync, type SyncState } from './sync';
 import { cachedPackages, REMOTE_DIR, storeNewPackages } from './packageCache';
 import { lastLatexLog, parseLog, type LogProblem } from './logParser';
+import { unzipProject } from './zipImport';
+import { isGoogleDoc, pickDriveFiles, type PickedFile } from './picker';
+import { askConfirm, askText } from './ask';
 
 // Files that TeX Live's basic bundle lacks (TikZ, pgfplots, ...) are fetched
 // one at a time from TeXlyre's public package server.
@@ -35,7 +38,17 @@ function element<T extends HTMLElement>(selector: string): T {
   return found;
 }
 
-const projectSelect = element<HTMLSelectElement>('#project');
+const projectsButton = element<HTMLButtonElement>('#show-projects');
+const projectNameLabel = element<HTMLSpanElement>('#project-name');
+const projectsPage = element<HTMLElement>('#projects-page');
+const projectsHint = element<HTMLParagraphElement>('#projects-hint');
+const projectRows = element<HTMLTableSectionElement>('#project-rows');
+const importZipButton = element<HTMLButtonElement>('#import-zip');
+const zipInput = element<HTMLInputElement>('#zip-input');
+const closeProjectsButton = element<HTMLButtonElement>('#close-projects');
+const importDriveButton = element<HTMLButtonElement>('#import-drive');
+const addFromDriveButton = element<HTMLButtonElement>('#add-from-drive');
+const mainArea = element<HTMLElement>('main');
 const compileButton = element<HTMLButtonElement>('#compile');
 const syncButton = element<HTMLButtonElement>('#sync');
 const conflictDialog = element<HTMLDialogElement>('#conflict-dialog');
@@ -97,42 +110,79 @@ async function loadExamples(): Promise<void> {
   }
   examples = groupByProject('/test-docs', { ...textFiles, ...binaryFiles });
   for (const p of examples) newProjectTemplate.add(new Option(`Example: ${p.name}`, p.name));
-  showExamples();
-}
-
-function showExamples(): void {
-  setProjectOptions(examples.map((p) => [p.name, p.name]));
   showProject(examples[0] ?? null);
 }
 
+// After sign-in: reopens the last project, or shows the project page.
 async function showDriveProjects(): Promise<void> {
   if (!rootId) return;
   driveFolders = await listProjects(googleDrive, rootId);
-  setProjectOptions(driveFolders.map((f) => [f.id, f.name]));
-  if (driveFolders.length === 0) {
-    showProject(null);
-    statusText.textContent = 'You have no projects in Drive yet. Click "New project".';
-    return;
-  }
   let last: string | null = null;
   try { last = localStorage.getItem(LAST_PROJECT_KEY); } catch { /* storage blocked */ }
-  await selectProject(driveFolders.find((f) => f.id === last)?.id ?? driveFolders[0].id);
+  if (driveFolders.some((f) => f.id === last) && last) await openProjectById(last);
+  else {
+    showProject(null);
+    showProjectsPage(true);
+    statusText.textContent = 'Signed in. Open a project or create one.';
+  }
 }
 
-// Fills the project menu with [value, label] pairs.
-function setProjectOptions(options: [string, string][]): void {
-  projectSelect.replaceChildren(...options.map(([value, label]) => new Option(label, value)));
+// The project page lists the Drive projects (newest first) while signed in,
+// and the built-in examples while signed out.
+function showProjectsPage(visible: boolean): void {
+  projectsPage.hidden = !visible;
+  mainArea.hidden = visible;
+  if (visible) renderProjectsPage();
 }
 
-// Called when the user picks a project in the menu. Examples are already in
-// memory; Drive projects are downloaded first.
-async function selectProject(value: string): Promise<void> {
-  projectSelect.value = value;
+function renderProjectsPage(): void {
+  const signedIn = rootId !== null;
+  for (const button of [newProjectButton, importZipButton, importDriveButton]) button.hidden = !signedIn;
+  closeProjectsButton.hidden = !project;
+  projectsHint.textContent = signedIn
+    ? (driveFolders.length === 0 ? 'You have no projects yet. Create one or import one.' : 'Your projects in the "LaTeX Projects" folder of your Google Drive.')
+    : 'Sign in with Google to keep your own projects in your Drive. Until then, try the examples.';
+
+  const rows = signedIn
+    ? [...driveFolders]
+      .map((folder) => ({ id: folder.id, name: folder.name, edited: lastEdited(folder) }))
+      .sort((a, b) => (b.edited?.getTime() ?? 0) - (a.edited?.getTime() ?? 0))
+    : examples.map((example) => ({ id: example.name, name: example.name, edited: undefined }));
+
+  projectRows.replaceChildren(...rows.map((row) => {
+    const open = document.createElement('button');
+    open.className = 'open-link';
+    open.textContent = row.name;
+    open.addEventListener('click', () => void openProjectById(row.id));
+    const actions = document.createElement('td');
+    if (signedIn) {
+      const rename = document.createElement('button');
+      rename.textContent = 'Rename';
+      rename.addEventListener('click', () => void renameProject(row.id, row.name));
+      const remove = document.createElement('button');
+      remove.textContent = 'Delete';
+      remove.addEventListener('click', () => void deleteProject(row.id, row.name));
+      actions.append(rename, remove);
+    }
+    const tableRow = document.createElement('tr');
+    const nameCell = document.createElement('td');
+    nameCell.append(open);
+    const editedCell = document.createElement('td');
+    editedCell.textContent = row.edited?.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) ?? '';
+    tableRow.append(nameCell, editedCell, actions);
+    return tableRow;
+  }));
+}
+
+// Opens a project from the project page. Examples are already in memory;
+// Drive projects are downloaded first.
+async function openProjectById(id: string): Promise<void> {
   if (!rootId) {
-    showProject(examples.find((p) => p.name === value) ?? null);
+    showProject(examples.find((p) => p.name === id) ?? null);
+    showProjectsPage(false);
     return;
   }
-  const folder = driveFolders.find((f) => f.id === value);
+  const folder = driveFolders.find((f) => f.id === id);
   if (!folder) return;
   statusText.textContent = `Opening ${folder.name} from Drive…`;
   try {
@@ -140,10 +190,131 @@ async function selectProject(value: string): Promise<void> {
     // browser and is saved the next time that project is opened.
     await sync?.saveNow();
     showProject(await openProject(googleDrive, folder));
+    showProjectsPage(false);
   } catch (error) {
-    projectSelect.value = project?.driveId ?? '';
     showError(error);
   }
+}
+
+// Asks for a project name until it is usable. Returns null if the user cancels.
+async function askProjectName(question: string, suggestion: string, unchanged?: string): Promise<string | null> {
+  let message = question;
+  let answer = suggestion;
+  for (;;) {
+    const typed = await askText(message, answer);
+    if (typed === null) return null;
+    answer = typed.trim();
+    if (answer === unchanged) return null;
+    const problem = !answer ? 'Type a name.'
+      : answer.includes('/') ? 'A project name cannot contain "/".'
+        : driveFolders.some((f) => f.name === answer) ? `A project called "${answer}" already exists.`
+          : null;
+    if (!problem) return answer;
+    message = `${problem}\n\n${question}`;
+  }
+}
+
+async function refreshProjects(): Promise<void> {
+  if (rootId) driveFolders = await listProjects(googleDrive, rootId);
+  if (!projectsPage.hidden) renderProjectsPage();
+}
+
+async function renameProject(id: string, name: string): Promise<void> {
+  const newName = await askProjectName(`New name for "${name}":`, name, name);
+  if (!newName) return;
+  try {
+    await googleDrive.updateMetadata(id, { name: newName });
+    if (project?.driveId === id) {
+      project.name = newName;
+      projectNameLabel.textContent = newName;
+    }
+    await refreshProjects();
+    statusText.textContent = `Renamed "${name}" to "${newName}".`;
+  } catch (error) {
+    showError(error);
+  }
+}
+
+async function deleteProject(id: string, name: string): Promise<void> {
+  if (!await askConfirm(`Delete the project "${name}"? Its folder goes to the trash in your Google Drive, where you can restore it for 30 days.`, 'Delete')) return;
+  try {
+    await googleDrive.updateMetadata(id, { trashed: true });
+    if (project?.driveId === id) showProject(null);
+    for (const draft of await browserDrafts.list()) {
+      if (draft.projectId === id) await browserDrafts.remove(draft);
+    }
+    await refreshProjects();
+    statusText.textContent = `Deleted "${name}". You can restore it from the trash in Google Drive.`;
+  } catch (error) {
+    showError(error);
+  }
+}
+
+// Creates a project in Drive from files, shows upload progress, and opens it.
+async function createAndOpen(name: string, files: ProjectFile[]): Promise<void> {
+  if (!rootId) return;
+  try {
+    await sync?.saveNow();
+    const created = await createProject(googleDrive, rootId, name, files, (done, total) => {
+      statusText.textContent = `Creating ${name} in Drive… (${done} of ${total} files)`;
+    });
+    await refreshProjects();
+    showProject(created);
+    showProjectsPage(false);
+  } catch (error) {
+    showError(error);
+  }
+}
+
+// Lets the user pick files in their Drive. Google Docs and the like are left
+// out (with a message), since they have no file content Tilde can use.
+async function pickUsableFiles(title: string): Promise<PickedFile[]> {
+  const picked = await pickDriveFiles(title);
+  const skipped = picked.filter(isGoogleDoc);
+  if (skipped.length > 0) {
+    statusText.textContent = `Left out (Google Docs, Sheets etc. cannot be used): ${skipped.map((f) => f.name).join(', ')}`;
+  }
+  return picked.filter((f) => !isGoogleDoc(f));
+}
+
+const toContent = (path: string, bytes: Uint8Array): string | Uint8Array =>
+  isTextFile(path) ? new TextDecoder().decode(bytes) : bytes;
+
+// "Import from Drive" on the project page: copies picked files into a new
+// project. The originals stay where they are. Files with the same name are
+// only imported once, since the picked files end up in one folder.
+async function importFromDrive(): Promise<void> {
+  try {
+    const picked = await pickUsableFiles('Pick the files of your LaTeX project');
+    if (picked.length === 0) return;
+    const name = await askProjectName(`Name for the new project (${picked.length} files):`, '');
+    if (!name) return;
+    const files: ProjectFile[] = [];
+    for (const [index, file] of picked.entries()) {
+      if (files.some((f) => f.path === file.name)) continue;
+      statusText.textContent = `Reading ${file.name} from Drive… (${index + 1} of ${picked.length})`;
+      files.push({ path: file.name, content: toContent(file.name, await googleDrive.download(file.id)) });
+    }
+    await createAndOpen(name, files);
+  } catch (error) {
+    showError(error);
+  }
+}
+
+async function importZip(file: File): Promise<void> {
+  let files: ProjectFile[];
+  try {
+    files = unzipProject(new Uint8Array(await file.arrayBuffer()));
+  } catch {
+    showError(new Error(`${file.name} is not a .zip file Tilde can read.`));
+    return;
+  }
+  if (files.length === 0) {
+    showError(new Error(`${file.name} has no files to import.`));
+    return;
+  }
+  const name = await askProjectName(`Name for the imported project (${files.length} files):`, file.name.replace(/\.zip$/i, ''));
+  if (name) await createAndOpen(name, files);
 }
 
 function showProject(newProject: Project | null): void {
@@ -155,6 +326,7 @@ function showProject(newProject: Project | null): void {
     })
     : null;
   project = newProject;
+  projectNameLabel.textContent = newProject?.name ?? '';
   editor.clear();
   activePath = null;
   element<HTMLDivElement>('#pdf').replaceChildren();
@@ -271,7 +443,6 @@ async function startDrive(): Promise<void> {
     rootId = await findOrCreateRootFolder(googleDrive);
     signInButton.hidden = true;
     signOutButton.hidden = false;
-    newProjectButton.hidden = false;
     await showDriveProjects();
   } catch (error) {
     showError(error);
@@ -307,8 +478,8 @@ async function finishSignOut(): Promise<void> {
   driveFolders = [];
   signInButton.hidden = false;
   signOutButton.hidden = true;
-  newProjectButton.hidden = true;
-  showExamples(); // also stops saving the Drive project
+  showProject(examples[0] ?? null); // also stops saving the Drive project
+  if (!projectsPage.hidden) renderProjectsPage();
   signOut();
   try {
     await browserDrafts.clear();
@@ -324,17 +495,7 @@ async function createFromDialog(): Promise<void> {
   if (!rootId) return;
   const name = newProjectName.value.trim();
   const template = examples.find((p) => p.name === newProjectTemplate.value);
-  statusText.textContent = `Creating ${name} in Drive…`;
-  try {
-    await sync?.saveNow();
-    const created = await createProject(googleDrive, rootId, name, template?.files ?? BLANK_PROJECT);
-    driveFolders = await listProjects(googleDrive, rootId);
-    setProjectOptions(driveFolders.map((f) => [f.id, f.name]));
-    projectSelect.value = created.driveId ?? '';
-    showProject(created);
-  } catch (error) {
-    showError(error);
-  }
+  await createAndOpen(name, template?.files ?? BLANK_PROJECT);
 }
 
 function openFile(path: string): void {
@@ -398,11 +559,11 @@ const folderOf = (path: string | null): string => path?.split('/').slice(0, -1).
 
 // Asks for a file path until it is usable. Returns null if the user cancels
 // or keeps the path unchanged.
-function askForPath(question: string, suggestion: string, unchanged?: string): string | null {
+async function askForPath(question: string, suggestion: string, unchanged?: string): Promise<string | null> {
   let message = question;
   let answer = suggestion;
   for (;;) {
-    const typed = prompt(message, answer);
+    const typed = await askText(message, answer);
     if (typed === null) return null;
     answer = typed.trim();
     if (answer === unchanged) return null;
@@ -431,14 +592,34 @@ async function newFile(): Promise<void> {
   const projectSync = sync;
   if (!projectSync) return;
   const folder = folderOf(activePath);
-  const path = askForPath('Name of the new file, e.g. method.tex or chapters/method.tex:', folder ? `${folder}/` : '');
+  const path = await askForPath('Name of the new file, e.g. method.tex or chapters/method.tex:', folder ? `${folder}/` : '');
   if (path && await runFileAction(`Creating ${path}`, () => projectSync.addFile(path, ''))) openFile(path);
 }
 
+// Files to add to the open project, from the computer or from Drive.
+interface IncomingFile {
+  name: string;
+  read: () => Promise<Uint8Array>;
+}
+
 async function uploadFiles(files: File[]): Promise<void> {
+  await addFiles(files.map((file) => ({ name: file.name, read: async () => new Uint8Array(await file.arrayBuffer()) })));
+}
+
+// "From Drive" in the file toolbar: copies picked files into the open project.
+async function addFromDrive(): Promise<void> {
+  try {
+    const picked = await pickUsableFiles('Pick files to add to this project');
+    await addFiles(picked.map((file) => ({ name: file.name, read: () => googleDrive.download(file.id) })));
+  } catch (error) {
+    showError(error);
+  }
+}
+
+async function addFiles(files: IncomingFile[]): Promise<void> {
   const projectSync = sync;
   if (!projectSync || files.length === 0) return;
-  const answer = prompt('Upload into which folder? Leave empty for the top level.', folderOf(activePath));
+  const answer = await askText('Add the files to which folder? Leave empty for the top level.', folderOf(activePath));
   if (answer === null) return;
   const folder = answer.trim().replace(/^\/+|\/+$/g, '');
   for (const upload of files) {
@@ -449,10 +630,15 @@ async function uploadFiles(files: File[]): Promise<void> {
       showError(new Error(problem));
       return;
     }
-    if (exists && !confirm(`${path} already exists. Replace it? Drive keeps the old version in its version history.`)) continue;
-    const bytes = new Uint8Array(await upload.arrayBuffer());
-    const content = isTextFile(path) ? new TextDecoder().decode(bytes) : bytes;
-    if (!await runFileAction(`Uploading ${path}`, () => projectSync.addFile(path, content))) return;
+    if (exists && !await askConfirm(`${path} already exists. Replace it? Drive keeps the old version in its version history.`, 'Replace')) continue;
+    let content: string | Uint8Array;
+    try {
+      content = toContent(path, await upload.read());
+    } catch (error) {
+      showError(error);
+      return;
+    }
+    if (!await runFileAction(`Adding ${path}`, () => projectSync.addFile(path, content))) return;
   }
 }
 
@@ -460,7 +646,7 @@ async function renameFile(): Promise<void> {
   const projectSync = sync;
   const from = activePath;
   if (!projectSync || !from) return;
-  const to = askForPath(`New name for ${from}. Change the folder part to move it, e.g. chapters/${from.split('/').pop()}:`, from, from);
+  const to = await askForPath(`New name for ${from}. Change the folder part to move it, e.g. chapters/${from.split('/').pop()}:`, from, from);
   if (!to) return;
   if (await runFileAction(`Renaming ${from}`, () => projectSync.moveFile(from, to))) {
     editor.rename(from, to);
@@ -474,7 +660,7 @@ async function duplicateFile(): Promise<void> {
   if (!projectSync || !file) return;
   // "chapters/intro.tex" → "chapters/intro-copy.tex" (no spaces: LaTeX dislikes them in file names)
   const suggestion = file.path.replace(/(\.[^./]+)?$/, (extension) => `-copy${extension}`);
-  const path = askForPath(`Name for the copy of ${file.path}:`, suggestion);
+  const path = await askForPath(`Name for the copy of ${file.path}:`, suggestion);
   const content = typeof file.content === 'string' ? file.content : file.content.slice();
   if (path && await runFileAction(`Duplicating ${file.path}`, () => projectSync.addFile(path, content))) openFile(path);
 }
@@ -483,7 +669,7 @@ async function deleteFile(): Promise<void> {
   const projectSync = sync;
   const path = activePath;
   if (!projectSync || !path) return;
-  if (!confirm(`Delete ${path}? It goes to the trash in your Google Drive, where you can restore it for 30 days.`)) return;
+  if (!await askConfirm(`Delete ${path}? It goes to the trash in your Google Drive, where you can restore it for 30 days.`, 'Delete')) return;
   if (await runFileAction(`Deleting ${path}`, () => projectSync.deleteFile(path))) {
     editor.forget(path);
     activePath = null;
@@ -629,7 +815,18 @@ deleteButton.addEventListener('click', () => void deleteFile());
 setMainButton.addEventListener('click', () => void setMainFile());
 syncButton.addEventListener('click', showConflict);
 logButton.addEventListener('click', () => { logView.hidden = !logView.hidden; });
-projectSelect.addEventListener('change', () => void selectProject(projectSelect.value));
+projectsButton.addEventListener('click', () => showProjectsPage(true));
+closeProjectsButton.addEventListener('click', () => showProjectsPage(false));
+importDriveButton.addEventListener('click', () => void importFromDrive());
+addFromDriveButton.addEventListener('click', () => void addFromDrive());
+importZipButton.addEventListener('click', () => {
+  zipInput.value = '';
+  zipInput.click();
+});
+zipInput.addEventListener('change', () => {
+  const file = zipInput.files?.[0];
+  if (file) void importZip(file);
+});
 signInButton.addEventListener('click', () => void handleSignIn());
 signOutButton.addEventListener('click', () => void handleSignOut());
 newProjectButton.addEventListener('click', () => {

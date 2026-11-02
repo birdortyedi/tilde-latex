@@ -13,6 +13,7 @@ This file lists everything Tilde uses that was written by others.
 | @codemirror/language | 6.13.1 | MIT | https://codemirror.net | Language support for the editor |
 | @codemirror/legacy-modes | 6.5.5 | MIT | https://codemirror.net | LaTeX syntax highlighting (`stex` mode) |
 | pdfjs-dist | 6.5.438 | Apache-2.0 | https://mozilla.github.io/pdf.js/ | PDF viewer |
+| fflate | 0.8.3 | MIT | https://github.com/101arrowz/fflate | Unpacking .zip files when importing a project |
 | TeX Live 2026 package files (`texlive-basic.data`) | 2026 | Each package has its own license (mostly LPPL-1.3c, also GPL, OFL, public domain and others); see `LICENSE.TL` inside the bundle | https://tug.org/texlive/ | LaTeX classes, packages and fonts. Served unmodified |
 
 CodeMirror also brings in its own small helper packages, all MIT: `@codemirror/*`,
@@ -41,6 +42,7 @@ compatible with AGPL-3.0.
 |---|---|---|---|
 | TeXlyre TeX Live package server | Serves unmodified TeX Live files (licenses as above) | https://texlive2026.texlyre.org | Fetches package files missing from the basic bundle (TikZ, pgfplots, ...) |
 | Google Identity Services (`https://accounts.google.com/gsi/client`) | Google's own terms (Google APIs Terms of Service); loaded from Google at runtime, not bundled or redistributed by Tilde | https://developers.google.com/identity/oauth2/web | "Sign in with Google" and access tokens for Drive |
+| Google Picker (`https://apis.google.com/js/api.js`) | Google APIs Terms of Service; loaded from Google at runtime, not bundled or redistributed by Tilde | https://developers.google.com/workspace/drive/picker | Choosing files in Drive to import |
 | Google Drive API v3 | Google APIs Terms of Service; called with `fetch`, no Google code bundled | https://developers.google.com/drive/api | Storing projects in the user's own Drive |
 
 ## Development tools only (never shipped)

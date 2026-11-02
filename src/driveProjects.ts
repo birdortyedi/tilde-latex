@@ -27,7 +27,21 @@ export async function listProjects(drive: Drive, rootId: string): Promise<DriveF
   return (await drive.list(rootId)).filter(isFolder).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export async function createProject(drive: Drive, rootId: string, name: string, files: ProjectFile[]): Promise<Project> {
+// When a project was last edited: Tilde notes it on the project folder when
+// saving (Drive does not update a folder's own date when files inside change).
+export function lastEdited(folder: DriveFile): Date | undefined {
+  const when = folder.appProperties?.lastEdited ?? folder.modifiedTime;
+  return when ? new Date(when) : undefined;
+}
+
+export async function stampLastEdited(drive: Drive, project: Project): Promise<void> {
+  if (project.driveId) await drive.updateMetadata(project.driveId, { appProperties: { lastEdited: new Date().toISOString() } });
+}
+
+export async function createProject(
+  drive: Drive, rootId: string, name: string, files: ProjectFile[],
+  onProgress?: (done: number, total: number) => void,
+): Promise<Project> {
   if ((await listProjects(drive, rootId)).some((p) => p.name === name)) {
     throw new Error(`A project called "${name}" already exists.`);
   }
@@ -37,7 +51,8 @@ export async function createProject(drive: Drive, rootId: string, name: string, 
     driveId: folder.id,
     files: files.map((f) => ({ path: f.path, content: f.content, changed: true })),
   };
-  await saveProject(drive, project); // uploads every file, since all are new
+  await saveProject(drive, project, onProgress); // uploads every file, since all are new
+  await stampLastEdited(drive, project);
   return project;
 }
 
@@ -119,12 +134,16 @@ export async function currentRevisions(drive: Drive, project: Project): Promise<
 // Saves every changed file to Drive and returns the paths of files it did
 // NOT save: those that changed in Drive (for example on another computer)
 // since we loaded them. Those are never overwritten silently.
-export async function saveProject(drive: Drive, project: Project): Promise<string[]> {
+export async function saveProject(
+  drive: Drive, project: Project, onProgress?: (done: number, total: number) => void,
+): Promise<string[]> {
   if (!project.driveId) throw new Error(`${project.name} is not in Google Drive.`);
   const conflicts: string[] = [];
   const folders = new Map<string, string>([['', project.driveId]]);
 
-  for (const file of project.files.filter((f) => f.changed)) {
+  const changed = project.files.filter((f) => f.changed);
+  for (const [index, file] of changed.entries()) {
+    onProgress?.(index, changed.length);
     const content = file.content;
     const bytes = typeof content === 'string' ? new TextEncoder().encode(content) : content;
     let saved: DriveFile;

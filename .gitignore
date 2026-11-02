@@ -6,3 +6,6 @@ dist/
 # Engine and TeX Live package files (about 670 MB).
 # Download them with `npm run download-engine`; they are never committed.
 public/core/
+
+# macOS Finder files
+.DS_Store

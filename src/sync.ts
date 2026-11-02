@@ -1,7 +1,7 @@
 import { SignInNeededError } from './auth';
 import { OfflineError, type Drive } from './drive';
 import type { DraftKey, DraftStore } from './drafts';
-import { currentRevisions, moveFile, removeEmptyFolders, saveProject, setMainFile, trashFile } from './driveProjects';
+import { currentRevisions, moveFile, removeEmptyFolders, saveProject, setMainFile, stampLastEdited, trashFile } from './driveProjects';
 import { isTextFile } from './fileTree';
 import type { Project, ProjectFile } from './projects';
 
@@ -10,6 +10,7 @@ const folderOf = (path: string): string => path.split('/').slice(0, -1).join('/'
 
 export const AUTOSAVE_DELAY = 3_000; // milliseconds after the last edit
 export const RETRY_DELAY = 30_000; // milliseconds before trying again after a failed save
+const STAMP_INTERVAL = 10 * 60_000; // note "last edited" on the project at most this often
 
 export type SyncState =
   | 'saved' // everything is in Drive
@@ -40,6 +41,7 @@ export class ProjectSync {
   private problem: 'offline' | 'signin' | 'error' | null = null;
   private projectId: string;
   private uploading = false;
+  private lastStamp = 0; // when "last edited" was last noted on the project folder
   private timer: ReturnType<typeof setTimeout> | undefined;
   private queue: Promise<void> = Promise.resolve();
   private saveQueued = false;
@@ -222,6 +224,11 @@ export class ProjectSync {
     this.update();
     try {
       for (const path of await saveProject(this.drive, this.project)) this.conflicts.add(path);
+      if (pending.some((f) => !f.changed) && Date.now() - this.lastStamp > STAMP_INTERVAL) {
+        this.lastStamp = Date.now();
+        await stampLastEdited(this.drive, this.project)
+          .catch((error: unknown) => console.warn('Could not note the last edit time', error));
+      }
     } finally {
       this.uploading = false;
       // Even if saving stopped halfway (network lost), update the drafts of
