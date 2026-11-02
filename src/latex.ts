@@ -70,6 +70,21 @@ export function outline(files: ProjectFile[], mainPath: string): OutlineEntry[] 
   return entries;
 }
 
+// Which program makes the bibliography: Biber for biblatex (its default
+// backend), BibTeX for natbib, plain \bibliography or biblatex with
+// backend=bibtex, none when the project has no .bib file.
+export function bibliographyTool(files: ProjectFile[]): 'biber' | 'bibtex' | null {
+  if (!files.some((f) => f.path.endsWith('.bib'))) return null;
+  for (const file of files) {
+    if (!file.path.endsWith('.tex')) continue;
+    for (const raw of text(file).split('\n')) {
+      const match = /\\usepackage(?:\[([^\]]*)\])?\{[^}]*\bbiblatex\b[^}]*\}/.exec(withoutComment(raw));
+      if (match) return /backend\s*=\s*bibtex/.test(match[1] ?? '') ? 'bibtex' : 'biber';
+    }
+  }
+  return 'bibtex';
+}
+
 export type CompletionKind = 'command' | 'environment' | 'label' | 'citation' | 'texfile' | 'image';
 
 export interface CompletionContext {

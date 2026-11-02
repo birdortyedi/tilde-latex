@@ -9,6 +9,7 @@ This file lists everything Tilde uses that was written by others.
 |---|---|---|---|---|
 | texlyre-busytex | 1.4.1 | AGPL-3.0-or-later | https://github.com/TeXlyre/texlyre-busytex | JavaScript API that starts the TeX engine and runs compiles |
 | TeXlyre BusyTeX engine files (`busytex.wasm`, `busytex.js`, `busytex_worker.js`, `busytex_pipeline.js`) | assets-v1.4.1 | AGPL-3.0 | https://github.com/TeXlyre/texlyre-busytex-build | The TeX engine compiled to WebAssembly. Downloaded with `npm run download-engine`, not committed |
+| TeXlyre BusyTeX Biber files (`biber.wasm`, `biber.js`, `biber.data`, `busytex_biber.js`) | assets-v1.4.1 | Biber: Artistic-2.0; it runs on WebPerl (Perl: GPL-1.0-or-later or Artistic-1.0, used under the GPL) | https://github.com/plk/biber | Bibliographies for biblatex. Downloaded with the engine, loaded only when a project uses biblatex |
 | codemirror | 6.0.2 | MIT | https://codemirror.net | The code editor |
 | @codemirror/language | 6.13.1 | MIT | https://codemirror.net | Language support for the editor |
 | @codemirror/legacy-modes | 6.5.5 | MIT | https://codemirror.net | LaTeX syntax highlighting (`stex` mode) |

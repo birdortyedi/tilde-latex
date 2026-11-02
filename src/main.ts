@@ -18,7 +18,7 @@ import { cachedPackages, REMOTE_DIR, storeNewPackages } from './packageCache';
 import { lastLatexLog, parseLog, type LogProblem } from './logParser';
 import { unzipProject, zipProject } from './zipImport';
 import { timeAgo } from './time';
-import { outline } from './latex';
+import { bibliographyTool, outline } from './latex';
 import { isGoogleDoc, pickDriveFiles, pickDriveFolder, type PickedFile } from './picker';
 import { askConfirm, askText } from './ask';
 import { initLayout, type Pane } from './layout';
@@ -1179,7 +1179,9 @@ async function compile(): Promise<void> {
       input: main.content,
       mainTexPath: main.path,
       additionalFiles: project.files.filter((f) => f !== main),
-      bibtex: project.files.some((f) => f.path.endsWith('.bib')),
+      // Biber for biblatex, BibTeX for natbib and \bibliography.
+      bibtex: bibliographyTool(project.files) === 'bibtex',
+      biber: bibliographyTool(project.files) === 'biber',
       rerun: true, // run LaTeX again so references and citations resolve
       remoteEndpoint: PACKAGE_SERVER,
     });

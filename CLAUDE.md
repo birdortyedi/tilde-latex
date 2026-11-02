@@ -26,7 +26,7 @@ The project owner is not a professional web developer. They will test every chan
 - Multi-file projects (`\input`, `\include`, images, `.bib` files)
 - Compile in the browser with PDF preview
 - TikZ and pgfplots
-- BibTeX and natbib
+- BibTeX and natbib, and biblatex with Biber (decided after Milestone 5: the engine ships Biber)
 - Clickable error messages that jump to the file and line
 - Autosave to Google Drive, with conflict detection between devices
 - File history through Drive's own version history (no history system of our own)
@@ -40,7 +40,6 @@ The project owner is not a professional web developer. They will test every chan
 **Out of scope, do not build or suggest:**
 - Real-time co-editing, track changes, or a comment system
 - A visual rich-text editor
-- Biber
 - Shell escape (`minted`, `--shell-escape`)
 - Any feature that needs a server or database
 
@@ -49,7 +48,7 @@ The project owner is not a professional web developer. They will test every chan
 Everything runs in the user's browser. The app is a static site built with Vite and hosted on GitHub Pages.
 
 - **Editor:** CodeMirror 6, with LaTeX syntax highlighting.
-- **TeX engine:** [TeXlyre BusyTeX](https://github.com/TeXlyre/texlyre-busytex) (npm `texlyre-busytex`, AGPL-3.0, TeX Live 2026), used in pdfLaTeX mode with bibtex8. It also contains XeTeX for later. Runs in a Web Worker so the editor never freezes. Chosen in Milestone 1 over SwiftLaTeX (no BibTeX, package server gone), the original BusyTeX (no current browser build) and texlive.js (GPL-2.0, unmaintained).
+- **TeX engine:** [TeXlyre BusyTeX](https://github.com/TeXlyre/texlyre-busytex) (npm `texlyre-busytex`, AGPL-3.0, TeX Live 2026), used in pdfLaTeX mode with bibtex8, and Biber for biblatex. It also contains XeTeX for later. Runs in a Web Worker so the editor never freezes. Chosen in Milestone 1 over SwiftLaTeX (no BibTeX, package server gone), the original BusyTeX (no current browser build) and texlive.js (GPL-2.0, unmaintained).
 - **PDF viewer:** PDF.js.
 - **Drive sync:** Google Identity Services for sign-in, Google Drive API v3 called with `fetch`, and the Google Picker for importing existing files.
 - **Package files:** TeX Live package files are loaded on demand and cached in the browser (IndexedDB).
@@ -146,7 +145,7 @@ Then stop and wait. Do not start the next milestone without being asked.
 
 Known issue for Milestone 6: the Google Picker API key (in `.env.local`, never committed; the deploy workflow must get it from a GitHub Actions secret) has an API restriction but no website restriction, because the Picker rejected the key with `http://localhost:5173/*` set. Find a website restriction that works before the public release.
 
-Known issue for Milestone 6: `npm run build` copies everything in `public/core/` (about 700 MB, including the unused `recommended` and `extra` bundles and biber) into `dist/`. Only the engine files and `texlive-basic` should be deployed.
+Known issue for Milestone 6: `npm run build` copies everything in `public/core/` (about 700 MB, including the unused `recommended` and `extra` bundles) into `dist/`. Only the engine files, Biber (`biber.*`, `busytex_biber.js`) and `texlive-basic` should be deployed.
 
 ## Test documents
 
@@ -156,6 +155,7 @@ Keep a folder `test-docs/` with small LaTeX projects that every engine change mu
 - `math/` — amsmath, equations, theorem environments
 - `tikz/` — a TikZ figure and a pgfplots plot
 - `bibtex/` — natbib with a `.bib` file
+- `biblatex/` — biblatex with Biber
 - `multifile/` — `\input`, `\include`, an image in a subfolder
 - `xetex/` — Unicode text and a system-independent font (once XeTeX works)
 
@@ -179,7 +179,6 @@ Mark the current milestone with **← current**. Update this list as work is com
 ## Known limitations (state these in the README)
 
 - Tilde is for one person working on their own projects. There is no real-time co-editing, track changes or commenting.
-- Biber does not run in the browser, so biblatex must use `backend=bibtex`. Plain BibTeX and natbib work.
 - Shell escape (`minted`, `--shell-escape`) is not supported.
 - Very large documents compile more slowly than with a local TeX Live installation.
 - Free Google accounts have 15 GB of storage, shared with Gmail and Photos.

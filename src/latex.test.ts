@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bibKeysIn, completionContext, labelsIn, outline, unclosedEnvironment, withoutComment } from './latex';
+import { bibKeysIn, bibliographyTool, completionContext, labelsIn, outline, unclosedEnvironment, withoutComment } from './latex';
 
 const files = [
   { path: 'main.tex', content: '\\documentclass{report}\n\\begin{document}\n\\chapter{Intro}\\label{chap:intro}\n% \\section{Hidden}\n\\input{chapters/method}\n\\section*{Summary}\n\\end{document}\n' },
@@ -26,6 +26,18 @@ describe('reading LaTeX source', () => {
       '3 Data chapters/method.tex:3',
       '2 Summary main.tex:6',
     ]);
+  });
+});
+
+describe('bibliographyTool', () => {
+  const bib = { path: 'refs.bib', content: '@book{a,}' };
+  const tex = (content: string) => ({ path: 'main.tex', content });
+  it('uses Biber for biblatex, BibTeX otherwise', () => {
+    expect(bibliographyTool([tex('\\usepackage[style=authoryear]{biblatex}'), bib])).toBe('biber');
+    expect(bibliographyTool([tex('\\usepackage[backend=bibtex,style=numeric]{biblatex}'), bib])).toBe('bibtex');
+    expect(bibliographyTool([tex('\\usepackage[round]{natbib}'), bib])).toBe('bibtex');
+    expect(bibliographyTool([tex('% \\usepackage{biblatex}'), bib])).toBe('bibtex');
+    expect(bibliographyTool([tex('\\usepackage{biblatex}')])).toBeNull(); // no .bib file
   });
 });
 
