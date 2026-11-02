@@ -4,27 +4,48 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text x='16' y='26' font-size='32' font-weight='900' text-anchor='middle' font-family='sans-serif'>~</text></svg>" />
-    <title>Engine test · Tilde · LaTeX editor</title>
+    <title>Tilde · LaTeX editor</title>
     <style>
       body { margin: 0; background: #fff; color: #111; font-family: system-ui, sans-serif; display: flex; flex-direction: column; height: 100vh; }
       header { display: flex; gap: 12px; align-items: center; padding: 8px 16px; border-bottom: 1px solid #ddd; }
       header strong { font-size: 20px; }
       #status { color: #555; }
-      main { flex: 1; display: flex; min-height: 0; }
-      #pdf { flex: 2; border: 0; }
-      #log { flex: 1; margin: 0; padding: 8px; overflow: auto; font-size: 12px; background: #f6f6f6; white-space: pre-wrap; }
+      main { flex: 1; display: grid; grid-template-columns: 200px 1fr 1fr; grid-template-rows: minmax(0, 1fr); min-height: 0; }
+      #tree { overflow: auto; padding: 8px 0; border-right: 1px solid #ddd; background: #fafafa; font-size: 14px; }
+      #tree ul { list-style: none; margin: 0; padding-left: 14px; }
+      #tree > ul { padding-left: 4px; }
+      #tree button { all: unset; display: block; width: 100%; box-sizing: border-box; padding: 2px 8px; cursor: pointer; border-radius: 4px; }
+      #tree button:hover { background: #eee; }
+      #tree button.active { background: #dde8ff; }
+      #tree .folder { padding: 2px 8px; color: #666; }
+      #editor-pane { min-width: 0; overflow: hidden; border-right: 1px solid #ddd; }
+      #editor, #editor .cm-editor { height: 100%; }
+      #image-preview { max-width: 90%; margin: 24px auto; display: block; }
+      #preview { display: flex; flex-direction: column; min-width: 0; background: #e8e8e8; }
+      #pdf { flex: 1; min-height: 0; overflow: auto; padding: 16px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+      #pdf canvas { box-shadow: 0 1px 4px rgba(0,0,0,.3); background: #fff; }
+      #log { height: 40%; margin: 0; padding: 8px; overflow: auto; font-size: 12px; background: #f6f6f6; white-space: pre-wrap; border-top: 1px solid #ccc; }
+      [hidden] { display: none !important; }
     </style>
   </head>
   <body>
     <header>
       <strong>~ Tilde</strong>
-      <label>Test document <select id="project"></select></label>
-      <button id="compile">Compile</button>
+      <label>Project <select id="project"></select></label>
+      <button id="compile" title="Ctrl+S or Cmd+S">Compile</button>
+      <button id="toggle-log">Log</button>
       <span id="status">Ready. The first compile downloads the engine (about 125 MB).</span>
     </header>
     <main>
-      <iframe id="pdf" title="PDF preview"></iframe>
-      <pre id="log"></pre>
+      <nav id="tree" aria-label="Project files"></nav>
+      <div id="editor-pane">
+        <div id="editor"></div>
+        <img id="image-preview" alt="" hidden />
+      </div>
+      <section id="preview">
+        <div id="pdf"></div>
+        <pre id="log" hidden></pre>
+      </section>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>

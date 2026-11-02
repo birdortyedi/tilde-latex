@@ -1,9 +1,13 @@
 import { BusyTexRunner, PdfLatex } from 'texlyre-busytex';
 import { groupByProject, type Project } from './projects';
+import { buildTree, isTextFile, type TreeNode } from './fileTree';
+import { Editor } from './editor';
+import { PdfViewer } from './pdfViewer';
 
 // Files that TeX Live's basic bundle lacks (TikZ, pgfplots, ...) are fetched
 // one at a time from TeXlyre's public package server.
 const PACKAGE_SERVER = 'https://texlive2026.texlyre.org';
+const MAIN_FILE = 'main.tex';
 
 // Vite collects the test documents at build time: text files as strings,
 // binary files (images) as URLs that we download when the page loads.
@@ -22,13 +26,24 @@ function element<T extends HTMLElement>(selector: string): T {
 
 const projectSelect = element<HTMLSelectElement>('#project');
 const compileButton = element<HTMLButtonElement>('#compile');
+const logButton = element<HTMLButtonElement>('#toggle-log');
 const statusText = element<HTMLSpanElement>('#status');
-const pdfFrame = element<HTMLIFrameElement>('#pdf');
+const treeView = element<HTMLElement>('#tree');
+const editorElement = element<HTMLDivElement>('#editor');
+const imagePreview = element<HTMLImageElement>('#image-preview');
 const logView = element<HTMLPreElement>('#log');
 
 let projects: Project[] = [];
+let project: Project | null = null; // the open project; edits change its files in memory
+let activePath: string | null = null;
 let runner: BusyTexRunner | null = null;
-let pdfUrl: string | null = null;
+let compiling = false;
+
+const editor = new Editor(editorElement, (path, text) => {
+  const file = project?.files.find((f) => f.path === path);
+  if (file) file.content = text;
+});
+const pdfViewer = new PdfViewer(element<HTMLDivElement>('#pdf'));
 
 async function loadProjects(): Promise<void> {
   const binaryFiles: Record<string, Uint8Array> = {};
@@ -36,9 +51,63 @@ async function loadProjects(): Promise<void> {
     binaryFiles[path] = new Uint8Array(await (await fetch(url)).arrayBuffer());
   }
   projects = groupByProject('/test-docs', { ...textFiles, ...binaryFiles });
-  for (const project of projects) {
-    projectSelect.add(new Option(project.name, project.name));
+  for (const p of projects) projectSelect.add(new Option(p.name, p.name));
+  openProject(projectSelect.value);
+}
+
+function openProject(name: string): void {
+  project = projects.find((p) => p.name === name) ?? null;
+  if (!project) return;
+  editor.clear();
+  activePath = null;
+  element<HTMLDivElement>('#pdf').replaceChildren();
+  statusText.textContent = `Opened ${name}. Press Compile or Ctrl/Cmd+S.`;
+  openFile(MAIN_FILE);
+}
+
+function openFile(path: string): void {
+  const file = project?.files.find((f) => f.path === path);
+  if (!file) return;
+  activePath = path;
+  document.title = `${path.split('/').pop()} · Tilde`;
+
+  if (isTextFile(path) && typeof file.content === 'string') {
+    imagePreview.hidden = true;
+    editorElement.hidden = false;
+    editor.open(path, file.content);
+  } else {
+    editorElement.hidden = true;
+    imagePreview.hidden = false;
+    if (imagePreview.src) URL.revokeObjectURL(imagePreview.src);
+    const bytes = typeof file.content === 'string' ? new TextEncoder().encode(file.content) : file.content;
+    imagePreview.src = URL.createObjectURL(new Blob([bytes.slice()]));
+    imagePreview.alt = `No preview for ${path}`;
   }
+  renderTree();
+}
+
+function renderTree(): void {
+  const toList = (nodes: TreeNode[]): HTMLUListElement => {
+    const list = document.createElement('ul');
+    for (const node of nodes) {
+      const item = document.createElement('li');
+      if (node.children) {
+        const label = document.createElement('div');
+        label.className = 'folder';
+        label.textContent = `${node.name}/`;
+        item.append(label, toList(node.children));
+      } else {
+        const button = document.createElement('button');
+        button.textContent = node.name;
+        button.classList.toggle('active', node.path === activePath);
+        button.addEventListener('click', () => openFile(node.path));
+        item.append(button);
+      }
+      list.append(item);
+    }
+    return list;
+  };
+  treeView.replaceChildren(toList(buildTree(project?.files.map((f) => f.path) ?? [])));
 }
 
 // The engine is downloaded and started only once, on the first compile.
@@ -58,22 +127,22 @@ async function getRunner(): Promise<BusyTexRunner> {
 }
 
 async function compile(): Promise<void> {
-  const project = projects.find((p) => p.name === projectSelect.value);
-  const main = project?.files.find((f) => f.path === 'main.tex');
-  if (!project || !main || typeof main.content !== 'string') {
-    statusText.textContent = 'This project has no main.tex.';
+  if (compiling || !project) return;
+  const main = project.files.find((f) => f.path === MAIN_FILE);
+  if (!main || typeof main.content !== 'string') {
+    statusText.textContent = `This project has no ${MAIN_FILE}.`;
     return;
   }
 
+  compiling = true;
   compileButton.disabled = true;
-  logView.textContent = '';
   try {
     const engine = new PdfLatex(await getRunner());
     statusText.textContent = `Compiling ${project.name}…`;
     const started = performance.now();
     const result = await engine.compile({
       input: main.content,
-      mainTexPath: 'main.tex',
+      mainTexPath: MAIN_FILE,
       additionalFiles: project.files.filter((f) => f !== main),
       bibtex: project.files.some((f) => f.path.endsWith('.bib')),
       rerun: true, // run LaTeX again so references and citations resolve
@@ -83,19 +152,30 @@ async function compile(): Promise<void> {
     logView.textContent = result.log;
 
     if (result.success && result.pdf) {
-      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
-      pdfUrl = URL.createObjectURL(new Blob([result.pdf.slice()], { type: 'application/pdf' }));
-      pdfFrame.src = pdfUrl;
+      await pdfViewer.show(result.pdf);
       statusText.textContent = `Compiled ${project.name} in ${seconds} s.`;
     } else {
-      statusText.textContent = `Compile failed after ${seconds} s. See the log on the right.`;
+      logView.hidden = false;
+      statusText.textContent = `Compile failed after ${seconds} s. See the log.`;
     }
   } catch (error) {
     statusText.textContent = `Error: ${error instanceof Error ? error.message : String(error)}`;
   } finally {
+    compiling = false;
     compileButton.disabled = false;
   }
 }
 
 compileButton.addEventListener('click', () => void compile());
+logButton.addEventListener('click', () => { logView.hidden = !logView.hidden; });
+projectSelect.addEventListener('change', () => openProject(projectSelect.value));
+
+// Ctrl+S (Cmd+S on a Mac) compiles instead of opening the browser's "Save page" dialog.
+window.addEventListener('keydown', (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+    event.preventDefault();
+    void compile();
+  }
+});
+
 void loadProjects();

@@ -163,7 +163,7 @@ Mark the current milestone with **← current**. Update this list as work is com
 
 1. **Engine proof** ✓ done. All five test projects compile in the browser; tested by the owner.
    Choose the WASM TeX engine. Compare the realistic options on license, package coverage, maintenance activity and how package files are hosted, then recommend one to the owner. Compile all of `test-docs/` except `xetex/` in the browser and show the PDF. Report the engine's license so the owner can choose the project license.
-2. **Editor and preview**
+2. **Editor and preview** ✓ done, tested by the owner.
    CodeMirror editor beside the PDF viewer. Compile button and Ctrl/Cmd+S to compile. Multi-file projects held in memory. A file tree for switching files.
 3. **Google sign-in and Drive storage**
    Sign in with Google. Create a "LaTeX Projects" folder in Drive. Create, open and save projects there.

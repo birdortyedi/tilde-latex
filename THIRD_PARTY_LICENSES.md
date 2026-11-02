@@ -9,7 +9,16 @@ This file lists everything Tilde uses that was written by others.
 |---|---|---|---|---|
 | texlyre-busytex | 1.4.1 | AGPL-3.0-or-later | https://github.com/TeXlyre/texlyre-busytex | JavaScript API that starts the TeX engine and runs compiles |
 | TeXlyre BusyTeX engine files (`busytex.wasm`, `busytex.js`, `busytex_worker.js`, `busytex_pipeline.js`) | assets-v1.4.1 | AGPL-3.0 | https://github.com/TeXlyre/texlyre-busytex-build | The TeX engine compiled to WebAssembly. Downloaded with `npm run download-engine`, not committed |
+| codemirror | 6.0.2 | MIT | https://codemirror.net | The code editor |
+| @codemirror/language | 6.13.1 | MIT | https://codemirror.net | Language support for the editor |
+| @codemirror/legacy-modes | 6.5.5 | MIT | https://codemirror.net | LaTeX syntax highlighting (`stex` mode) |
+| pdfjs-dist | 6.5.438 | Apache-2.0 | https://mozilla.github.io/pdf.js/ | PDF viewer |
 | TeX Live 2026 package files (`texlive-basic.data`) | 2026 | Each package has its own license (mostly LPPL-1.3c, also GPL, OFL, public domain and others); see `LICENSE.TL` inside the bundle | https://tug.org/texlive/ | LaTeX classes, packages and fonts. Served unmodified |
+
+CodeMirror also brings in its own small helper packages, all MIT: `@codemirror/*`,
+`@lezer/*`, `@marijn/find-cluster-break`, `crelt`, `style-mod`, `w3c-keyname`.
+`pdfjs-dist` lists `@napi-rs/canvas` (MIT) as an optional dependency; it is only
+used when PDF.js runs in Node, never in the browser.
 
 ### Programs inside the engine
 
