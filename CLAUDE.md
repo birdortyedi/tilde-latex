@@ -144,7 +144,7 @@ Then stop and wait. Do not start the next milestone without being asked.
 - `npm test` — run the automated tests
 - `npm run lint` — check code style
 
-Known issue for Milestone 6: the Google Picker API key (`GOOGLE_API_KEY` in `src/config.ts`) has an API restriction but no website restriction, because the Picker rejected the key with `http://localhost:5173/*` set. Find a website restriction that works before the public release.
+Known issue for Milestone 6: the Google Picker API key (in `.env.local`, never committed; the deploy workflow must get it from a GitHub Actions secret) has an API restriction but no website restriction, because the Picker rejected the key with `http://localhost:5173/*` set. Find a website restriction that works before the public release.
 
 Known issue for Milestone 6: `npm run build` copies everything in `public/core/` (about 700 MB, including the unused `recommended` and `extra` bundles and biber) into `dist/`. Only the engine files and `texlive-basic` should be deployed.
 

@@ -29,7 +29,7 @@ function loadPicker(): Promise<void> {
 
 // Opens the Picker and resolves with the chosen files (none if cancelled).
 export async function pickDriveFiles(title: string): Promise<PickedFile[]> {
-  if (!GOOGLE_API_KEY) throw new Error('No Google API key yet. Add it to src/config.ts (see docs/google-picker-setup.md).');
+  if (!GOOGLE_API_KEY) throw new Error('No Google API key yet. Put it in the file .env.local and restart npm run dev (see docs/google-picker-setup.md).');
   const token = await getAccessToken();
   await loadPicker();
   return new Promise((resolve) => {

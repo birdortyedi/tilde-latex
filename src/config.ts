@@ -4,7 +4,8 @@
 export const GOOGLE_CLIENT_ID = '1028852536505-ev0lg2ibjhmrd3mtofr7gl829m7b0jsq.apps.googleusercontent.com';
 
 // For the Google Picker (see docs/google-picker-setup.md). The API key is
-// limited to the Picker and to Tilde's own web addresses, so it is safe to
-// commit too. The project number is the number the client ID starts with.
-export const GOOGLE_API_KEY = 'AIzaSyD_2iccjsSERg8FSJdfyR0Mm9c5ZL3v5Kc';
+// not kept in the repository: it comes from the file .env.local on this
+// computer, which Git ignores (and in Milestone 6 from a GitHub secret).
+// The project number is the number the client ID starts with.
+export const GOOGLE_API_KEY: string = import.meta.env.VITE_GOOGLE_API_KEY ?? '';
 export const GOOGLE_PROJECT_NUMBER = '1028852536505';

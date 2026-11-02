@@ -25,16 +25,22 @@ client ID (see `docs/google-setup.md`).
 5. Save, and copy the key (it starts with `AIza`).
 
 With the API restriction the key only works for the Picker, which is free. Like the client ID, it is visible in the page anyway,
-so it may be committed. Do **not** link a billing account to this
+so it is visible in the deployed page, but it is not kept in the repository. Do **not** link a billing account to this
 Google Cloud project; the Picker is free and needs none.
 
 ## 3. Put the key into Tilde
 
-In `src/config.ts`, paste the key between the quotes:
+Create a file named `.env.local` in the `tilde-latex` folder (next to
+`package.json`) with this line, then restart `npm run dev`:
 
-```ts
-export const GOOGLE_API_KEY = 'AIza...';
 ```
+VITE_GOOGLE_API_KEY=AIza...
+```
+
+Git ignores `.env.local`, so the key never goes to GitHub. Do **not** put
+the key into `src/config.ts`: once it is on GitHub, scanners flag it and
+anyone can copy it. (When Tilde is deployed in Milestone 6, the key comes
+from a GitHub Actions secret instead.)
 
 `GOOGLE_PROJECT_NUMBER` is already filled in: it is the number your client
 ID starts with. (You can check it on the Google Cloud **Dashboard**.)
