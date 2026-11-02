@@ -5,7 +5,7 @@ import { unzipProject } from './zipImport';
 const paths = (zip: Record<string, Uint8Array>) => unzipProject(zipSync(zip)).map((f) => f.path).sort();
 
 describe('unzipProject', () => {
-  it('reads an Overleaf-style zip: text as text, images as bytes', () => {
+  it('reads a typical project zip: text as text, images as bytes', () => {
     const files = unzipProject(zipSync({
       'main.tex': strToU8('\\documentclass{article}'),
       'figures/plot.png': new Uint8Array([137, 80, 78, 71]),

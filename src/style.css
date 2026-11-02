@@ -4,13 +4,13 @@
    file and keyboard focus. Amber marks warnings. */
 
 :root {
-  --chrome: #e8ebef;      /* header, file tree, status bar */
-  --editor: #f9fafb;      /* the source surface */
-  --table: #d9dde3;       /* behind the PDF pages */
-  --raised: #ffffff;      /* menus and dialogs */
+  --chrome: #e1e5ea;      /* header, file tree, status bar */
+  --editor: #f3f5f7;      /* the source surface */
+  --table: #cfd5dc;       /* behind the PDF pages */
+  --raised: #fbfcfd;      /* menus and dialogs */
   --ink: #1e2530;
-  --muted: #5b6573;
-  --rule: #cdd3db;
+  --muted: #56606e;
+  --rule: #c5ccd5;
   --hover: rgba(30, 37, 48, 0.07);
   --red: #d0312d;
   --green: #2f8132;
@@ -372,12 +372,18 @@ body.on-welcome #status, body.on-welcome #toggle-log { visibility: hidden; }
 /* Compile and the pane buttons do not apply on the project page. */
 body.on-projects #topbar .center { display: none; }
 
-.page-footer {
-  position: sticky; bottom: 0; display: flex; align-items: center; gap: 12px;
-  padding: 10px max(40px, calc((100% - 960px) / 2 + 40px));
-  border-top: 1px solid var(--rule); background: var(--editor);
+/* "Back to editor": a small floating button at the bottom of the page. */
+#back-bar { position: sticky; bottom: 20px; display: flex; justify-content: center; pointer-events: none; }
+#close-projects {
+  pointer-events: auto; display: inline-flex; align-items: center; gap: 10px; height: 38px; padding: 0 8px 0 16px;
+  border: 1px solid var(--rule); border-radius: 999px; background: var(--raised); color: var(--ink);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16); font-weight: 500;
 }
-.key-hint { color: var(--muted); font-size: 12px; }
+#close-projects:hover { background: var(--raised); border-color: var(--teal); }
+kbd {
+  padding: 1px 7px; border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 5px;
+  background: var(--editor); color: var(--muted); font: 500 11.5px/1.5 var(--ui);
+}
 
 /* Signed in: your projects, newest first, each row opens one. */
 #projects-signed-in { font-size: 14px; }
@@ -513,7 +519,7 @@ body.on-projects #topbar .center { display: none; }
   .project-edited { font-size: 12.5px; }
   .projects-tools { flex-wrap: wrap; }
   #project-search { width: 100%; }
-  .page-footer { padding: 10px 16px; }
+
   #topbar { gap: 8px; padding: 0 8px; }
   #show-projects .switch, #sign-in .long { display: none; }
   #sign-in .short { display: inline; }

@@ -91,7 +91,6 @@ const newProjectProblem = element<HTMLParagraphElement>('#new-project-problem');
 const templateChoices = element<HTMLDivElement>('#template-choices');
 const exampleList = element<HTMLUListElement>('#example-list');
 const backBar = element<HTMLDivElement>('#back-bar');
-const backName = element<HTMLSpanElement>('#back-name');
 const logButton = element<HTMLButtonElement>('#toggle-log');
 const statusText = element<HTMLSpanElement>('#status');
 const treeView = element<HTMLElement>('#tree');
@@ -193,6 +192,18 @@ function scheduleAutoCompile(): void {
   }, AUTO_COMPILE_DELAY);
 }
 
+// The account buttons in the top bar. Only one is ever shown: "Sign in"
+// when signed out, "Sign in again" when Google's sign-in ran out (the
+// project stays open and edits are kept), "Sign out" otherwise.
+type AccountState = 'signed-out' | 'signed-in' | 'expired';
+function showAccount(state: AccountState): void {
+  signInButton.hidden = state === 'signed-in';
+  signOutButton.hidden = state !== 'signed-in';
+  const [long, short] = signInButton.querySelectorAll('span');
+  long.textContent = state === 'expired' ? 'Sign in again' : 'Sign in with Google';
+  short.textContent = state === 'expired' ? 'Sign in again' : 'Sign in';
+}
+
 // The status bar shows the current state (the last compile, "Compiling…").
 // Results of the user's actions are notices instead (see notices.ts).
 function setStatus(text: string): void {
@@ -203,7 +214,7 @@ function setStatus(text: string): void {
 function showError(error: unknown): void {
   hideBusy();
   notify(error instanceof Error ? error.message : String(error), 'error');
-  if (error instanceof SignInNeededError) signInButton.hidden = false;
+  if (error instanceof SignInNeededError) showAccount('expired');
 }
 
 async function loadExamples(): Promise<void> {
@@ -266,7 +277,6 @@ function showProjectsPage(visible: boolean): void {
 function renderProjectsPage(): void {
   const signedIn = rootId !== null;
   backBar.hidden = !project;
-  backName.textContent = project?.name ?? '';
   // Signed out, the page welcomes the user and offers the examples next to it.
   welcome.hidden = signedIn;
   projectsPage.classList.toggle('welcoming', !signedIn);
@@ -323,7 +333,7 @@ function renderProjectList(): void {
     if (project?.driveId === row.id) {
       const badge = document.createElement('span');
       badge.className = 'badge';
-      badge.textContent = 'Open now';
+      badge.textContent = 'Current';
       name.append(badge);
     }
     const edited = document.createElement('span');
@@ -557,7 +567,7 @@ function showSyncState(): void {
   syncButton.className = sync.state;
   syncButton.title = sync.state === 'error' ? sync.errorMessage : '';
   syncButton.disabled = sync.state !== 'conflict';
-  if (sync.state === 'signin') signInButton.hidden = false;
+  if (sync.state === 'signin') showAccount('expired');
   // Open the dialog by itself once for each new conflict.
   if (!sync.conflicts.has(conflictShown)) conflictShown = '';
   const first = sync.conflicts.values().next().value;
@@ -619,7 +629,7 @@ async function handleSignIn(): Promise<void> {
       showError(error);
       return;
     }
-    signInButton.hidden = true;
+    showAccount('signed-in');
     notify('Signed in again. Saving continues.');
     void sync?.saveNow();
     return;
@@ -636,8 +646,7 @@ async function startDrive(): Promise<void> {
     await forgetOtherAccounts(browserDrafts, accountId)
       .catch((error: unknown) => console.warn('Could not clean up the copies kept in the browser', error));
     rootId = await findOrCreateRootFolder(googleDrive);
-    signInButton.hidden = true;
-    signOutButton.hidden = false;
+    showAccount('signed-in');
     await showDriveProjects();
     hideBusy();
   } catch (error) {
@@ -672,8 +681,7 @@ async function finishSignOut(): Promise<void> {
   rootId = null;
   accountId = '';
   driveFolders = [];
-  signInButton.hidden = false;
-  signOutButton.hidden = true;
+  showAccount('signed-out');
   showProject(null); // also stops saving the Drive project
   showProjectsPage(true);
   signOut();

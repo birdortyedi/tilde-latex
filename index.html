@@ -102,15 +102,16 @@
           <ul id="project-list" aria-label="Your projects"></ul>
           <div id="projects-empty" class="empty-state" hidden>
             <p class="empty-title">No projects yet</p>
-            <p>Start with a blank document or an example, or bring in a project you already have: a .zip file (for example from Overleaf) or files in your Google Drive.</p>
+            <p>Start with a blank document or an example, or bring in a project you already have: a .zip file of a LaTeX project, or files in your Google Drive.</p>
           </div>
           <p id="projects-no-match" class="no-match" hidden></p>
           <input id="zip-input" type="file" accept=".zip,application/zip" hidden />
         </div>
       </div>
-      <div class="page-footer" id="back-bar" hidden>
-        <button id="close-projects">Back to <span id="back-name"></span></button>
-        <span class="key-hint">or press Esc</span>
+      <div id="back-bar" hidden>
+        <button id="close-projects" title="Back to the project you have open">
+          <span aria-hidden="true">←</span> Back to editor <kbd>Esc</kbd>
+        </button>
       </div>
     </section>
     <main id="workspace">
