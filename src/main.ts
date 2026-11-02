@@ -16,16 +16,27 @@ import { ProjectSync, type SyncState } from './sync';
 import { cachedPackages, REMOTE_DIR, storeNewPackages } from './packageCache';
 import { lastLatexLog, parseLog, type LogProblem } from './logParser';
 import { unzipProject } from './zipImport';
+import { timeAgo } from './time';
 import { isGoogleDoc, pickDriveFiles, type PickedFile } from './picker';
 import { askConfirm, askText } from './ask';
-import { initLayout } from './layout';
+import { initLayout, type Pane } from './layout';
 import { initTheme } from './theme';
 import { openMenu } from './menu';
+import { hideBusy, notify, showBusy } from './notices';
 
 // Files that TeX Live's basic bundle lacks (TikZ, pgfplots, ...) are fetched
 // one at a time from TeXlyre's public package server.
 const PACKAGE_SERVER = 'https://texlive2026.texlyre.org';
 const LAST_PROJECT_KEY = 'tilde.lastProject'; // reopened after a reload
+// One line about each example, for the welcome page and the New project dialog.
+const EXAMPLE_NOTES: Record<string, string> = {
+  hello: 'The smallest document',
+  math: 'Equations and theorems with amsmath',
+  tikz: 'A TikZ figure and a pgfplots plot',
+  bibtex: 'Citations with natbib and BibTeX',
+  multifile: '\\input, \\include and an image in a folder',
+};
+
 const BLANK_PROJECT: ProjectFile[] = [{
   path: 'main.tex',
   content: '\\documentclass{article}\n\\begin{document}\nHello from Tilde.\n\\end{document}\n',
@@ -50,11 +61,16 @@ const projectsButton = element<HTMLButtonElement>('#show-projects');
 const projectNameLabel = element<HTMLSpanElement>('#project-name');
 const projectsPage = element<HTMLElement>('#projects-page');
 const projectsHint = element<HTMLParagraphElement>('#projects-hint');
-const projectRows = element<HTMLTableSectionElement>('#project-rows');
-const importZipButton = element<HTMLButtonElement>('#import-zip');
+const projectList = element<HTMLUListElement>('#project-list');
+const projectSearch = element<HTMLInputElement>('#project-search');
+const projectSort = element<HTMLSelectElement>('#project-sort');
+const projectsTools = element<HTMLDivElement>('#projects-tools');
+const projectsEmpty = element<HTMLDivElement>('#projects-empty');
+const projectsNoMatch = element<HTMLParagraphElement>('#projects-no-match');
+const signedInSection = element<HTMLDivElement>('#projects-signed-in');
+const importMenuButton = element<HTMLButtonElement>('#import-menu');
 const zipInput = element<HTMLInputElement>('#zip-input');
 const closeProjectsButton = element<HTMLButtonElement>('#close-projects');
-const importDriveButton = element<HTMLButtonElement>('#import-drive');
 const mainArea = element<HTMLElement>('main');
 const compileButton = element<HTMLButtonElement>('#compile');
 const syncButton = element<HTMLButtonElement>('#sync');
@@ -68,7 +84,12 @@ const signInButton = element<HTMLButtonElement>('#sign-in');
 const signOutButton = element<HTMLButtonElement>('#sign-out');
 const newProjectDialog = element<HTMLDialogElement>('#new-project-dialog');
 const newProjectName = element<HTMLInputElement>('#new-project-name');
-const newProjectTemplate = element<HTMLSelectElement>('#new-project-template');
+const newProjectForm = element<HTMLFormElement>('#new-project-form');
+const newProjectProblem = element<HTMLParagraphElement>('#new-project-problem');
+const templateChoices = element<HTMLDivElement>('#template-choices');
+const exampleList = element<HTMLUListElement>('#example-list');
+const backBar = element<HTMLDivElement>('#back-bar');
+const backName = element<HTMLSpanElement>('#back-name');
 const logButton = element<HTMLButtonElement>('#toggle-log');
 const statusText = element<HTMLSpanElement>('#status');
 const treeView = element<HTMLElement>('#tree');
@@ -81,6 +102,10 @@ const problemCount = element<HTMLButtonElement>('#problem-count');
 const pdfContainer = element<HTMLDivElement>('#pdf');
 const uploadInput = element<HTMLInputElement>('#upload-input');
 const problemList = element<HTMLUListElement>('#problems');
+const problemsPanel = element<HTMLElement>('#problems-panel');
+const problemsTitle = element<HTMLSpanElement>('#problems-title');
+const preview = element<HTMLElement>('#preview');
+const welcome = element<HTMLDivElement>('#welcome');
 
 let examples: Project[] = []; // the test-docs projects, shown while signed out
 let driveFolders: DriveFile[] = []; // the project folders in Drive, shown while signed in
@@ -93,6 +118,8 @@ let runner: BusyTexRunner | null = null;
 let compiling = false;
 let sync: ProjectSync | null = null; // saves the open project to Drive; null for examples
 let conflictShown = ''; // the file the conflict dialog was last opened for
+let braveHintShown = false;
+let welcomeShown = false;
 
 const editor = new Editor(editorElement, (path, text) => {
   const file = project?.files.find((f) => f.path === path);
@@ -104,8 +131,16 @@ const editor = new Editor(editorElement, (path, text) => {
 });
 const pdfViewer = new PdfViewer(pdfContainer);
 
+// The status bar shows the current state (the last compile, "Compiling…").
+// Results of the user's actions are notices instead (see notices.ts).
+function setStatus(text: string): void {
+  statusText.textContent = text;
+  statusText.title = text; // the full text, if the bar cuts it off
+}
+
 function showError(error: unknown): void {
-  statusText.textContent = `Error: ${error instanceof Error ? error.message : String(error)}`;
+  hideBusy();
+  notify(error instanceof Error ? error.message : String(error), 'error');
   if (error instanceof SignInNeededError) signInButton.hidden = false;
 }
 
@@ -115,8 +150,32 @@ async function loadExamples(): Promise<void> {
     binaryFiles[path] = new Uint8Array(await (await fetch(url)).arrayBuffer());
   }
   examples = groupByProject('/test-docs', { ...textFiles, ...binaryFiles });
-  for (const p of examples) newProjectTemplate.add(new Option(`Example: ${p.name}`, p.name));
-  showProject(examples[0] ?? null);
+  renderTemplateChoices();
+}
+
+// The "Start from" choices in the New project dialog: blank, or an example.
+function renderTemplateChoices(): void {
+  const choice = (value: string, name: string, note: string): HTMLLabelElement => {
+    const label = document.createElement('label');
+    label.className = 'choice';
+    const radio = document.createElement('input');
+    radio.type = 'radio';
+    radio.name = 'template';
+    radio.value = value;
+    radio.checked = value === '';
+    const title = document.createElement('span');
+    title.className = 'name';
+    title.textContent = name;
+    const detail = document.createElement('span');
+    detail.className = 'note';
+    detail.textContent = note;
+    label.append(radio, title, detail);
+    return label;
+  };
+  templateChoices.replaceChildren(
+    choice('', 'Blank', 'One main.tex to start from'),
+    ...examples.map((example) => choice(example.name, example.name, EXAMPLE_NOTES[example.name] ?? 'An example')),
+  );
 }
 
 // After sign-in: reopens the last project, or shows the project page.
@@ -129,7 +188,6 @@ async function showDriveProjects(): Promise<void> {
   else {
     showProject(null);
     showProjectsPage(true);
-    statusText.textContent = 'Signed in. Open a project or create one.';
   }
 }
 
@@ -139,45 +197,94 @@ function showProjectsPage(visible: boolean): void {
   projectsPage.hidden = !visible;
   mainArea.hidden = visible;
   document.body.classList.toggle('on-projects', visible);
+  if (!visible) document.body.classList.remove('on-welcome');
   if (visible) renderProjectsPage();
 }
 
 function renderProjectsPage(): void {
   const signedIn = rootId !== null;
-  for (const button of [newProjectButton, importZipButton, importDriveButton]) button.hidden = !signedIn;
-  closeProjectsButton.hidden = !project;
-  projectsHint.textContent = signedIn
-    ? (driveFolders.length === 0 ? 'You have no projects yet. Create one or import one.' : 'Your projects in the "LaTeX Projects" folder of your Google Drive.')
-    : 'Sign in with Google to keep your own projects in your Drive. Until then, try the examples.';
+  backBar.hidden = !project;
+  backName.textContent = project?.name ?? '';
+  // Signed out, the page welcomes the user and offers the examples next to it.
+  welcome.hidden = signedIn;
+  projectsPage.classList.toggle('welcoming', !signedIn);
+  document.body.classList.toggle('on-welcome', !signedIn);
+  // The tie draws itself only the first time the welcome is shown.
+  if (!signedIn && !welcomeShown) {
+    welcomeShown = true;
+    welcome.classList.add('first-visit');
+    setTimeout(() => welcome.classList.remove('first-visit'), 1500);
+  }
+  signedInSection.hidden = !signedIn;
+  exampleList.replaceChildren(...examples.map((example) => {
+    const button = document.createElement('button');
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = example.name;
+    const note = document.createElement('span');
+    note.className = 'note';
+    note.textContent = EXAMPLE_NOTES[example.name] ?? '';
+    button.append(name, note);
+    button.addEventListener('click', () => void openProjectById(example.name));
+    const item = document.createElement('li');
+    item.append(button);
+    return item;
+  }));
+  if (signedIn) renderProjectList();
+}
 
-  const rows = signedIn
-    ? [...driveFolders]
-      .map((folder) => ({ id: folder.id, name: folder.name, edited: lastEdited(folder) }))
-      .sort((a, b) => (b.edited?.getTime() ?? 0) - (a.edited?.getTime() ?? 0))
-    : examples.map((example) => ({ id: example.name, name: example.name, edited: undefined }));
+// The signed-in list: filtered by the search box, sorted by last edit or name.
+function renderProjectList(): void {
+  const count = driveFolders.length;
+  projectsHint.textContent = count === 0
+    ? 'Kept in the "LaTeX Projects" folder of your Google Drive.'
+    : `${count} ${count === 1 ? 'project' : 'projects'} in the "LaTeX Projects" folder of your Google Drive.`;
+  projectsEmpty.hidden = count > 0;
+  projectsTools.hidden = count === 0;
 
-  projectRows.replaceChildren(...rows.map((row) => {
+  const query = projectSearch.value.trim().toLowerCase();
+  const rows = driveFolders
+    .map((folder) => ({ id: folder.id, name: folder.name, edited: lastEdited(folder) }))
+    .filter((row) => row.name.toLowerCase().includes(query))
+    .sort(projectSort.value === 'name'
+      ? (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })
+      : (a, b) => (b.edited?.getTime() ?? 0) - (a.edited?.getTime() ?? 0));
+  projectsNoMatch.hidden = count === 0 || rows.length > 0;
+  projectsNoMatch.textContent = `No project matches "${projectSearch.value.trim()}".`;
+
+  projectList.replaceChildren(...rows.map((row) => {
     const open = document.createElement('button');
-    open.className = 'open-link';
-    open.textContent = row.name;
-    open.addEventListener('click', () => void openProjectById(row.id));
-    const actions = document.createElement('td');
-    if (signedIn) {
-      const rename = document.createElement('button');
-      rename.textContent = 'Rename';
-      rename.addEventListener('click', () => void renameProject(row.id, row.name));
-      const remove = document.createElement('button');
-      remove.textContent = 'Delete';
-      remove.addEventListener('click', () => void deleteProject(row.id, row.name));
-      actions.append(rename, remove);
+    open.className = 'project-open';
+    const name = document.createElement('span');
+    name.className = 'project-name';
+    name.textContent = row.name;
+    if (project?.driveId === row.id) {
+      const badge = document.createElement('span');
+      badge.className = 'badge';
+      badge.textContent = 'Open now';
+      name.append(badge);
     }
-    const tableRow = document.createElement('tr');
-    const nameCell = document.createElement('td');
-    nameCell.append(open);
-    const editedCell = document.createElement('td');
-    editedCell.textContent = row.edited?.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) ?? '';
-    tableRow.append(nameCell, editedCell, actions);
-    return tableRow;
+    const edited = document.createElement('span');
+    edited.className = 'project-edited';
+    edited.textContent = row.edited ? `Edited ${timeAgo(row.edited)}` : '';
+    edited.title = row.edited?.toLocaleString(undefined, { dateStyle: 'full', timeStyle: 'short' }) ?? '';
+    open.append(name, edited);
+    open.addEventListener('click', () => void (project?.driveId === row.id ? showProjectsPage(false) : openProjectById(row.id)));
+
+    const more = document.createElement('button');
+    more.className = 'project-more';
+    more.textContent = '⋯';
+    more.title = `Actions for ${row.name}`;
+    more.setAttribute('aria-haspopup', 'menu');
+    more.addEventListener('click', () => openMenu(more, [
+      { label: 'Open', action: () => void openProjectById(row.id) },
+      { label: 'Rename…', action: () => void renameProject(row.id, row.name) },
+      { label: 'Delete…', action: () => void deleteProject(row.id, row.name), danger: true },
+    ]));
+
+    const item = document.createElement('li');
+    item.append(open, more);
+    return item;
   }));
 }
 
@@ -191,16 +298,25 @@ async function openProjectById(id: string): Promise<void> {
   }
   const folder = driveFolders.find((f) => f.id === id);
   if (!folder) return;
-  statusText.textContent = `Opening ${folder.name} from Drive…`;
+  showBusy(`Opening ${folder.name}…`);
   try {
     // Save the project we leave. Whatever cannot be saved now stays in the
     // browser and is saved the next time that project is opened.
     await sync?.saveNow();
     showProject(await openProject(googleDrive, folder));
     showProjectsPage(false);
+    hideBusy();
   } catch (error) {
     showError(error);
   }
+}
+
+// What is wrong with a name for a new project, or null if it can be used.
+function projectNameProblem(name: string): string | null {
+  if (!name) return 'Type a name for the project.';
+  if (name.includes('/')) return 'A project name cannot contain "/".';
+  if (driveFolders.some((f) => f.name === name)) return `You already have a project called "${name}".`;
+  return null;
 }
 
 // Asks for a project name until it is usable. Returns null if the user cancels.
@@ -212,10 +328,7 @@ async function askProjectName(question: string, suggestion: string, unchanged?: 
     if (typed === null) return null;
     answer = typed.trim();
     if (answer === unchanged) return null;
-    const problem = !answer ? 'Type a name.'
-      : answer.includes('/') ? 'A project name cannot contain "/".'
-        : driveFolders.some((f) => f.name === answer) ? `A project called "${answer}" already exists.`
-          : null;
+    const problem = projectNameProblem(answer);
     if (!problem) return answer;
     message = `${problem}\n\n${question}`;
   }
@@ -236,7 +349,7 @@ async function renameProject(id: string, name: string): Promise<void> {
       projectNameLabel.textContent = newName;
     }
     await refreshProjects();
-    statusText.textContent = `Renamed "${name}" to "${newName}".`;
+    notify(`Renamed "${name}" to "${newName}".`);
   } catch (error) {
     showError(error);
   }
@@ -251,7 +364,7 @@ async function deleteProject(id: string, name: string): Promise<void> {
       if (draft.projectId === id) await browserDrafts.remove(draft);
     }
     await refreshProjects();
-    statusText.textContent = `Deleted "${name}". You can restore it from the trash in Google Drive.`;
+    notify(`Deleted "${name}". You can restore it from the trash in Google Drive for 30 days.`);
   } catch (error) {
     showError(error);
   }
@@ -260,14 +373,17 @@ async function deleteProject(id: string, name: string): Promise<void> {
 // Creates a project in Drive from files, shows upload progress, and opens it.
 async function createAndOpen(name: string, files: ProjectFile[]): Promise<void> {
   if (!rootId) return;
+  showBusy(`Creating ${name}…`);
   try {
     await sync?.saveNow();
     const created = await createProject(googleDrive, rootId, name, files, (done, total) => {
-      statusText.textContent = `Creating ${name} in Drive… (${done} of ${total} files)`;
+      showBusy(`Creating ${name}… ${done} of ${total} files`);
     });
     await refreshProjects();
     showProject(created);
     showProjectsPage(false);
+    hideBusy();
+    notify(`Created ${name}.`);
   } catch (error) {
     showError(error);
   }
@@ -276,10 +392,17 @@ async function createAndOpen(name: string, files: ProjectFile[]): Promise<void> 
 // Lets the user pick files in their Drive. Google Docs and the like are left
 // out (with a message), since they have no file content Tilde can use.
 async function pickUsableFiles(title: string): Promise<PickedFile[]> {
+  // Brave blocks the cross-site cookies Google's Picker needs; Google then opens
+  // the Picker in its own tab, from which the chosen files often never arrive.
+  if ('brave' in navigator && !braveHintShown) {
+    braveHintShown = true;
+    notify('Brave blocks the cookies Google\'s file picker needs. If it opens in a new tab and nothing arrives, '
+      + 'click the lion icon in the address bar and allow cross-site cookies for this site, then try again.', 'info');
+  }
   const picked = await pickDriveFiles(title);
   const skipped = picked.filter(isGoogleDoc);
   if (skipped.length > 0) {
-    statusText.textContent = `Left out (Google Docs, Sheets etc. cannot be used): ${skipped.map((f) => f.name).join(', ')}`;
+    notify(`Left out, because Google Docs and Sheets have no file Tilde can use: ${skipped.map((f) => f.name).join(', ')}`, 'info');
   }
   return picked.filter((f) => !isGoogleDoc(f));
 }
@@ -299,7 +422,7 @@ async function importFromDrive(): Promise<void> {
     const files: ProjectFile[] = [];
     for (const [index, file] of picked.entries()) {
       if (files.some((f) => f.path === file.name)) continue;
-      statusText.textContent = `Reading ${file.name} from Drive… (${index + 1} of ${picked.length})`;
+      showBusy(`Reading ${file.name}… ${index + 1} of ${picked.length}`);
       files.push({ path: file.name, content: toContent(file.name, await googleDrive.download(file.id)) });
     }
     await createAndOpen(name, files);
@@ -337,10 +460,7 @@ function showProject(newProject: Project | null): void {
   editor.clear();
   activePath = null;
   pdfViewer.clear();
-  const empty = document.createElement('p');
-  empty.className = 'empty';
-  empty.textContent = 'Compile to see the PDF here. Ctrl/Cmd+S saves and compiles.';
-  pdfContainer.replaceChildren(empty);
+  showEmptyPdf('Compile to see the PDF here. Ctrl/Cmd+S saves and compiles.');
   cursorPosition.textContent = '';
   showProblems([]);
   showSyncState();
@@ -349,7 +469,7 @@ function showProject(newProject: Project | null): void {
   if (project.driveId) {
     try { localStorage.setItem(LAST_PROJECT_KEY, project.driveId); } catch { /* storage blocked */ }
   }
-  statusText.textContent = `Opened ${project.name}. Press Compile or Ctrl/Cmd+S.`;
+  setStatus('');
   const main = findMainFile(project);
   if (main) openFile(main);
   void sync?.restoreDrafts(); // edits from last time that never reached Drive
@@ -429,7 +549,7 @@ async function handleSignIn(): Promise<void> {
     try {
       if (await googleDrive.whoAmI() !== accountId) {
         forgetToken();
-        statusText.textContent = 'That is a different Google account. Sign in with the one you used before, or sign out first.';
+        notify('That is a different Google account. Sign in with the one you used before, or sign out first.', 'error');
         return;
       }
     } catch (error) {
@@ -437,7 +557,7 @@ async function handleSignIn(): Promise<void> {
       return;
     }
     signInButton.hidden = true;
-    statusText.textContent = 'Signed in again.';
+    notify('Signed in again. Saving continues.');
     void sync?.saveNow();
     return;
   }
@@ -446,7 +566,7 @@ async function handleSignIn(): Promise<void> {
 
 // After sign-in, or after a reload while still signed in: show the user's projects.
 async function startDrive(): Promise<void> {
-  statusText.textContent = 'Loading your projects from Drive…';
+  showBusy('Loading your projects…');
   try {
     accountId = await googleDrive.whoAmI();
     // Unsaved edits left in this browser by another Google account are deleted.
@@ -456,6 +576,7 @@ async function startDrive(): Promise<void> {
     signInButton.hidden = true;
     signOutButton.hidden = false;
     await showDriveProjects();
+    hideBusy();
   } catch (error) {
     showError(error);
   }
@@ -490,8 +611,8 @@ async function finishSignOut(): Promise<void> {
   driveFolders = [];
   signInButton.hidden = false;
   signOutButton.hidden = true;
-  showProject(examples[0] ?? null); // also stops saving the Drive project
-  if (!projectsPage.hidden) renderProjectsPage();
+  showProject(null); // also stops saving the Drive project
+  showProjectsPage(true);
   signOut();
   try {
     await browserDrafts.clear();
@@ -499,14 +620,15 @@ async function finishSignOut(): Promise<void> {
   } catch (error) {
     console.warn('Could not clean up the copies kept in the browser', error);
   }
-  statusText.textContent = 'Signed out. Nothing of yours is kept in this browser.';
+  notify('Signed out. Nothing of yours is kept in this browser.');
 }
 
 // Runs when the "New project" dialog closes with the Create button.
 async function createFromDialog(): Promise<void> {
   if (!rootId) return;
   const name = newProjectName.value.trim();
-  const template = examples.find((p) => p.name === newProjectTemplate.value);
+  const chosen = templateChoices.querySelector<HTMLInputElement>('input:checked')?.value ?? '';
+  const template = examples.find((p) => p.name === chosen);
   await createAndOpen(name, template?.files ?? BLANK_PROJECT);
 }
 
@@ -555,7 +677,10 @@ function renderTree(): void {
           label.textContent = ' (main)';
           open.append(label);
         }
-        open.addEventListener('click', () => openFile(node.path));
+        open.addEventListener('click', () => {
+          openFile(node.path);
+          reveal('editor');
+        });
         row.append(open);
         if (sync) {
           const more = document.createElement('button');
@@ -618,13 +743,17 @@ async function askForPath(question: string, suggestion: string, unchanged?: stri
 }
 
 // Runs a file action with a status message. Returns false if it failed.
-async function runFileAction(description: string, action: () => Promise<void>): Promise<boolean> {
-  statusText.textContent = `${description}…`;
+// Runs a file action: "Deleting refs.bib…" in the status bar while it runs,
+// then a notice such as "Deleted refs.bib.". Returns false if it failed.
+async function runFileAction(working: string, done: string, action: () => Promise<void>): Promise<boolean> {
+  setStatus(`${working}…`);
   try {
     await action();
-    statusText.textContent = `${description}: done.`;
+    setStatus('');
+    notify(done);
     return true;
   } catch (error) {
+    setStatus('');
     showError(error);
     return false;
   } finally {
@@ -637,7 +766,7 @@ async function newFile(): Promise<void> {
   if (!projectSync) return;
   const folder = folderOf(activePath);
   const path = await askForPath('Name of the new file, e.g. method.tex or chapters/method.tex:', folder ? `${folder}/` : '');
-  if (path && await runFileAction(`Creating ${path}`, () => projectSync.addFile(path, ''))) openFile(path);
+  if (path && await runFileAction(`Creating ${path}`, `Created ${path}.`, () => projectSync.addFile(path, ''))) openFile(path);
 }
 
 // Files to add to the open project, from the computer or from Drive.
@@ -682,7 +811,7 @@ async function addFiles(files: IncomingFile[]): Promise<void> {
       showError(error);
       return;
     }
-    if (!await runFileAction(`Adding ${path}`, () => projectSync.addFile(path, content))) return;
+    if (!await runFileAction(`Adding ${path}`, `Added ${path}.`, () => projectSync.addFile(path, content))) return;
   }
 }
 
@@ -691,7 +820,7 @@ async function renameFile(from: string): Promise<void> {
   if (!projectSync) return;
   const to = await askForPath(`New name for ${from}. Change the folder part to move it, e.g. chapters/${from.split('/').pop()}:`, from, from);
   if (!to) return;
-  if (await runFileAction(`Renaming ${from}`, () => projectSync.moveFile(from, to))) {
+  if (await runFileAction(`Renaming ${from}`, `Renamed ${from} to ${to}.`, () => projectSync.moveFile(from, to))) {
     editor.rename(from, to);
     if (activePath === from) openFile(to);
   }
@@ -705,14 +834,14 @@ async function duplicateFile(original: string): Promise<void> {
   const suggestion = file.path.replace(/(\.[^./]+)?$/, (extension) => `-copy${extension}`);
   const path = await askForPath(`Name for the copy of ${file.path}:`, suggestion);
   const content = typeof file.content === 'string' ? file.content : file.content.slice();
-  if (path && await runFileAction(`Duplicating ${file.path}`, () => projectSync.addFile(path, content))) openFile(path);
+  if (path && await runFileAction(`Duplicating ${file.path}`, `Made ${path}, a copy of ${file.path}.`, () => projectSync.addFile(path, content))) openFile(path);
 }
 
 async function deleteFile(path: string): Promise<void> {
   const projectSync = sync;
   if (!projectSync) return;
   if (!await askConfirm(`Delete ${path}? It goes to the trash in your Google Drive, where you can restore it for 30 days.`, 'Delete')) return;
-  if (await runFileAction(`Deleting ${path}`, () => projectSync.deleteFile(path))) {
+  if (await runFileAction(`Deleting ${path}`, `Deleted ${path}. You can restore it from the trash in Google Drive for 30 days.`, () => projectSync.deleteFile(path))) {
     editor.forget(path);
     if (activePath !== path) return;
     activePath = null;
@@ -724,7 +853,37 @@ async function deleteFile(path: string): Promise<void> {
 
 async function setMainFile(path: string): Promise<void> {
   const projectSync = sync;
-  if (projectSync) await runFileAction(`Making ${path} the main file`, () => projectSync.setMainFile(path));
+  if (projectSync) await runFileAction(`Making ${path} the main file`, `Tilde now compiles ${path}.`, () => projectSync.setMainFile(path));
+}
+
+// A short text where the PDF goes, while there is none yet.
+function showEmptyPdf(text: string): void {
+  const empty = document.createElement('p');
+  empty.className = 'empty';
+  empty.textContent = text;
+  pdfContainer.replaceChildren(empty);
+}
+
+// The engine (about 125 MB) is downloaded on the first compile and comes from
+// the browser's cache after that; both report progress, shown where the PDF will appear.
+function showEngineDownload(percent: number): void {
+  let bar = pdfContainer.querySelector('progress');
+  if (!bar && percent >= 100) return; // loaded from the browser's cache, nothing to show
+  if (!bar) {
+    const box = document.createElement('div');
+    box.className = 'engine';
+    const title = document.createElement('p');
+    title.textContent = 'Loading the TeX engine. The first time this downloads about 125 MB; after that it comes from your browser\'s cache.';
+    bar = document.createElement('progress');
+    bar.max = 100;
+    const detail = document.createElement('p');
+    box.append(title, bar, detail);
+    pdfContainer.replaceChildren(box);
+  }
+  bar.value = percent;
+  const detail = bar.nextElementSibling;
+  if (detail) detail.textContent = `${Math.round(percent)}%`;
+  setStatus(`Loading the TeX engine… ${Math.round(percent)}%`);
 }
 
 // The engine is downloaded and started only once, on the first compile.
@@ -733,11 +892,9 @@ async function getRunner(): Promise<BusyTexRunner> {
   const newRunner = new BusyTexRunner({
     busytexBasePath: `${import.meta.env.BASE_URL}core/busytex`,
     preloadDataPackages: [`${import.meta.env.BASE_URL}core/busytex/texlive-basic.js`],
-    onDownloadProgress: ({ percent }) => {
-      statusText.textContent = `Downloading engine… ${Math.round(percent)}%`;
-    },
+    onDownloadProgress: ({ percent }) => showEngineDownload(percent),
   });
-  statusText.textContent = 'Starting engine…';
+  setStatus('Starting the TeX engine…');
   await newRunner.initialize(true); // true = run the engine in a Web Worker
   try {
     // Package files downloaded on earlier visits, so they are not downloaded again.
@@ -754,16 +911,19 @@ async function compile(): Promise<void> {
   const mainPath = findMainFile(project);
   const main = project.files.find((f) => f.path === mainPath);
   if (!main || typeof main.content !== 'string') {
-    statusText.textContent = 'This project has no .tex file with \\documentclass to compile.';
+    notify('This project has no .tex file with \\documentclass to compile.', 'error');
     return;
   }
 
   compiling = true;
-  compileButton.disabled = true;
+  compileButton.setAttribute('aria-busy', 'true');
+  compileButton.textContent = 'Compiling…';
+  preview.classList.add('compiling');
   try {
     const currentRunner = await getRunner();
+    if (pdfContainer.querySelector('.engine')) showEmptyPdf('');
     const engine = new PdfLatex(currentRunner);
-    statusText.textContent = `Compiling ${project.name}…`;
+    setStatus('Compiling…');
     const started = performance.now();
     const result = await engine.compile({
       input: main.content,
@@ -787,19 +947,22 @@ async function compile(): Promise<void> {
     const warnings = problems.filter((p) => p.level === 'warning').length;
     if (result.success && result.pdf) {
       await pdfViewer.show(result.pdf);
-      statusText.textContent = `Compiled ${project.name} in ${seconds} s`
-        + (warnings > 0 ? `, ${warnings} warning${warnings > 1 ? 's' : ''}.` : '.');
+      setStatus(`Compiled in ${seconds} s` + (warnings > 0 ? `, ${warnings} warning${warnings > 1 ? 's' : ''}` : ''));
     } else if (problems.some((p) => p.level === 'error')) {
-      statusText.textContent = `Compile failed after ${seconds} s. Click the error below to go to it.`;
+      setStatus(`Compile stopped at an error after ${seconds} s`);
+      if (!pdfContainer.querySelector('canvas')) showEmptyPdf('The PDF appears here once the error below is fixed.');
     } else {
       logView.hidden = false;
-      statusText.textContent = `Compile failed after ${seconds} s. See the log.`;
+      setStatus(`Compile failed after ${seconds} s. The log has the details.`);
     }
   } catch (error) {
+    setStatus('');
     showError(error);
   } finally {
     compiling = false;
-    compileButton.disabled = false;
+    compileButton.removeAttribute('aria-busy');
+    compileButton.textContent = 'Compile';
+    preview.classList.remove('compiling');
   }
 }
 
@@ -819,14 +982,18 @@ function showProblems(problems: LogProblem[]): void {
     const where = document.createElement('span');
     where.className = 'where';
     where.textContent = problem.file ? `${problem.file}${problem.line ? `:${problem.line}` : ''}` : '';
-    button.append(level, where, problem.message);
+    const message = document.createElement('span');
+    message.className = 'message';
+    message.textContent = problem.message;
+    button.append(level, where, message);
     button.disabled = !problem.file;
     button.addEventListener('click', () => jumpTo(problem));
     const item = document.createElement('li');
     item.append(button);
     return item;
   }));
-  problemList.hidden = problems.length === 0;
+  problemsPanel.hidden = problems.length === 0;
+  problemsTitle.textContent = `Problems (${problems.length})`;
   const errors = problems.filter((p) => p.level === 'error').length;
   const warnings = problems.filter((p) => p.level === 'warning').length;
   const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -849,14 +1016,20 @@ function showProblems(problems: LogProblem[]): void {
 function jumpTo(problem: LogProblem): void {
   if (!problem.file) return;
   openFile(problem.file);
+  reveal('editor');
   if (problem.line && problem.file === activePath) editor.goTo(problem.line);
 }
 
 compileButton.addEventListener('click', () => void compile());
 addFilesButton.addEventListener('click', showAddMenu);
-problemCount.addEventListener('click', () => { problemList.hidden = !problemList.hidden; });
+problemCount.addEventListener('click', () => {
+  problemsPanel.hidden = !problemsPanel.hidden;
+  if (!problemsPanel.hidden) reveal('pdf');
+});
+element<HTMLButtonElement>('#close-problems').addEventListener('click', () => { problemsPanel.hidden = true; });
+element<HTMLButtonElement>('#welcome-sign-in').addEventListener('click', () => void handleSignIn());
 initTheme(element<HTMLButtonElement>('#theme-toggle'));
-initLayout({
+const layout = initLayout({
   workspace: mainArea,
   side: element<HTMLElement>('#side'),
   sideHandle: element<HTMLElement>('#side-handle'),
@@ -874,11 +1047,23 @@ syncButton.addEventListener('click', showConflict);
 logButton.addEventListener('click', () => { logView.hidden = !logView.hidden; });
 projectsButton.addEventListener('click', () => showProjectsPage(true));
 closeProjectsButton.addEventListener('click', () => showProjectsPage(false));
-importDriveButton.addEventListener('click', () => void importFromDrive());
-importZipButton.addEventListener('click', () => {
-  zipInput.value = '';
-  zipInput.click();
+// Esc on the project page goes back to the open project (dialogs and menus close first).
+window.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || projectsPage.hidden || !project) return;
+  if (document.querySelector('dialog[open], .menu')) return;
+  showProjectsPage(false);
 });
+importMenuButton.addEventListener('click', () => openMenu(importMenuButton, [
+  { label: 'From a .zip file…', action: () => { zipInput.value = ''; zipInput.click(); } },
+  { label: 'From Google Drive…', action: () => void importFromDrive() },
+]));
+projectSearch.addEventListener('input', renderProjectList);
+projectSort.addEventListener('change', () => {
+  renderProjectList();
+  try { localStorage.setItem('tilde.projectSort', projectSort.value); } catch { /* not remembered */ }
+});
+try { projectSort.value = localStorage.getItem('tilde.projectSort') ?? 'edited'; } catch { /* default */ }
+if (!projectSort.value) projectSort.value = 'edited';
 zipInput.addEventListener('change', () => {
   const file = zipInput.files?.[0];
   if (file) void importZip(file);
@@ -887,9 +1072,23 @@ signInButton.addEventListener('click', () => void handleSignIn());
 signOutButton.addEventListener('click', () => void handleSignOut());
 newProjectButton.addEventListener('click', () => {
   newProjectName.value = '';
+  newProjectProblem.hidden = true;
+  renderTemplateChoices();
   newProjectDialog.returnValue = '';
   newProjectDialog.showModal();
 });
+// "Create project" keeps the dialog open, with a message, while the name is not usable.
+newProjectForm.addEventListener('submit', (event) => {
+  if (event.submitter?.getAttribute('value') !== 'create') return;
+  const problem = projectNameProblem(newProjectName.value.trim());
+  newProjectProblem.textContent = problem ?? '';
+  newProjectProblem.hidden = !problem;
+  if (problem) {
+    event.preventDefault();
+    newProjectName.focus();
+  }
+});
+newProjectName.addEventListener('input', () => { newProjectProblem.hidden = true; });
 newProjectDialog.addEventListener('close', () => {
   if (newProjectDialog.returnValue === 'create') void createFromDialog();
 });
@@ -933,6 +1132,12 @@ window.addEventListener('beforeunload', (event) => {
   if (sync?.hasUnsaved()) event.preventDefault();
 });
 
+// Makes sure a pane is shown (in a narrow window, switches to it).
+function reveal(pane: Pane): void {
+  layout.reveal(pane);
+}
+
 void loadExamples().then(() => {
   if (restoreSignIn()) void startDrive(); // still signed in from before a reload
+  else showProjectsPage(true); // the welcome page, with the examples
 });

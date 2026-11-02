@@ -1,6 +1,6 @@
 import { basicSetup } from 'codemirror';
 import { EditorState, type TransactionSpec } from '@codemirror/state';
-import { EditorView } from '@codemirror/view';
+import { EditorView, scrollPastEnd } from '@codemirror/view';
 import { lintGutter, setDiagnostics, type Diagnostic } from '@codemirror/lint';
 import { HighlightStyle, StreamLanguage, syntaxHighlighting } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
@@ -133,6 +133,7 @@ export class Editor {
         basicSetup,
         syntaxHighlighting(latexColours),
         look,
+        scrollPastEnd(), // the last line can scroll up, away from the bottom edge
         lintGutter(),
         EditorView.lineWrapping,
         StreamLanguage.define(stex),

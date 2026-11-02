@@ -3,16 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text x='16' y='26' font-size='32' font-weight='900' text-anchor='middle' font-family='sans-serif'>~</text></svg>" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>Tilde · LaTeX editor</title>
   </head>
   <body>
     <header id="topbar">
       <div class="left">
         <button id="show-projects" title="All projects">
-          <span class="tie" aria-hidden="true">~</span>
+          <svg class="brand-mark" viewBox="0 0 120 48" aria-hidden="true"><path d="M8 32 C 22 8, 44 6, 60 24 S 98 42, 112 16" /></svg>
           <span id="project-name">Tilde</span>
-          <span class="switch" aria-hidden="true">▾</span>
+          <span class="switch chevron" aria-hidden="true"></span>
         </button>
       </div>
       <div class="center">
@@ -25,33 +25,89 @@
       </div>
       <div class="right">
         <button id="theme-toggle" class="quiet"></button>
-        <button id="sign-in">Sign in with Google</button>
+        <button id="sign-in"><span class="long">Sign in with Google</span><span class="short">Sign in</span></button>
         <button id="sign-out" class="quiet" hidden>Sign out</button>
       </div>
     </header>
-    <dialog id="new-project-dialog">
-      <form method="dialog">
-        <label>Name <input id="new-project-name" required pattern="[^/]+" title="A name without slashes" /></label>
-        <label>Start from <select id="new-project-template"><option value="">Blank (one main.tex)</option></select></label>
-        <button value="create" class="primary">Create project</button>
-        <button value="cancel" formnovalidate>Cancel</button>
+    <dialog id="new-project-dialog" class="wide">
+      <form method="dialog" id="new-project-form">
+        <h2>New project</h2>
+        <label class="field">
+          <span>Name</span>
+          <input id="new-project-name" autocomplete="off" spellcheck="false" placeholder="e.g. thesis or icml-paper" />
+        </label>
+        <p id="new-project-problem" class="field-problem" hidden></p>
+        <fieldset class="choices">
+          <legend>Start from</legend>
+          <div id="template-choices"></div>
+        </fieldset>
+        <div class="actions">
+          <button value="create" class="primary">Create project</button>
+          <button value="cancel" formnovalidate>Cancel</button>
+        </div>
       </form>
     </dialog>
     <section id="projects-page" hidden>
       <div class="inner">
-        <h2>Projects</h2>
-        <p id="projects-hint"></p>
-        <div class="page-actions">
-          <button id="new-project" class="primary" hidden>New project</button>
-          <button id="import-zip" hidden title="For example, Overleaf's Menu, Download, Source">Import .zip</button>
-          <button id="import-drive" hidden title="Pick files in your Google Drive">Import from Drive</button>
-          <button id="close-projects" class="quiet" hidden>Back to the open project</button>
+        <div id="welcome" hidden>
+          <div class="welcome-main">
+            <p class="tie-figure" role="img" aria-label="Fig.~3">
+              <span class="tie-word">Fig.</span>
+              <svg class="tie-mark" viewBox="0 0 120 48" aria-hidden="true"><path d="M8 32 C 22 8, 44 6, 60 24 S 98 42, 112 16" /></svg>
+              <span class="tie-word">3</span>
+            </p>
+            <h1>Tilde keeps your work together.</h1>
+            <p class="welcome-lead">A LaTeX editor that runs in your browser and keeps your projects in your own Google Drive.</p>
+            <div class="welcome-actions">
+              <button id="welcome-sign-in" class="primary large">Sign in with Google</button>
+              <span>Free and open source</span>
+            </div>
+          </div>
+          <aside class="welcome-examples">
+            <h2>Try an example first</h2>
+            <p>No account needed. Changes to examples stay in this tab.</p>
+            <ul id="example-list"></ul>
+          </aside>
+          <ul class="welcome-facts">
+            <li><strong>In your browser</strong><span>Compiles on your own computer, with TikZ, pgfplots and BibTeX. Nothing goes to a server.</span></li>
+            <li><strong>In your Drive</strong><span>Saves as you type, and works on two computers without overwriting either.</span></li>
+            <li><strong>Only your files</strong><span>Tilde can only see the files it creates or the ones you pick.</span></li>
+          </ul>
+        </div>
+        <div id="projects-signed-in" hidden>
+          <div class="projects-head">
+            <div>
+              <h2 id="projects-title">Your projects</h2>
+              <p id="projects-hint"></p>
+            </div>
+            <div class="head-actions">
+              <button id="import-menu" aria-haspopup="menu" title="Start a project from files you already have">Import <span class="chevron" aria-hidden="true"></span></button>
+              <button id="new-project" class="primary">New project</button>
+            </div>
+          </div>
+          <div class="projects-tools" id="projects-tools">
+            <input id="project-search" type="search" placeholder="Search projects" aria-label="Search projects" autocomplete="off" />
+            <label class="sort">Sort by
+              <span class="select-box">
+                <select id="project-sort">
+                  <option value="edited">Last edited</option>
+                  <option value="name">Name</option>
+                </select>
+              </span>
+            </label>
+          </div>
+          <ul id="project-list" aria-label="Your projects"></ul>
+          <div id="projects-empty" class="empty-state" hidden>
+            <p class="empty-title">No projects yet</p>
+            <p>Start with a blank document or an example, or bring in a project you already have: a .zip file (for example from Overleaf) or files in your Google Drive.</p>
+          </div>
+          <p id="projects-no-match" class="no-match" hidden></p>
           <input id="zip-input" type="file" accept=".zip,application/zip" hidden />
         </div>
-        <table>
-          <thead><tr><th>Name</th><th>Last edited</th><th></th></tr></thead>
-          <tbody id="project-rows"></tbody>
-        </table>
+      </div>
+      <div class="page-footer" id="back-bar" hidden>
+        <button id="close-projects">Back to <span id="back-name"></span></button>
+        <span class="key-hint">or press Esc</span>
       </div>
     </section>
     <main id="workspace">
@@ -71,10 +127,20 @@
       <div id="pdf-handle" class="handle" role="separator" aria-orientation="vertical" aria-label="Resize the PDF" tabindex="0"></div>
       <section id="preview">
         <div id="pdf"></div>
-        <ul id="problems" hidden></ul>
+        <section id="problems-panel" hidden>
+          <div class="panel-head">
+            <span id="problems-title">Problems</span>
+            <button id="close-problems" class="quiet" title="Hide the list">Hide</button>
+          </div>
+          <ul id="problems"></ul>
+        </section>
         <pre id="log" hidden></pre>
       </section>
     </main>
+    <div id="busy" hidden role="status" aria-live="polite">
+      <div class="busy-box"><span class="spinner" aria-hidden="true"></span><span id="busy-text"></span></div>
+    </div>
+    <div id="toasts" aria-live="polite"></div>
     <footer id="statusbar">
       <button id="sync" hidden disabled></button>
       <span id="cursor-position"></span>
@@ -86,29 +152,37 @@
       <form method="dialog">
         <p id="ask-message"></p>
         <p><input id="ask-input" size="40" /></p>
-        <button value="ok" id="ask-ok" class="primary">OK</button>
-        <button value="cancel" formnovalidate>Cancel</button>
+        <div class="actions">
+          <button value="ok" id="ask-ok" class="primary">OK</button>
+          <button value="cancel" formnovalidate>Cancel</button>
+        </div>
       </form>
     </dialog>
     <dialog id="conflict-dialog">
+      <h2>Changed in two places</h2>
       <p>
         <strong id="conflict-path"></strong> was changed in Google Drive (maybe on your
         other computer) and also here. Which version should Tilde keep?
       </p>
       <form method="dialog">
-        <button value="mine" class="primary">Keep mine</button>
-        <button value="drive">Keep Drive's</button>
-        <button type="button" id="download-both" title="Saves both versions to your Downloads folder">Download both</button>
+        <div class="actions">
+          <button value="mine" class="primary">Keep mine</button>
+          <button value="drive">Keep Drive's</button>
+          <button type="button" id="download-both" title="Saves both versions to your Downloads folder">Download both</button>
+        </div>
       </form>
     </dialog>
     <dialog id="sign-out-dialog">
+      <h2>Not saved to Drive yet</h2>
       <p>These files have changes that are not in Google Drive yet:</p>
       <ul id="sign-out-files"></ul>
       <p>Signing out deletes them from this browser.</p>
       <form method="dialog">
-        <button value="download" class="primary">Download them, then sign out</button>
-        <button value="delete" class="danger">Sign out and delete them</button>
-        <button value="stay">Stay signed in</button>
+        <div class="actions">
+          <button value="download" class="primary">Download them, then sign out</button>
+          <button value="delete" class="danger">Sign out and delete them</button>
+          <button value="stay">Stay signed in</button>
+        </div>
       </form>
     </dialog>
     <!-- Google Identity Services, for "Sign in with Google" -->

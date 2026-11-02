@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_LAYOUT, gridColumns, normalize } from './layout';
+import { DEFAULT_LAYOUT, gridColumns, isVisible, normalize } from './layout';
 
 describe('layout', () => {
   it('shows files, editor and PDF with handles between them', () => {
@@ -18,5 +18,12 @@ describe('layout', () => {
     expect(normalize({})).toEqual(DEFAULT_LAYOUT);
     expect(normalize({ sideWidth: 5000, pdfShare: -1 })).toMatchObject({ sideWidth: 480, pdfShare: 0.15 });
     expect(normalize({ editor: false, pdf: false })).toMatchObject({ editor: true, pdf: false });
+  });
+
+  it('shows one pane at a time in a narrow window', () => {
+    const layout = { ...DEFAULT_LAYOUT, narrowPane: 'pdf' as const };
+    expect(gridColumns(layout, true)).toBe('minmax(0, 1fr)');
+    expect(['files', 'editor', 'pdf'].filter((pane) => isVisible(layout, pane as 'files', true))).toEqual(['pdf']);
+    expect(isVisible(layout, 'editor', false)).toBe(true); // the wide layout is kept for later
   });
 });

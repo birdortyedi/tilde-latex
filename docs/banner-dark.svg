@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 300" width="1240" height="300" role="img" aria-label="Tilde · LaTeX editor">
+  <style>
+    .ink { fill: #e3e7ed; }
+    .muted { fill: #98a2b0; }
+    .tie { fill: none; stroke: #3fb8c4; stroke-linecap: round; }
+    text { font-family: 'IBM Plex Sans', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; }
+  </style>
+  <!-- "Fig.~3": the tie (~) keeps the two together, which is where the name comes from. -->
+  <text class="ink" x="56" y="196" font-size="136" font-weight="700" letter-spacing="-4">Fig.</text>
+  <path class="tie" stroke-width="15" d="M318 168 C 350 114, 396 110, 432 150 S 514 190, 546 134" />
+  <text class="ink" x="566" y="196" font-size="136" font-weight="700">3</text>
+  <text class="ink" x="704" y="146" font-size="50" font-weight="700" letter-spacing="-1">Tilde</text>
+  <text class="muted" x="706" y="194" font-size="27">A LaTeX editor in your browser,</text>
+  <text class="muted" x="706" y="230" font-size="27">with your projects in your own Drive.</text>
+</svg>

@@ -1,6 +1,9 @@
 // The three panes: files | editor | PDF. Drag the handles between them to
 // resize, use the buttons in the top bar to hide or show them. The layout is
-// remembered in this browser.
+// remembered in this browser. In a narrow window there is room for only one
+// pane, so the buttons work like tabs instead.
+
+export type Pane = 'files' | 'editor' | 'pdf';
 
 export interface Layout {
   files: boolean;
@@ -8,9 +11,12 @@ export interface Layout {
   pdf: boolean;
   sideWidth: number; // pixels
   pdfShare: number; // the PDF's share of the space next to the files, 0 to 1
+  narrowPane: Pane; // the one pane shown in a narrow window
 }
 
-export const DEFAULT_LAYOUT: Layout = { files: true, editor: true, pdf: true, sideWidth: 220, pdfShare: 0.5 };
+export const DEFAULT_LAYOUT: Layout = { files: true, editor: true, pdf: true, sideWidth: 220, pdfShare: 0.5, narrowPane: 'editor' };
+export const NARROW_WIDTH = 900; // pixels; below this, one pane at a time
+const PANES: Pane[] = ['files', 'editor', 'pdf'];
 const SIDE_WIDTH = { min: 140, max: 480 };
 const PDF_SHARE = { min: 0.15, max: 0.85 };
 const HANDLE = 5; // pixels
@@ -25,11 +31,18 @@ export function normalize(stored: Partial<Layout>): Layout {
   layout.sideWidth = clamp(layout.sideWidth, SIDE_WIDTH);
   layout.pdfShare = clamp(layout.pdfShare, PDF_SHARE);
   if (!layout.editor && !layout.pdf) layout.editor = true;
+  if (!PANES.includes(layout.narrowPane)) layout.narrowPane = 'editor';
   return layout;
 }
 
+// Whether a pane is shown, in a wide or a narrow window.
+export function isVisible(layout: Layout, pane: Pane, narrow: boolean): boolean {
+  return narrow ? layout.narrowPane === pane : layout[pane];
+}
+
 // The CSS grid columns for the visible panes and the handles between them.
-export function gridColumns(layout: Layout): string {
+export function gridColumns(layout: Layout, narrow = false): string {
+  if (narrow) return 'minmax(0, 1fr)';
   const columns: string[] = [];
   if (layout.files) columns.push(`${layout.sideWidth}px`, `${HANDLE}px`);
   if (layout.editor && layout.pdf) {
@@ -47,24 +60,32 @@ export interface LayoutElements {
   editorPane: HTMLElement;
   pdfHandle: HTMLElement;
   preview: HTMLElement;
-  toggles: Record<'files' | 'editor' | 'pdf', HTMLButtonElement>;
+  toggles: Record<Pane, HTMLButtonElement>;
 }
 
-export function initLayout(elements: LayoutElements): void {
+export interface LayoutControl {
+  // Makes sure a pane is visible, e.g. the editor after clicking a file in a narrow window.
+  reveal(pane: Pane): void;
+}
+
+export function initLayout(elements: LayoutElements): LayoutControl {
   let layout = normalize(load());
+  const isNarrow = (): boolean => window.innerWidth < NARROW_WIDTH;
 
   const apply = (): void => {
-    elements.workspace.style.gridTemplateColumns = gridColumns(layout);
-    elements.side.hidden = !layout.files;
-    elements.sideHandle.hidden = !layout.files;
-    elements.editorPane.hidden = !layout.editor;
-    elements.pdfHandle.hidden = !(layout.editor && layout.pdf);
-    elements.preview.hidden = !layout.pdf;
-    for (const pane of ['files', 'editor', 'pdf'] as const) {
+    const narrow = isNarrow();
+    const shown = (pane: Pane): boolean => isVisible(layout, pane, narrow);
+    elements.workspace.style.gridTemplateColumns = gridColumns(layout, narrow);
+    elements.side.hidden = !shown('files');
+    elements.sideHandle.hidden = narrow || !layout.files;
+    elements.editorPane.hidden = !shown('editor');
+    elements.pdfHandle.hidden = narrow || !(layout.editor && layout.pdf);
+    elements.preview.hidden = !shown('pdf');
+    for (const pane of PANES) {
       const button = elements.toggles[pane];
-      button.setAttribute('aria-pressed', String(layout[pane]));
+      button.setAttribute('aria-pressed', String(shown(pane)));
       // The last visible one of editor and PDF cannot be hidden.
-      button.disabled = pane !== 'files' && layout[pane] && !layout[pane === 'editor' ? 'pdf' : 'editor'];
+      button.disabled = !narrow && pane !== 'files' && layout[pane] && !layout[pane === 'editor' ? 'pdf' : 'editor'];
     }
   };
 
@@ -72,13 +93,14 @@ export function initLayout(elements: LayoutElements): void {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(layout)); } catch { /* not remembered */ }
   };
 
-  for (const pane of ['files', 'editor', 'pdf'] as const) {
+  for (const pane of PANES) {
     elements.toggles[pane].addEventListener('click', () => {
-      layout = normalize({ ...layout, [pane]: !layout[pane] });
+      layout = normalize(isNarrow() ? { ...layout, narrowPane: pane } : { ...layout, [pane]: !layout[pane] });
       apply();
       save();
     });
   }
+  window.addEventListener('resize', apply);
 
   // Dragging a handle. Double-click puts it back where it started.
   const drag = (handle: HTMLElement, onMove: (x: number) => void, reset: () => void): void => {
@@ -133,6 +155,14 @@ export function initLayout(elements: LayoutElements): void {
   keys(elements.pdfHandle, (d) => { layout.pdfShare = clamp(layout.pdfShare - d * 0.03, PDF_SHARE); });
 
   apply();
+  return {
+    reveal(pane) {
+      if (isVisible(layout, pane, isNarrow())) return;
+      layout = normalize(isNarrow() ? { ...layout, narrowPane: pane } : { ...layout, [pane]: true });
+      apply();
+      save();
+    },
+  };
 }
 
 function load(): Partial<Layout> {

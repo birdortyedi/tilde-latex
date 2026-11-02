@@ -47,9 +47,11 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[]): void {
 
   document.body.append(menu);
   const box = anchor.getBoundingClientRect();
-  menu.style.top = `${box.bottom + 4}px`;
   menu.style.left = `${Math.min(box.left, window.innerWidth - 200)}px`;
   menu.showPopover();
+  // Open upwards if there is no room below.
+  const height = menu.offsetHeight;
+  menu.style.top = `${box.bottom + 4 + height > window.innerHeight ? box.top - height - 4 : box.bottom + 4}px`;
   open = menu;
   menu.querySelector<HTMLButtonElement>('button:enabled')?.focus();
 }
