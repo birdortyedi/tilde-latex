@@ -17,6 +17,9 @@
       </div>
       <div class="center">
         <button id="compile" class="primary" title="Ctrl/Cmd+S saves and compiles">Compile</button>
+        <label class="toggle" title="Compile by itself a moment after you stop typing">
+          <input type="checkbox" id="auto-compile" /> Auto
+        </label>
         <div class="pane-toggles" role="group" aria-label="Show or hide panes">
           <button id="toggle-files" aria-pressed="true" title="Show or hide the files">Files</button>
           <button id="toggle-editor" aria-pressed="true" title="Show or hide the source">Source</button>
@@ -126,6 +129,18 @@
       </div>
       <div id="pdf-handle" class="handle" role="separator" aria-orientation="vertical" aria-label="Resize the PDF" tabindex="0"></div>
       <section id="preview">
+        <div id="pdf-toolbar">
+          <div class="group" role="group" aria-label="Zoom">
+            <button id="zoom-out" class="quiet square" title="Zoom out (Ctrl/Cmd and −)" aria-label="Zoom out">−</button>
+            <button id="zoom-menu" class="quiet" aria-haspopup="menu" title="Choose a size"><span id="zoom-label">Fit width</span><span class="chevron" aria-hidden="true"></span></button>
+            <button id="zoom-in" class="quiet square" title="Zoom in (Ctrl/Cmd and +)" aria-label="Zoom in">+</button>
+          </div>
+          <label class="page-nav" id="page-nav" hidden>Page
+            <input id="page-number" inputmode="numeric" autocomplete="off" aria-label="Go to page" />
+            <span id="page-count"></span>
+          </label>
+          <button id="download-pdf" class="quiet" title="Save the PDF to your computer" disabled>Download</button>
+        </div>
         <div id="pdf"></div>
         <section id="problems-panel" hidden>
           <div class="panel-head">

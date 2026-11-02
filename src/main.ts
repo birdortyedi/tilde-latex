@@ -7,7 +7,8 @@ import { BusyTexRunner, PdfLatex } from 'texlyre-busytex';
 import { findMainFile, groupByProject, pathProblem, type Project, type ProjectFile } from './projects';
 import { buildTree, isTextFile, type TreeNode } from './fileTree';
 import { Editor, type LineMark } from './editor';
-import { PdfViewer } from './pdfViewer';
+import { PdfViewer, type PdfViewState } from './pdfViewer';
+import type { Zoom } from './pdfZoom';
 import { forgetToken, restoreSignIn, signIn, SignInNeededError, signOut } from './auth';
 import { googleDrive, type DriveFile } from './drive';
 import { createProject, findOrCreateRootFolder, lastEdited, listProjects, openProject } from './driveProjects';
@@ -126,10 +127,66 @@ const editor = new Editor(editorElement, (path, text) => {
   if (!file) return;
   file.content = text;
   sync?.edited(path);
+  scheduleAutoCompile();
 }, (line, column) => {
   cursorPosition.textContent = `Ln ${line}, Col ${column}`;
 });
-const pdfViewer = new PdfViewer(pdfContainer);
+const pdfViewer = new PdfViewer(pdfContainer, showPdfState);
+
+// The toolbar above the PDF: zoom, page number, auto-compile, download.
+const zoomMenuButton = element<HTMLButtonElement>('#zoom-menu');
+const zoomLabel = element<HTMLSpanElement>('#zoom-label');
+const zoomInButton = element<HTMLButtonElement>('#zoom-in');
+const zoomOutButton = element<HTMLButtonElement>('#zoom-out');
+const pageNav = element<HTMLLabelElement>('#page-nav');
+const pageNumber = element<HTMLInputElement>('#page-number');
+const pageCount = element<HTMLSpanElement>('#page-count');
+const autoCompileBox = element<HTMLInputElement>('#auto-compile');
+const downloadPdfButton = element<HTMLButtonElement>('#download-pdf');
+const ZOOM_KEY = 'tilde.pdfZoom';
+const AUTO_COMPILE_KEY = 'tilde.autoCompile';
+const AUTO_COMPILE_DELAY = 1500; // milliseconds after the last edit
+
+function showPdfState(state: PdfViewState): void {
+  zoomLabel.textContent = state.zoom === 'width' ? 'Fit width' : state.zoom === 'page' ? 'Fit page' : `${state.percent}%`;
+  const hasPdf = state.pages > 0;
+  for (const button of [zoomInButton, zoomOutButton, downloadPdfButton]) button.disabled = !hasPdf;
+  pageNav.hidden = !hasPdf;
+  if (document.activeElement !== pageNumber) pageNumber.value = String(state.page);
+  pageCount.textContent = `of ${state.pages}`;
+  try { localStorage.setItem(ZOOM_KEY, JSON.stringify(state.zoom)); } catch { /* not remembered */ }
+}
+
+function setZoom(zoom: Zoom): void {
+  pdfViewer.setZoom(zoom);
+}
+
+function showZoomMenu(): void {
+  const sizes = [0.5, 0.75, 1, 1.25, 1.5, 2];
+  openMenu(zoomMenuButton, [
+    { label: 'Fit width', action: () => setZoom('width') },
+    { label: 'Fit page', action: () => setZoom('page') },
+    ...sizes.map((size) => ({ label: `${Math.round(size * 100)}%`, action: () => setZoom(size) })),
+  ]);
+}
+
+function downloadPdf(): void {
+  const pdf = pdfViewer.current();
+  if (pdf && project) downloadFile(`${project.name}.pdf`, pdf);
+}
+
+// Auto-compile: compile by itself a moment after typing stops. A compile
+// that is asked for while one runs starts right after it.
+let autoCompileTimer: ReturnType<typeof setTimeout> | undefined;
+let compileAgain = false;
+function scheduleAutoCompile(): void {
+  if (!autoCompileBox.checked) return;
+  clearTimeout(autoCompileTimer);
+  autoCompileTimer = setTimeout(() => {
+    if (compiling) compileAgain = true;
+    else void compile();
+  }, AUTO_COMPILE_DELAY);
+}
 
 // The status bar shows the current state (the last compile, "Compiling…").
 // Results of the user's actions are notices instead (see notices.ts).
@@ -963,6 +1020,10 @@ async function compile(): Promise<void> {
     compileButton.removeAttribute('aria-busy');
     compileButton.textContent = 'Compile';
     preview.classList.remove('compiling');
+    if (compileAgain) {
+      compileAgain = false;
+      void compile();
+    }
   }
 }
 
@@ -1022,6 +1083,49 @@ function jumpTo(problem: LogProblem): void {
 
 compileButton.addEventListener('click', () => void compile());
 addFilesButton.addEventListener('click', showAddMenu);
+
+// PDF toolbar
+zoomMenuButton.addEventListener('click', showZoomMenu);
+zoomInButton.addEventListener('click', () => pdfViewer.stepZoom(1));
+zoomOutButton.addEventListener('click', () => pdfViewer.stepZoom(-1));
+downloadPdfButton.addEventListener('click', downloadPdf);
+pageNumber.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  pdfViewer.goToPage(Number(pageNumber.value) || 1);
+  pageNumber.blur();
+});
+pageNumber.addEventListener('focus', () => pageNumber.select());
+autoCompileBox.addEventListener('change', () => {
+  try { localStorage.setItem(AUTO_COMPILE_KEY, String(autoCompileBox.checked)); } catch { /* not remembered */ }
+  if (autoCompileBox.checked) void compile();
+});
+try {
+  autoCompileBox.checked = localStorage.getItem(AUTO_COMPILE_KEY) === 'true';
+  const zoom = JSON.parse(localStorage.getItem(ZOOM_KEY) ?? '"width"') as Zoom;
+  if (zoom === 'width' || zoom === 'page' || typeof zoom === 'number') pdfViewer.setZoom(zoom);
+} catch { /* defaults */ }
+
+// Ctrl/Cmd with + or − (or the mouse wheel) zooms the PDF while the pointer
+// is over it, instead of zooming the whole page. Ctrl/Cmd+0 fits the width.
+let pointerOverPdf = false;
+preview.addEventListener('pointerenter', () => { pointerOverPdf = true; });
+preview.addEventListener('pointerleave', () => { pointerOverPdf = false; });
+window.addEventListener('keydown', (event) => {
+  if (!(event.ctrlKey || event.metaKey) || !(pointerOverPdf || preview.contains(document.activeElement))) return;
+  const direction = event.key === '+' || event.key === '=' ? 1 : event.key === '-' ? -1 : 0;
+  if (event.key === '0') setZoom('width');
+  else if (direction) pdfViewer.stepZoom(direction);
+  else return;
+  event.preventDefault();
+});
+let lastWheelZoom = 0;
+pdfContainer.addEventListener('wheel', (event) => {
+  if (!(event.ctrlKey || event.metaKey)) return;
+  event.preventDefault();
+  if (Date.now() - lastWheelZoom < 150) return; // one step per flick of the wheel
+  lastWheelZoom = Date.now();
+  pdfViewer.stepZoom(event.deltaY < 0 ? 1 : -1);
+}, { passive: false });
 problemCount.addEventListener('click', () => {
   problemsPanel.hidden = !problemsPanel.hidden;
   if (!problemsPanel.hidden) reveal('pdf');

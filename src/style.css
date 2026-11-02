@@ -202,9 +202,25 @@ body.resizing iframe, body.resizing canvas { pointer-events: none; }
 #image-preview { max-width: 90%; margin: 24px auto; display: block; box-shadow: var(--shadow); }
 
 #preview { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--table); }
-#pdf { flex: 1; min-height: 0; overflow: auto; padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 20px; }
-#pdf canvas { background: #fff; box-shadow: var(--shadow); max-width: 100%; height: auto; }
-#pdf .empty { margin: auto; color: var(--muted); max-width: 32ch; text-align: center; }
+/* A plain column (not flex), so a zoomed-in page can scroll sideways from its left edge. */
+#pdf { position: relative; flex: 1; min-height: 0; overflow: auto; padding: 20px; }
+#pdf canvas { display: block; margin: 0 auto 20px; background: #fff; box-shadow: var(--shadow); }
+#pdf .empty, #pdf .engine { position: absolute; inset: 0; display: grid; place-content: center; }
+
+#pdf-toolbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+  min-height: 38px; padding: 4px 8px; border-bottom: 1px solid var(--rule); background: var(--chrome); font-size: 12.5px;
+}
+#pdf-toolbar .group { display: flex; align-items: center; gap: 2px; }
+#pdf-toolbar button { height: 28px; padding: 0 9px; color: var(--muted); }
+#pdf-toolbar button:hover:enabled { color: var(--ink); }
+#pdf-toolbar .square { width: 28px; padding: 0; font-size: 16px; }
+#zoom-menu { min-width: 86px; font-variant-numeric: tabular-nums; }
+.page-nav { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+#page-number { width: 44px; height: 26px; padding: 0 6px; text-align: center; font-variant-numeric: tabular-nums; }
+.toggle { display: flex; align-items: center; gap: 6px; padding: 0 6px 0 2px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.toggle input { accent-color: var(--teal); margin: 0; }
+#pdf .empty { margin: 0; padding: 20px; color: var(--muted); text-align: center; }
 
 #problems-panel { display: flex; flex-direction: column; max-height: 40%; background: var(--editor); border-top: 1px solid var(--rule); }
 .panel-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px 4px 12px; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--rule); }
@@ -414,7 +430,8 @@ body.on-projects #topbar .center { display: none; }
 
 /* First compile: the engine download */
 
-#pdf .engine { margin: auto; width: min(340px, 90%); color: var(--muted); }
+#pdf .engine { padding: 20px; color: var(--muted); }
+#pdf .engine > * { width: min(340px, 80vw); }
 #pdf .engine p { margin: 0 0 10px; }
 #pdf .engine p:first-child { color: var(--ink); }
 #pdf .engine progress { width: 100%; height: 6px; accent-color: var(--teal); }
