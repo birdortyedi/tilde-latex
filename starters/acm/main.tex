@@ -1,0 +1,50 @@
+% An ACM conference paper (acmart, sigconf). For a double-blind submission,
+% use [sigconf,review,anonymous].
+\documentclass[sigconf]{acmart}
+% Leave these out once the ACM rights form gives you the real lines.
+\setcopyright{none}
+\settopmatter{printacmref=false}
+\renewcommand\footnotetextcopyrightpermission[1]{}
+
+\begin{document}
+
+\title{Title of the Paper}
+
+\author{First Author}
+\affiliation{%
+  \institution{University}
+  \city{City}
+  \country{Country}}
+\email{first.author@example.org}
+
+\author{Second Author}
+\affiliation{%
+  \institution{Company}
+  \city{City}
+  \country{Country}}
+\email{second.author@example.org}
+
+\begin{abstract}
+One paragraph: the problem, what you did, and what you found.
+\end{abstract}
+
+\keywords{first keyword, second keyword}
+
+\maketitle
+
+\section{Introduction}
+Say why the problem matters and what this paper adds~\cite{knuth1984}.
+
+\section{Method}
+Describe the method.
+
+\section{Evaluation}
+Paste or drop a figure into the text to add it here.
+
+\section{Conclusion}
+What the results mean, and what comes next.
+
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{refs}
+
+\end{document}

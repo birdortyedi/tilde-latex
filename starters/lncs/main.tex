@@ -1,0 +1,43 @@
+% A Springer LNCS paper (llncs), the format of many computer science
+% proceedings. ECCV's author kit is based on it.
+\documentclass[runningheads]{llncs}
+\usepackage{graphicx}
+% llncs has its own maths set-up; amsmath would clash with its \vec.
+
+\begin{document}
+
+\title{Title of the Paper}
+\titlerunning{Short Title}
+
+\author{First Author\inst{1}\orcidID{0000-0000-0000-0000} \and
+Second Author\inst{2}}
+\authorrunning{F. Author and S. Author}
+
+\institute{University, City, Country\\
+\email{first.author@example.org} \and
+Company, City, Country\\
+\email{second.author@example.org}}
+
+\maketitle
+
+\begin{abstract}
+One paragraph: the problem, what you did, and what you found.
+\keywords{First keyword \and Second keyword \and Third keyword}
+\end{abstract}
+
+\section{Introduction}
+Say why the problem matters and what this paper adds~\cite{knuth1984}.
+
+\section{Method}
+Describe the method.
+
+\section{Experiments}
+Paste or drop a figure into the text to add it here.
+
+\section{Conclusion}
+What the results mean, and what comes next.
+
+\bibliographystyle{splncs04}
+\bibliography{refs}
+
+\end{document}

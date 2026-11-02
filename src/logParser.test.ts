@@ -78,6 +78,7 @@ describe('parseLog', () => {
       message: 'hyperref: Token not allowed in a PDF string (Unicode): removing `\\textbf\' on input line 7.',
       file: 'main.tex',
       line: 7,
+      hint: expect.stringContaining('printed page'),
     }]);
   });
 
@@ -180,6 +181,32 @@ describe('hints', () => {
     expect(problems).toHaveLength(1);
     expect(problems[0]).toMatchObject({ level: 'warning', message: 'The font lmroman10-regular has no П р, so they are left out of the PDF.' });
     expect(problems[0].hint).toContain('Noto Serif');
+  });
+
+  it('leaves out the epstopdf warning every graphicx document gets, and explains EPS images (real log)', () => {
+    const problems = parseLog(log(
+      'Package epstopdf Warning: Shell escape feature is not enabled.',
+      '',
+      "! Package pdftex.def Error: File `figures/plot-eps-converted-to.pdf' not found:",
+      '(pdftex.def)                using draft setting.',
+    ), files);
+    expect(problems).toHaveLength(1);
+    expect(problems[0].hint).toContain('Convert figures/plot.eps to PDF');
+  });
+
+  it('explains the review line-number warning and hyperref\'s PDF string warning (real logs)', () => {
+    const problems = parseLog(log(
+      'Package lineno Warning: Line number reference failed,',
+      '(lineno)                re-run to get it right.',
+      'Package hyperref Warning: Token not allowed in a PDF string (Unicode):',
+      "(hyperref)                removing `\\\\' on input line 110.",
+    ), files);
+    expect(problems.map((p) => p.hint)).toEqual([expect.stringContaining('final version'), expect.stringContaining('printed page')]);
+  });
+
+  it('explains the \\vec warning amsmath gives with llncs (real log)', () => {
+    const [problem] = parseLog(log('Package amsmath Warning: Unable to redefine math accent \\vec.'), files);
+    expect(problem.hint).toContain('harmless');
   });
 
   it('gives no hint to ordinary errors', () => {

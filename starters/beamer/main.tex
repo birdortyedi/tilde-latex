@@ -1,0 +1,59 @@
+% Slides for a talk (beamer). Each frame is one slide.
+\documentclass[aspectratio=169]{beamer}
+\usetheme{default}
+\usecolortheme{beaver}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+
+\title{Title of the Talk}
+\author{Your Name}
+\institute{University}
+\date{\today}
+
+\begin{document}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}{Outline}
+  \tableofcontents
+\end{frame}
+
+\section{Problem}
+
+\begin{frame}{The problem}
+  \begin{itemize}
+    \item What is hard about it
+    \item Why it matters
+    \pause
+    \item What we do about it
+  \end{itemize}
+\end{frame}
+
+\section{Method}
+
+\begin{frame}{Method}
+  \begin{columns}
+    \begin{column}{0.5\textwidth}
+      A short explanation on the left.
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \begin{block}{Main idea}
+        \[ y = Wx + b \]
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\section{Results}
+
+\begin{frame}{Results}
+  Paste or drop a figure into the text to add it here.
+\end{frame}
+
+\begin{frame}
+  \centering \Large Thank you. Questions?
+\end{frame}
+
+\end{document}

@@ -47,12 +47,18 @@ const PACKAGE_ERROR = /^(?:Fatal )?Package (\S+) Error:/;
 // XeLaTeX: a character the font does not have, so it is left out of the PDF.
 const MISSING_CHARACTER = /^Missing character: There is no (\S+)(?: \(U\+[0-9A-F]+\))? in font ([^:!/]+)/;
 const IGNORED_ERRORS = ['Emergency stop.', ' ==> Fatal error occurred, no output PDF file produced!'];
+// Warnings that say nothing useful in Tilde. epstopdf warns in every document
+// that loads graphicx, because it may not start programs; an EPS image then
+// fails with its own error, which gets a hint below.
+const IGNORED_WARNINGS = [/^epstopdf: Shell escape feature is not enabled\./];
 
 // Advice for problems that come from what Tilde cannot do, or that have a
 // common fix. The first pattern that matches a message gives its hint.
 const HINTS: [RegExp, (match: RegExpExecArray) => string][] = [
   [/minted executable is unavailable|shell[- ]escape|write18/i, () => 'Tilde runs in the browser and cannot start other '
     + 'programs, so packages that need shell escape, such as minted, do not work. For code listings, use the listings package.'],
+  [/File `([^']+)-eps-converted-to\.pdf' not found/, (m) => `Tilde cannot convert EPS images in the browser. Convert `
+    + `${m[1]}.eps to PDF and include that file instead.`],
   [/^LaTeX Error: File `([^']+)' not found/, (m) => `Tilde looked for ${m[1]} in the project and on the TeX Live `
     + 'package server. Check the spelling, or add the file to the project.'],
   [/The font "([^"]+)" cannot be found/, (m) => `"${m[1]}" is not one of the fonts that come with TeX Live. Tilde runs `
@@ -62,6 +68,13 @@ const HINTS: [RegExp, (match: RegExpExecArray) => string][] = [
     + 'Add \\usepackage{fontspec} to the preamble: Tilde then compiles with XeLaTeX, which handles any Unicode text.'],
   [/fontspec package requires either XeTeX or LuaTeX/, () => 'Remove the "% !TEX program = pdflatex" line from the main '
     + 'file, so Tilde compiles with XeLaTeX.'],
+  [/^lineno: Line number reference failed/, () => 'This comes from the line numbers the template prints on review '
+    + 'copies (the lineno package), and it stays however often you compile. The final version has no line numbers, '
+    + 'and no such warning.'],
+  [/^amsmath: Unable to redefine math accent \\vec/, () => 'The document class (llncs, for example) has its own '
+    + '\\vec, for bold vectors, so amsmath leaves it as it is. This is harmless: \\vec keeps the look of the class.'],
+  [/^hyperref: Token not allowed in a PDF string/, () => 'hyperref leaves this command out of the PDF\'s bookmarks or '
+    + 'title field only. The printed page is not affected.'],
   [/^The font .* has no /, () => 'Choose a font that has these characters with \\setmainfont, for example Noto Serif, '
     + 'which covers Latin, Greek and Cyrillic.'],
 ];
@@ -135,6 +148,7 @@ export function parseLog(log: string, files: ProjectFile[]): LogProblem[] {
         message += ` ${lines[i].slice(name.length + 2).trim()}`;
       }
       const at = /on input line (\d+)\.?$/.exec(message);
+      if (IGNORED_WARNINGS.some((pattern) => pattern.test(name ? `${name}: ${message}` : message))) continue;
       problems.push({
         level: 'warning',
         message: name ? `${name}: ${message}` : message,

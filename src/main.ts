@@ -11,7 +11,8 @@ import { PdfViewer, type PdfViewState } from './pdfViewer';
 import type { Zoom } from './pdfZoom';
 import { forgetToken, restoreSignIn, signIn, SignInNeededError, signOut } from './auth';
 import { googleDrive, type DriveFile } from './drive';
-import { createProject, lastEdited, listProjects, moveProjectsFolder, openProject, projectsFolder } from './driveProjects';
+import { createProject, lastEdited, listProjects, moveProjectsFolder, openProject, projectsFolder, setMainFile as saveMainFile } from './driveProjects';
+import { GROUPS, kitMainFile, STARTERS, type Kit, type StarterGroup } from './starters';
 import { browserDrafts, forgetOtherAccounts, type Draft } from './drafts';
 import { ProjectSync, type DriveChanges, type SyncState } from './sync';
 import { cachedPackages, REMOTE_DIR, storeNewPackages } from './packageCache';
@@ -58,6 +59,10 @@ const textFiles = import.meta.glob<string>('/test-docs/**/*.{tex,bib,sty,cls,bst
 const binaryFileUrls = import.meta.glob<string>('/test-docs/**/*.{png,jpg,jpeg,pdf}', {
   query: '?url', import: 'default', eager: true,
 });
+// The starters for new projects (papers, thesis, slides, letter, CV), in the same way.
+const starterProjects = groupByProject('/starters', import.meta.glob<string>('/starters/**/*.{tex,bib,sty,cls,bst}', {
+  query: '?raw', import: 'default', eager: true,
+}));
 
 function element<T extends HTMLElement>(selector: string): T {
   const found = document.querySelector<T>(selector);
@@ -96,6 +101,12 @@ const newProjectName = element<HTMLInputElement>('#new-project-name');
 const newProjectForm = element<HTMLFormElement>('#new-project-form');
 const newProjectProblem = element<HTMLParagraphElement>('#new-project-problem');
 const templateChoices = element<HTMLDivElement>('#template-choices');
+const starterGroups = element<HTMLDivElement>('#starter-groups');
+const kitSteps = element<HTMLDivElement>('#kit-steps');
+const kitLink = element<HTMLAnchorElement>('#kit-link');
+const kitFind = element<HTMLSpanElement>('#kit-find');
+const kitInput = element<HTMLInputElement>('#kit-input');
+const createProjectButton = element<HTMLButtonElement>('#create-project');
 const exampleList = element<HTMLUListElement>('#example-list');
 const backBar = element<HTMLDivElement>('#back-bar');
 const logButton = element<HTMLButtonElement>('#toggle-log');
@@ -401,8 +412,35 @@ async function loadExamples(): Promise<void> {
   renderTemplateChoices();
 }
 
-// The "Start from" choices in the New project dialog: blank, or an example.
+// The "Start from" part of the New project dialog: the kinds of starting
+// points on the left, the ones of the chosen kind as cards on the right.
+// Choosing a kind chooses its first card, so what Create makes is always in view.
+// A card's value: "blank", "starter:ieee" or "example:hello".
+let starterGroup: StarterGroup = 'blank';
+let chosenTemplate = 'blank';
+
+function chosenKit(): Kit | undefined {
+  return STARTERS.find((s) => `starter:${s.id}` === chosenTemplate)?.kit;
+}
+
 function renderTemplateChoices(): void {
+  starterGroups.replaceChildren(...GROUPS.map((group) => {
+    const tab = document.createElement('button');
+    tab.type = 'button';
+    tab.setAttribute('role', 'tab');
+    tab.setAttribute('aria-selected', String(group.id === starterGroup));
+    tab.textContent = group.label;
+    tab.addEventListener('click', () => {
+      starterGroup = group.id;
+      chosenTemplate = '';
+      renderTemplateChoices();
+    });
+    return tab;
+  }));
+  const cards: [string, string, string][] = starterGroup === 'blank' ? [['blank', 'Blank', 'One main.tex to start from']]
+    : starterGroup === 'examples' ? examples.map((e) => [`example:${e.name}`, e.name, EXAMPLE_NOTES[e.name] ?? 'An example'])
+    : STARTERS.filter((s) => s.group === starterGroup).map((s) => [`starter:${s.id}`, s.name, s.note]);
+  if (!cards.some(([value]) => value === chosenTemplate)) chosenTemplate = cards[0]?.[0] ?? 'blank';
   const choice = (value: string, name: string, note: string): HTMLLabelElement => {
     const label = document.createElement('label');
     label.className = 'choice';
@@ -410,7 +448,11 @@ function renderTemplateChoices(): void {
     radio.type = 'radio';
     radio.name = 'template';
     radio.value = value;
-    radio.checked = value === '';
+    radio.checked = value === chosenTemplate;
+    radio.addEventListener('change', () => {
+      chosenTemplate = value;
+      showKitSteps();
+    });
     const title = document.createElement('span');
     title.className = 'name';
     title.textContent = name;
@@ -420,10 +462,20 @@ function renderTemplateChoices(): void {
     label.append(radio, title, detail);
     return label;
   };
-  templateChoices.replaceChildren(
-    choice('', 'Blank', 'One main.tex to start from'),
-    ...examples.map((example) => choice(example.name, example.name, EXAMPLE_NOTES[example.name] ?? 'An example')),
-  );
+  templateChoices.replaceChildren(...cards.map(([value, name, note]) => choice(value, name, note)));
+  showKitSteps();
+}
+
+// For a conference: the two steps to get its official kit, and Create becomes "Choose the .zip…".
+function showKitSteps(): void {
+  const starter = STARTERS.find((s) => `starter:${s.id}` === chosenTemplate);
+  const kit = starter?.kit;
+  kitSteps.hidden = !kit;
+  createProjectButton.textContent = kit ? 'Choose the .zip…' : 'Create project';
+  if (!starter || !kit) return;
+  kitLink.href = kit.page;
+  kitLink.textContent = `open the ${starter.name} page`;
+  kitFind.textContent = `choose ${kit.find}`;
 }
 
 // After sign-in: reopens the last project, or shows the project page.
@@ -630,7 +682,7 @@ async function deleteProject(id: string, name: string): Promise<void> {
 }
 
 // Creates a project in Drive from files, shows upload progress, and opens it.
-async function createAndOpen(name: string, files: ProjectFile[]): Promise<void> {
+async function createAndOpen(name: string, files: ProjectFile[], mainFile?: string): Promise<void> {
   if (!rootId) return;
   showBusy(`Creating ${name}…`);
   try {
@@ -638,6 +690,7 @@ async function createAndOpen(name: string, files: ProjectFile[]): Promise<void> 
     const created = await createProject(googleDrive, rootId, name, files, (done, total) => {
       showBusy(`Creating ${name}… ${done} of ${total} files`);
     });
+    if (mainFile && mainFile !== findMainFile(created)) await saveMainFile(googleDrive, created, mainFile);
     await refreshProjects();
     showProject(created);
     showProjectsPage(false);
@@ -994,9 +1047,29 @@ async function finishSignOut(): Promise<void> {
 async function createFromDialog(): Promise<void> {
   if (!rootId) return;
   const name = newProjectName.value.trim();
-  const chosen = templateChoices.querySelector<HTMLInputElement>('input:checked')?.value ?? '';
-  const template = examples.find((p) => p.name === chosen);
+  const [kind, id] = chosenTemplate.split(':');
+  const template = kind === 'starter' ? starterProjects.find((p) => p.name === id)
+    : kind === 'example' ? examples.find((p) => p.name === id) : undefined;
   await createAndOpen(name, template?.files ?? BLANK_PROJECT);
+}
+
+// "Choose the .zip…": makes the project from a conference's official kit.
+async function createFromKit(file: File): Promise<void> {
+  const starter = STARTERS.find((s) => `starter:${s.id}` === chosenTemplate);
+  const kit = starter?.kit;
+  if (!starter || !kit) return;
+  let files: ProjectFile[];
+  try {
+    files = unzipProject(new Uint8Array(await file.arrayBuffer()));
+  } catch {
+    showError(new Error(`${file.name} is not a .zip file Tilde can read.`));
+    return;
+  }
+  if (!files.some((f) => kit.styleFile.test(f.path))
+    && !await askConfirm(`${file.name} does not look like the ${starter.name} author kit: it has no ${starter.name} style file. Make the project anyway?`, 'Make it anyway')) return;
+  const name = newProjectName.value.trim();
+  newProjectDialog.close();
+  await createAndOpen(name, files, kitMainFile(kit, files.map((f) => f.path)));
 }
 
 function openFile(path: string): void {
@@ -1744,6 +1817,8 @@ signOutButton.addEventListener('click', () => void handleSignOut());
 newProjectButton.addEventListener('click', () => {
   newProjectName.value = '';
   newProjectProblem.hidden = true;
+  starterGroup = 'blank';
+  chosenTemplate = 'blank';
   renderTemplateChoices();
   newProjectDialog.returnValue = '';
   newProjectDialog.showModal();
@@ -1757,7 +1832,15 @@ newProjectForm.addEventListener('submit', (event) => {
   if (problem) {
     event.preventDefault();
     newProjectName.focus();
+  } else if (chosenKit()) {
+    event.preventDefault(); // the dialog stays open while the .zip is chosen
+    kitInput.value = '';
+    kitInput.click();
   }
+});
+kitInput.addEventListener('change', () => {
+  const file = kitInput.files?.[0];
+  if (file) void createFromKit(file);
 });
 newProjectName.addEventListener('input', () => { newProjectProblem.hidden = true; });
 newProjectDialog.addEventListener('close', () => {

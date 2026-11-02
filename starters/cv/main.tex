@@ -1,0 +1,31 @@
+% A CV (moderncv). Styles: classic, casual, banking, oldstyle, fancy.
+\documentclass[11pt,a4paper,sans]{moderncv}
+\moderncvstyle{classic}
+\moderncvcolor{blue}
+\usepackage[scale=0.8]{geometry}
+\usepackage{lmodern} % fonts in every size, so the name is not scaled from a nearby one
+
+\name{Your}{Name}
+\title{Researcher}
+\address{Department, University}{City, Country}
+\email{your.name@example.org}
+\homepage{example.org}
+
+\begin{document}
+\makecvtitle
+
+\section{Education}
+\cventry{2022--now}{PhD in Computer Science}{University}{City}{}{Thesis: Title of the thesis.}
+\cventry{2020--2022}{MSc in Computer Science}{University}{City}{}{}
+
+\section{Experience}
+\cventry{2021--2022}{Research Intern}{Company}{City}{}{What you worked on, in one line.}
+
+\section{Publications}
+\cvitem{2025}{F. Author and S. Author. \emph{Title of the paper}. Conference, 2025.}
+
+\section{Skills}
+\cvitem{Programming}{Python, C++}
+\cvitem{Languages}{English (fluent), another language (good)}
+
+\end{document}

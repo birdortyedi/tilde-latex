@@ -382,8 +382,22 @@ dialog h2 { margin: 0 0 4px; font-size: 17px; font-weight: 600; }
 .field-problem { margin: -4px 0 0; color: var(--red); font-size: 12.5px; }
 .choices { margin: 0; padding: 0; border: none; min-width: 0; }
 .choices legend { padding: 0; margin-bottom: 6px; font-weight: 500; }
+/* New project: the kinds of starting points on the left, their cards on the right. */
+dialog.starters { width: min(880px, 94vw); }
+.starter-picker { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 16px; min-height: 300px; }
+#starter-groups { display: flex; flex-direction: column; gap: 2px; padding-right: 12px; border-right: 1px solid var(--rule); }
+#starter-groups button {
+  border: none; background: none; text-align: left; padding: 7px 10px; border-radius: 5px; color: var(--muted);
+}
+#starter-groups button:hover { background: var(--hover); color: var(--ink); }
+#starter-groups button[aria-selected='true'] { background: var(--hover); color: var(--ink); font-weight: 600; box-shadow: inset 2px 0 0 var(--teal); }
+.starter-body { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 /* Equal cards: three per row, every row as tall as the tallest card. */
 #template-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: 10px; }
+#kit-steps { padding: 12px 16px; border: 1px solid var(--rule); border-radius: 8px; background: var(--editor); font-size: 13px; }
+#kit-steps ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+#kit-steps p { margin: 8px 0 0; color: var(--muted); font-size: 12.5px; }
+#kit-steps a { color: var(--teal); font-weight: 500; }
 /* A template choice: the chosen one gets the teal box. */
 .choice {
   display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto 1fr; column-gap: 10px; row-gap: 3px;
@@ -394,6 +408,12 @@ dialog h2 { margin: 0 0 4px; font-size: 17px; font-weight: 600; }
 .choice input { margin: 2px 0 0; accent-color: var(--teal); }
 .choice .name { font-weight: 600; }
 .choice .note { grid-column: 2; color: var(--muted); font-size: 12.5px; line-height: 1.4; }
+@media (max-width: 720px) {
+  .starter-picker { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+  #starter-groups { flex-direction: row; overflow-x: auto; padding: 0 0 8px; border-right: none; border-bottom: 1px solid var(--rule); }
+  #starter-groups button { white-space: nowrap; }
+  #starter-groups button[aria-selected='true'] { box-shadow: inset 0 -2px 0 var(--teal); }
+}
 @media (max-width: 640px) { #template-choices { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 420px) { #template-choices { grid-template-columns: minmax(0, 1fr); grid-auto-rows: auto; } .choice { min-height: 0; } }
 

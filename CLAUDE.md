@@ -32,9 +32,9 @@ The project owner is not a professional web developer. They will test every chan
 - Clickable error messages that jump to the file and line
 - Autosave to Google Drive, with conflict detection between devices
 - File history through Drive's own version history (no history system of our own). A "safe copy" per file and editing session: Tilde asks Drive to keep the opened version forever and offers it in the file menu. Drive cannot un-keep a version, and Tilde never deletes one (decided before Milestone 6)
+- Project starters in the New project dialog, in groups (decided before Milestone 6): IEEE, ACM, Springer LNCS, thesis, beamer slides, letter and CV in `starters/`. CVPR, NeurIPS, ICML and ECCV are a guided import of the official author kit `.zip`, because their style files have no license that lets Tilde ship them. Update the kit links in `src/starters.ts` once a year.
 
 **Possible later, only when the owner asks:**
-- Project templates
 - Offline editing with sync on reconnect
 
 **Out of scope, do not build or suggest:**
@@ -158,6 +158,8 @@ Keep a folder `test-docs/` with small LaTeX projects that every engine change mu
 - `biblatex/` — biblatex with Biber
 - `multifile/` — `\input`, `\include`, an image in a subfolder
 - `xetex/` — Unicode text and TeX Live's OpenType fonts with XeLaTeX
+
+The starters in `starters/` (shown in the New project dialog) must compile too.
 
 ## Milestones
 

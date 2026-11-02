@@ -17,7 +17,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/editor-dark.png">
-    <img src="docs/screenshots/editor-light.png" alt="Tilde with a short paper: the file tree and outline on the left, the LaTeX source in the middle, and the compiled PDF with a TikZ figure on the right" width="900">
+    <img src="docs/screenshots/editor-light.png" alt="Tilde with a CVPR paper from the official author kit: the kit's files and the outline on the left, the introduction in the middle, and the compiled two-column PDF with review line numbers on the right" width="900">
   </picture>
 </p>
 
@@ -28,6 +28,13 @@
 In LaTeX, a tilde (`~`) is a space that never breaks: `Fig.~3` keeps "Fig." and "3" on the same line. Tilde does the same for your work: your source, your PDF and your files stay together, on your own computer and in your own Drive.
 
 It covers what a researcher writing a paper, a thesis or TikZ figures needs, with nothing in between you and your files.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/welcome-dark.png">
+    <img src="docs/screenshots/welcome-light.png" alt="Tilde's welcome page: Fig.~3 with the tilde drawn as the logo, a sign-in button, and the examples to try" width="900">
+  </picture>
+</p>
 
 ## What works
 
@@ -51,7 +58,7 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - TikZ, pgfplots, BibTeX, natbib, biblatex with Biber, and an index with `\makeindex`
 - Packages beyond the basic set are fetched once and kept, so later compiles work offline
 - Optional auto-compile a moment after you stop typing
-- Errors and warnings in a list and as icons next to the line numbers; click one to jump to the file and line. Common problems (a font that is not in TeX Live, characters a font lacks, `minted`) come with a hint on what to do
+- Errors and warnings in a list and as icons next to the line numbers; click one to jump to the file and line. Common problems (a font that is not in TeX Live, characters a font lacks, EPS images, `minted`) come with a hint on what to do
 - The TeX engine starts loading as soon as you open a project, so the first compile waits less
 - Jump between source and PDF (SyncTeX): double-click the PDF to go to its line in the source, or press Ctrl/Cmd+Shift+Enter (or the crosshair button) to see the cursor's line in the PDF
 - Select and copy text in the PDF, and find it with your browser's search
@@ -68,14 +75,16 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 **Projects**
 - Try it without signing in: seven examples (a minimal document, maths, TikZ and pgfplots, BibTeX with natbib, biblatex with Biber, a multi-file project, and Unicode text with XeLaTeX)
 - A project is a normal folder in your Drive, inside a projects folder that you can rename, move, or swap for another one
-- Start blank or from an example, or import a `.zip` or files from your Drive
+- Start a new project from a blank file, a starter (IEEE, ACM, Springer LNCS, a thesis with a file per chapter, beamer slides, a cover letter, a CV) or an example
+- Conference papers from the official author kit: pick CVPR, NeurIPS, ICML or ECCV, download the kit from the conference's page (Tilde links to it) and choose the `.zip`. The kit comes from the conference, so it is always that year's version
+- Import a `.zip` or files from your Drive
 - Download any project as a `.zip`
 - Search, sort, rename and delete (to Drive's trash, restorable for 30 days)
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/welcome-dark.png">
-    <img src="docs/screenshots/welcome-light.png" alt="Tilde's welcome page: Fig.~3 with the tilde drawn as the logo, a sign-in button, and the examples to try" width="900">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/new-project-dark.png">
+    <img src="docs/screenshots/new-project-light.png" alt="The New project dialog: kinds of starting points on the left (Blank, Papers, Conferences, Thesis and slides, Letter and CV, Examples), CVPR chosen among the conferences, with the two steps to get its official author kit" width="900">
   </picture>
 </p>
 
@@ -100,7 +109,7 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 | **One person per project.** Real-time co-editing, track changes and comments need a server, and Tilde has none. | Send a co-author the project as a `.zip` (they can import it into their own Tilde) or the PDF. |
 | **No fonts from your computer.** A browser cannot read them, so `\setmainfont{Arial}` fails. | Use a font that comes with TeX Live: TeX Gyre Termes (like Times), TeX Gyre Heros (like Helvetica), Libertinus Serif or Noto Serif. |
 | **No LuaLaTeX**, only pdfLaTeX and XeLaTeX. | XeLaTeX covers Unicode text and OpenType fonts; most `fontspec` documents compile unchanged. |
-| **Images must be PNG, JPG or PDF.** LaTeX cannot include GIF, WebP or SVG. | Save or export the image as PNG (screenshots), JPG (photos) or PDF (plots and diagrams), then paste or drop it in. |
+| **Images must be PNG, JPG or PDF.** LaTeX cannot include GIF, WebP or SVG, and EPS needs a converter program, which a browser cannot run. | Save or export the image as PNG (screenshots), JPG (photos) or PDF (plots and diagrams), then paste or drop it in. |
 | **No shell escape**, so no `minted`. | Use `listings` for code, which needs no shell escape. |
 | **One error at a time.** The engine stops at the first error. | Fix it and compile again; with *Auto* on, that happens by itself. |
 | **Long documents compile more slowly** than with a local TeX Live. | While writing, compile one chapter with `\includeonly{chapters/method}`, or use `\documentclass[draft]{…}`, which skips images. |

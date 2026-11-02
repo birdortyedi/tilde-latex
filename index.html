@@ -32,7 +32,7 @@
         <button id="sign-out" class="quiet" hidden>Sign out</button>
       </div>
     </header>
-    <dialog id="new-project-dialog" class="wide">
+    <dialog id="new-project-dialog" class="wide starters">
       <form method="dialog" id="new-project-form">
         <h2>New project</h2>
         <label class="field">
@@ -42,10 +42,23 @@
         <p id="new-project-problem" class="field-problem" hidden></p>
         <fieldset class="choices">
           <legend>Start from</legend>
-          <div id="template-choices"></div>
+          <div class="starter-picker">
+            <div id="starter-groups" role="tablist" aria-label="Kinds of starting points"></div>
+            <div class="starter-body">
+              <div id="template-choices" role="radiogroup"></div>
+              <div id="kit-steps" hidden>
+                <ol>
+                  <li>Download the author kit from the conference: <a id="kit-link" target="_blank" rel="noopener"></a>, then <span id="kit-find"></span>.</li>
+                  <li>Click <strong>Choose the .zip</strong> and pick the file you downloaded. Tilde makes the project from it.</li>
+                </ol>
+                <p>The kit comes straight from the conference, so it is always that year's version.</p>
+              </div>
+            </div>
+          </div>
         </fieldset>
+        <input id="kit-input" type="file" accept=".zip,application/zip" hidden />
         <div class="actions">
-          <button value="create" class="primary">Create project</button>
+          <button value="create" class="primary" id="create-project">Create project</button>
           <button value="cancel" formnovalidate>Cancel</button>
         </div>
       </form>

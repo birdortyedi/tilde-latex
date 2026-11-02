@@ -1,0 +1,40 @@
+% A thesis: one file per chapter in chapters/, put together here.
+% While writing, \includeonly{chapters/method} compiles only that chapter.
+\documentclass[11pt,a4paper,oneside]{report}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage[round]{natbib}
+\usepackage[hidelinks]{hyperref}
+
+\title{Title of the Thesis}
+\author{Your Name}
+\date{A thesis submitted for the degree of\\Doctor of Philosophy\\[1em]University, Year}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+What the thesis is about, in one page.
+\end{abstract}
+
+\chapter*{Acknowledgements}
+Thank the people who helped.
+
+\tableofcontents
+\listoffigures
+\listoftables
+
+\include{chapters/introduction}
+\include{chapters/background}
+\include{chapters/method}
+\include{chapters/conclusion}
+
+\appendix
+\include{chapters/appendix}
+
+\bibliographystyle{plainnat}
+\bibliography{refs}
+
+\end{document}

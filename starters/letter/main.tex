@@ -1,0 +1,27 @@
+% A letter (KOMA-Script scrlttr2), for example a cover letter for a
+% submission or a job application.
+\documentclass[paper=a4,fromalign=right,fromphone,fromemail]{scrlttr2}
+
+\setkomavar{fromname}{Your Name}
+\setkomavar{fromaddress}{Department, University\\City, Country}
+\setkomavar{fromphone}{+00 000 000 00 00}
+\setkomavar{fromemail}{your.name@example.org}
+\setkomavar{signature}{Your Name}
+\setkomavar{subject}{Submission of the paper ``Title of the Paper''}
+
+\begin{document}
+
+\begin{letter}{Editor's Name\\Journal Name\\Publisher}
+\opening{Dear Editor,}
+
+Please find attached our paper ``Title of the Paper'', which we submit for
+publication in \emph{Journal Name}.
+
+Say in two or three sentences what the paper shows and why it suits the journal.
+
+The paper is not under review elsewhere, and all authors have approved it.
+
+\closing{Yours sincerely,}
+\end{letter}
+
+\end{document}

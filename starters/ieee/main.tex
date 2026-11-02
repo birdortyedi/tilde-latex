@@ -1,0 +1,50 @@
+% An IEEE conference paper (IEEEtran). For a journal, use [journal] instead of [conference].
+\documentclass[conference]{IEEEtran}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{cite}
+
+\begin{document}
+
+\title{Title of the Paper}
+
+\author{\IEEEauthorblockN{First Author}
+\IEEEauthorblockA{Department, University\\
+City, Country\\
+first.author@example.org}
+\and
+\IEEEauthorblockN{Second Author}
+\IEEEauthorblockA{Company\\
+City, Country\\
+second.author@example.org}}
+
+\maketitle
+
+\begin{abstract}
+One paragraph: the problem, what you did, and what you found.
+\end{abstract}
+
+\begin{IEEEkeywords}
+first keyword, second keyword, third keyword
+\end{IEEEkeywords}
+
+\section{Introduction}
+Say why the problem matters and what this paper adds~\cite{knuth1984}.
+
+\section{Method}
+Describe the method. Number the equations you refer to:
+\begin{equation}
+  y = Wx + b. \label{eq:model}
+\end{equation}
+Equation~\eqref{eq:model} is the whole model.
+
+\section{Results}
+Paste or drop a figure into the text to add it here.
+
+\section{Conclusion}
+What the results mean, and what comes next.
+
+\bibliographystyle{IEEEtran}
+\bibliography{refs}
+
+\end{document}
