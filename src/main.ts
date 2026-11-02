@@ -36,6 +36,7 @@ const EXAMPLE_NOTES: Record<string, string> = {
   math: 'Equations and theorems with amsmath',
   tikz: 'A TikZ figure and a pgfplots plot',
   bibtex: 'Citations with natbib and BibTeX',
+  biblatex: 'Citations with biblatex and Biber',
   multifile: '\\input, \\include and an image in a folder',
 };
 

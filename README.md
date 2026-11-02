@@ -14,19 +14,20 @@
   and keeps your projects in your own Google Drive. No server, no account of ours, no cost.
 </p>
 
-<!--
-  Screenshots: add docs/screenshots/editor.png (a project open, with the PDF)
-  and docs/screenshots/welcome.png, then remove this comment and the one below.
-<p align="center"><img src="docs/screenshots/editor.png" alt="Tilde with a LaTeX source on the left and its compiled PDF on the right" width="900"></p>
--->
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/editor-dark.png">
+    <img src="docs/screenshots/editor-light.png" alt="Tilde with a short paper: the file tree and outline on the left, the LaTeX source in the middle, and the compiled PDF with a TikZ figure on the right" width="900">
+  </picture>
+</p>
 
-> **Status:** in development. Everything below works on a local copy; the public site is coming with the first release.
+> **Status:** in development. Everything below works when you run Tilde on your own computer; a public site comes with the first release.
 
 ## Why Tilde
 
 In LaTeX, a tilde (`~`) is a space that never breaks: `Fig.~3` keeps "Fig." and "3" on the same line. Tilde does the same for your work: your source, your PDF and your files stay together, on your own computer and in your own Drive.
 
-It covers what a researcher writing a paper, a thesis or TikZ figures needs, with nothing in between you and your files: no server, no account of ours, no cost.
+It covers what a researcher writing a paper, a thesis or TikZ figures needs, with nothing in between you and your files.
 
 ## What works
 
@@ -54,17 +55,36 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - File history comes from Drive's own version history
 
 **Projects**
+- Try it without signing in: six examples (a minimal document, maths, TikZ and pgfplots, BibTeX with natbib, biblatex with Biber, and a multi-file project)
 - A project is a normal folder in your Drive, inside a projects folder that you can rename, move, or swap for another one
 - Start blank or from an example, or import a `.zip` or files from your Drive
 - Download any project as a `.zip`
 - Search, sort, rename and delete (to Drive's trash, restorable for 30 days)
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/welcome-dark.png">
+    <img src="docs/screenshots/welcome-light.png" alt="Tilde's welcome page: Fig.~3 with the tilde drawn as the logo, a sign-in button, and the examples to try" width="900">
+  </picture>
+</p>
+
+## Keyboard shortcuts
+
+| Keys | Does |
+|---|---|
+| Ctrl/Cmd+S | Save to Drive and compile |
+| Ctrl/Cmd+B, Ctrl/Cmd+I | `\textbf{…}`, `\textit{…}` around the selection |
+| Ctrl/Cmd+/ | Comment or uncomment the selected lines |
+| Ctrl/Cmd+F | Find and replace in the open file |
+| Ctrl/Cmd and + or −, over the PDF | Zoom the PDF (Ctrl/Cmd+0 fits the width) |
+| Esc, on the project page | Back to the open project |
 
 ## Limits, and what to do instead
 
 | Limit | What to do instead |
 |---|---|
 | **One person per project.** Real-time co-editing, track changes and comments need a server, and Tilde has none. | Send a co-author the project as a `.zip` (they can import it into their own Tilde) or the PDF. |
-| **pdfLaTeX only** for now, so no `fontspec` or system fonts. | Use a font package made for pdfLaTeX, for example `\usepackage{newtxtext}` (Times-like), together with `\usepackage[T1]{fontenc}`. Unicode text in UTF-8 works. |
+| **pdfLaTeX only** for now, so no `fontspec`, system fonts, or scripts such as Greek, Arabic or Chinese. | Use a font package made for pdfLaTeX, for example `\usepackage{newtxtext}` (Times-like), with `\usepackage[T1]{fontenc}`. Accented Latin letters typed directly (é, ü, ğ, ş) work. |
 | **No shell escape**, so no `minted`. | Use `listings` for code, which needs no shell escape. |
 | **One error at a time.** The engine stops at the first error. | Fix it and compile again; with *Auto* on, that happens by itself. |
 | **Long documents compile more slowly** than with a local TeX Live. | While writing, compile one chapter with `\includeonly{chapters/method}`, or use `\documentclass[draft]{…}`, which skips images. |
@@ -102,16 +122,18 @@ npm run build   # the static site, in dist/
 ## How it works
 
 ```
- your browser                                                    Google
-┌─────────────────────────────────────────────────────────┐    ┌──────────────┐
-│ CodeMirror editor ──▶ TeX engine (WebAssembly, in a     │    │ Sign-in      │
-│        ▲              Web Worker) ──▶ PDF.js viewer     │    │ Drive API    │
-│        │                                                │◀──▶│ (drive.file) │
-│   sync layer: autosave, conflict check, local drafts ───┼───▶│ your files   │
-└─────────────────────────────────────────────────────────┘    └──────────────┘
+  Your browser                                              Google
+ ┌──────────────────────────────────────────────────┐      ┌────────────────┐
+ │  editor ──▶ TeX engine (WebAssembly) ──▶ PDF     │      │  sign-in       │
+ │    │                                             │      │                │
+ │    └──▶ sync: autosave, conflict check, ─────────┼─────▶│  your Drive    │
+ │              drafts kept in the browser          │◀─────┼  (drive.file)  │
+ └──────────────────────────────────────────────────┘      └────────────────┘
 ```
 
-Built with TypeScript and Vite, served as static files.
+The editor is CodeMirror, the PDF viewer is PDF.js, and the TeX engine runs in a Web Worker, so typing never waits for a compile.
+
+Tilde is written in TypeScript, built with Vite, and served as static files.
 
 ## Credits
 
