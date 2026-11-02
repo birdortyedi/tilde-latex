@@ -518,6 +518,7 @@ function showProject(newProject: Project | null): void {
     })
     : null;
   project = newProject;
+  collapsedFolders = new Set();
   projectNameLabel.textContent = newProject?.name ?? 'Tilde';
   editor.clear();
   activePath = null;
@@ -716,23 +717,65 @@ function openFile(path: string): void {
   renderTree();
 }
 
+// Small icons that tell file kinds apart in the tree.
+const ICONS: Record<string, string> = {
+  folder: 'M1.5 4.5v8a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1H8L6.5 3.5h-4a1 1 0 0 0-1 1z',
+  tex: 'M4 1.5h5.5l3 3v9a1 1 0 0 1-1 1h-7.5a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1z M5.5 8h5 M5.5 10.5h5 M5.5 5.5h2',
+  bib: 'M3.5 2.5h8a1 1 0 0 1 1 1v10h-8.5a.5.5 0 0 1-.5-.5z M3.5 12a1 1 0 0 1 1-1h8 M6 5.5h4',
+  image: 'M2 3.5h12v9H2z M2 11l3.5-3.5 3 3 2-2 3.5 3.5 M10.5 6.5h.01',
+  file: 'M4 1.5h5.5l3 3v9a1 1 0 0 1-1 1h-7.5a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1z',
+};
+
+function icon(kind: string): SVGSVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('class', `file-icon ${kind}`);
+  svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', ICONS[kind] ?? ICONS.file);
+  svg.append(path);
+  return svg;
+}
+
+const iconFor = (path: string): string =>
+  path.endsWith('.tex') ? 'tex' : path.endsWith('.bib') ? 'bib' : /\.(png|jpe?g|gif|svg|eps|pdf)$/i.test(path) ? 'image' : 'file';
+
+let collapsedFolders = new Set<string>(); // folders folded in the tree, for the open project
+
 function renderTree(): void {
   const toList = (nodes: TreeNode[]): HTMLUListElement => {
     const list = document.createElement('ul');
     for (const node of nodes) {
       const item = document.createElement('li');
       if (node.children) {
-        const label = document.createElement('div');
-        label.className = 'folder';
-        label.textContent = `${node.name}/`;
-        item.append(label, toList(node.children));
+        // A folder: click to fold or unfold it; its ⋯ menu adds files into it.
+        const collapsed = collapsedFolders.has(node.path);
+        const row = document.createElement('div');
+        row.className = 'row folder-row';
+        row.dataset.folder = node.path;
+        const toggle = document.createElement('button');
+        toggle.className = 'open-file';
+        toggle.setAttribute('aria-expanded', String(!collapsed));
+        const chevron = document.createElement('span');
+        chevron.className = 'chevron';
+        chevron.setAttribute('aria-hidden', 'true');
+        toggle.append(chevron, icon('folder'), node.name);
+        toggle.addEventListener('click', () => {
+          if (collapsed) collapsedFolders.delete(node.path);
+          else collapsedFolders.add(node.path);
+          renderTree();
+        });
+        row.append(toggle);
+        if (sync) row.append(moreButton(node.name, () => showFolderMenu(row, node.path)));
+        item.append(row);
+        if (!collapsed) item.append(toList(node.children));
       } else {
         const row = document.createElement('div');
         row.className = 'row';
         row.classList.toggle('active', node.path === activePath);
         const open = document.createElement('button');
         open.className = 'open-file';
-        open.textContent = node.name;
+        open.append(icon(iconFor(node.path)), node.name);
         if (project && node.path === findMainFile(project)) {
           const label = document.createElement('span');
           label.className = 'main-file';
@@ -745,12 +788,7 @@ function renderTree(): void {
         });
         row.append(open);
         if (sync) {
-          const more = document.createElement('button');
-          more.className = 'file-menu';
-          more.textContent = '⋯';
-          more.title = `Actions for ${node.name}`;
-          more.setAttribute('aria-haspopup', 'menu');
-          more.addEventListener('click', () => showFileMenu(more, node.path));
+          const more = moreButton(node.name, () => showFileMenu(more, node.path));
           row.append(more);
         }
         item.append(row);
@@ -792,6 +830,55 @@ function renderOutline(): void {
   }));
 }
 
+// The "⋯" button on a row of the tree.
+function moreButton(name: string, onClick: () => void): HTMLButtonElement {
+  const more = document.createElement('button');
+  more.className = 'file-menu';
+  more.textContent = '⋯';
+  more.title = `Actions for ${name}`;
+  more.setAttribute('aria-haspopup', 'menu');
+  more.addEventListener('click', onClick);
+  return more;
+}
+
+// The "⋯" menu of a folder in the tree.
+function showFolderMenu(anchor: HTMLElement, dir: string): void {
+  openMenu(anchor.querySelector('.file-menu') ?? anchor, [
+    { label: 'New file here…', action: () => void newFile(dir) },
+    { label: 'Upload here…', action: () => chooseUploads(dir) },
+    { label: 'Add from Google Drive here…', action: () => void addFromDrive(dir) },
+    { label: 'Rename folder…', action: () => void renameFolderAction(dir) },
+  ]);
+}
+
+async function renameFolderAction(dir: string): Promise<void> {
+  const projectSync = sync;
+  if (!projectSync) return;
+  const parts = dir.split('/');
+  const oldName = parts.pop() ?? dir;
+  const question = `New name for the folder ${dir}:`;
+  let message = question;
+  let name = oldName;
+  for (;;) {
+    const typed = await askText(message, name);
+    if (typed === null) return;
+    name = typed.trim();
+    if (name === oldName) return;
+    const problem = !name || name.includes('/') ? 'Type a folder name without "/".' : pathProblem(projectSync.project, [...parts, name].join('/'));
+    if (!problem) break;
+    message = `${problem}\n\n${question}`;
+  }
+  let moved: [string, string][] = [];
+  const done = await runFileAction(`Renaming ${dir}`, `Renamed ${dir} to ${[...parts, name].join('/')}.`, async () => {
+    moved = await projectSync.renameFolder(dir, name);
+  });
+  if (!done) return;
+  for (const [from, to] of moved) editor.rename(from, to);
+  const opened = moved.find(([from]) => from === activePath);
+  if (opened) openFile(opened[1]);
+  else renderTree();
+}
+
 // The "⋯" menu of a file in the tree.
 function showFileMenu(anchor: HTMLElement, path: string): void {
   const isMain = project ? path === findMainFile(project) : false;
@@ -807,7 +894,7 @@ function showFileMenu(anchor: HTMLElement, path: string): void {
 function showAddMenu(): void {
   openMenu(addFilesButton, [
     { label: 'New file…', action: () => void newFile() },
-    { label: 'Upload from this computer…', action: () => { uploadInput.value = ''; uploadInput.click(); } },
+    { label: 'Upload from this computer…', action: () => chooseUploads() },
     { label: 'Add from Google Drive…', action: () => void addFromDrive() },
   ]);
 }
@@ -850,10 +937,9 @@ async function runFileAction(working: string, done: string, action: () => Promis
   }
 }
 
-async function newFile(): Promise<void> {
+async function newFile(folder = folderOf(activePath)): Promise<void> {
   const projectSync = sync;
   if (!projectSync) return;
-  const folder = folderOf(activePath);
   const path = await askForPath('Name of the new file, e.g. method.tex or chapters/method.tex:', folder ? `${folder}/` : '');
   if (path && await runFileAction(`Creating ${path}`, `Created ${path}.`, () => projectSync.addFile(path, ''))) openFile(path);
 }
@@ -864,24 +950,33 @@ interface IncomingFile {
   read: () => Promise<Uint8Array>;
 }
 
-async function uploadFiles(files: File[]): Promise<void> {
-  await addFiles(files.map((file) => ({ name: file.name, read: async () => new Uint8Array(await file.arrayBuffer()) })));
+// Opens the computer's file chooser; the chosen files go into `folder`
+// (asked for afterwards when it is not given).
+let uploadTarget: string | undefined;
+function chooseUploads(folder?: string): void {
+  uploadTarget = folder;
+  uploadInput.value = '';
+  uploadInput.click();
+}
+
+async function uploadFiles(files: File[], folder?: string): Promise<void> {
+  await addFiles(files.map((file) => ({ name: file.name, read: async () => new Uint8Array(await file.arrayBuffer()) })), folder);
 }
 
 // "Add from Google Drive" in the "+" menu: copies picked files into the open project.
-async function addFromDrive(): Promise<void> {
+async function addFromDrive(folder?: string): Promise<void> {
   try {
     const picked = await pickUsableFiles('Pick files to add to this project');
-    await addFiles(picked.map((file) => ({ name: file.name, read: () => googleDrive.download(file.id) })));
+    await addFiles(picked.map((file) => ({ name: file.name, read: () => googleDrive.download(file.id) })), folder);
   } catch (error) {
     showError(error);
   }
 }
 
-async function addFiles(files: IncomingFile[]): Promise<void> {
+async function addFiles(files: IncomingFile[], into?: string): Promise<void> {
   const projectSync = sync;
   if (!projectSync || files.length === 0) return;
-  const answer = await askText('Add the files to which folder? Leave empty for the top level.', folderOf(activePath));
+  const answer = into ?? await askText('Add the files to which folder? Leave empty for the top level.', folderOf(activePath));
   if (answer === null) return;
   const folder = answer.trim().replace(/^\/+|\/+$/g, '');
   for (const upload of files) {
@@ -1190,7 +1285,44 @@ const layout = initLayout({
     pdf: element<HTMLButtonElement>('#toggle-pdf'),
   },
 });
-uploadInput.addEventListener('change', () => void uploadFiles([...(uploadInput.files ?? [])]));
+uploadInput.addEventListener('change', () => void uploadFiles([...(uploadInput.files ?? [])], uploadTarget));
+
+// Drag files from the computer onto the file tree: onto a folder to put them
+// there, anywhere else for the top level.
+const side = element<HTMLElement>('#side');
+const dropFolder = (event: DragEvent): HTMLElement | null =>
+  (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-folder]') ?? null;
+const clearDropMarks = (): void => {
+  side.classList.remove('drop-target');
+  for (const row of side.querySelectorAll('.drop-folder')) row.classList.remove('drop-folder');
+};
+side.addEventListener('dragover', (event) => {
+  if (!event.dataTransfer?.types.includes('Files')) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = sync ? 'copy' : 'none';
+  clearDropMarks();
+  side.classList.add('drop-target');
+  dropFolder(event)?.classList.add('drop-folder');
+});
+side.addEventListener('dragleave', (event) => {
+  if (!side.contains(event.relatedTarget as Node | null)) clearDropMarks();
+});
+side.addEventListener('drop', (event) => {
+  if (!event.dataTransfer?.types.includes('Files')) return;
+  event.preventDefault();
+  clearDropMarks();
+  if (!sync) {
+    notify('Sign in and open one of your projects to add files to it.', 'info');
+    return;
+  }
+  // Folders cannot be read this way; leave them out with a hint.
+  const items = [...event.dataTransfer.items];
+  const folders = items.filter((item) => item.webkitGetAsEntry()?.isDirectory).length;
+  const files = items.filter((item) => item.kind === 'file' && !item.webkitGetAsEntry()?.isDirectory)
+    .map((item) => item.getAsFile()).filter((file): file is File => file !== null);
+  if (folders > 0) notify('Folders cannot be dropped yet. Drop the files themselves, or import the folder as a .zip on the project page.', 'info');
+  void uploadFiles(files, dropFolder(event)?.dataset.folder ?? '');
+});
 syncButton.addEventListener('click', showConflict);
 logButton.addEventListener('click', () => { logView.hidden = !logView.hidden; });
 projectsButton.addEventListener('click', () => showProjectsPage(true));

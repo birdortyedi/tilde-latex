@@ -270,6 +270,21 @@ describe('ProjectSync', () => {
       expect(figs?.trashed).toBeFalsy();
     });
 
+    it('renames a folder in Drive, with its files, unsaved edits and main file', async () => {
+      await sync.addFile('chap/one.tex', '1');
+      await sync.addFile('chap/sub/two.tex', '2');
+      await sync.setMainFile('chap/one.tex');
+      type('chap/sub/two.tex', 'edited');
+      const moved = await sync.renameFolder('chap', 'chapters');
+      expect(moved).toEqual([['chap/one.tex', 'chapters/one.tex'], ['chap/sub/two.tex', 'chapters/sub/two.tex']]);
+      expect(project.mainFile).toBe('chapters/one.tex');
+      expect(drafts.get('chapters/sub/two.tex')?.content).toBe('edited');
+      expect(drafts.get('chap/sub/two.tex')).toBeUndefined();
+      await sync.saveNow();
+      expect(onDrive('chapters/sub/two.tex')).toBe('edited');
+      expect(onDrive('chap/one.tex')).toBeUndefined();
+    });
+
     it('remembers the main file in Drive, also when it is renamed', async () => {
       await sync.setMainFile('main.tex');
       await sync.moveFile('main.tex', 'paper.tex');

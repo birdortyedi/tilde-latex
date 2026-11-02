@@ -186,7 +186,15 @@ body.resizing iframe, body.resizing canvas { pointer-events: none; }
 #tree { flex: 1; overflow: auto; padding: 2px 6px 12px; font-size: 13.5px; }
 #tree ul { list-style: none; margin: 0; padding-left: 12px; }
 #tree > ul { padding-left: 0; }
-#tree .folder { padding: 3px 8px; color: var(--muted); }
+/* Folders fold and unfold; icons tell file kinds apart. */
+#tree .folder-row .open-file { color: var(--muted); }
+#tree .folder-row .chevron { margin: 0 6px 0 2px; vertical-align: 2px; transform: rotate(45deg); transition: transform 120ms; }
+#tree .folder-row [aria-expanded='false'] .chevron { transform: rotate(-45deg); }
+.file-icon { width: 14px; height: 14px; margin-right: 7px; vertical-align: -2px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; opacity: 0.75; }
+.file-icon.tex { color: var(--teal); opacity: 1; }
+/* Dropping files from the computer: the tree, or one folder in it, is marked. */
+#side.drop-target #tree { outline: 2px dashed var(--teal); outline-offset: -6px; border-radius: 8px; }
+#tree .row.drop-folder { background: color-mix(in srgb, var(--teal) 18%, transparent); }
 #tree .row { display: flex; align-items: center; border: 1px solid transparent; border-radius: 3px; }
 #tree .row:hover { background: var(--hover); }
 /* The open file: a thin teal box, like a hyperref file link. */

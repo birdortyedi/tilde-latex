@@ -94,15 +94,35 @@ export async function removeEmptyFolders(drive: Drive, project: Project, dir: st
   if (!project.driveId) return;
   for (let current = dir; current !== ''; current = splitPath(current)[0]) {
     if (project.files.some((f) => f.path.startsWith(`${current}/`))) return;
-    // Find the folder by walking down from the project folder.
-    let folderId: string | undefined = project.driveId;
-    for (const name of current.split('/')) {
-      if (!folderId) break;
-      folderId = (await drive.list(folderId)).find((f) => isFolder(f) && f.name === name)?.id;
-    }
+    const folderId = await findFolder(drive, project.driveId, current);
     if (!folderId || (await drive.list(folderId)).length > 0) return;
     await drive.updateMetadata(folderId, { trashed: true });
   }
+}
+
+// The Drive id of a folder like "chapters/appendix" inside the project, found
+// by walking down from the project folder; undefined if there is none.
+async function findFolder(drive: Drive, projectId: string, dir: string): Promise<string | undefined> {
+  let folderId: string | undefined = projectId;
+  for (const name of dir.split('/')) {
+    if (!folderId) break;
+    folderId = (await drive.list(folderId)).find((f) => isFolder(f) && f.name === name)?.id;
+  }
+  return folderId;
+}
+
+// Renames a folder of the project (it stays where it is) and updates the
+// paths of the files in it. Drive keeps every file's history.
+export async function renameFolder(drive: Drive, project: Project, dir: string, newName: string): Promise<string> {
+  if (!project.driveId) throw new Error(`${project.name} is not in Google Drive.`);
+  const [parent] = splitPath(dir);
+  const newDir = parent ? `${parent}/${newName}` : newName;
+  const folderId = await findFolder(drive, project.driveId, dir);
+  if (folderId) await drive.updateMetadata(folderId, { name: newName });
+  for (const file of project.files) {
+    if (file.path.startsWith(`${dir}/`)) file.path = newDir + file.path.slice(dir.length);
+  }
+  return newDir;
 }
 
 // Moves a file to Drive's trash, where it can be restored for 30 days.

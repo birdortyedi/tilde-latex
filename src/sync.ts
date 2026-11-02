@@ -1,7 +1,7 @@
 import { SignInNeededError } from './auth';
 import { OfflineError, type Drive } from './drive';
 import type { DraftKey, DraftStore } from './drafts';
-import { currentRevisions, moveFile, removeEmptyFolders, saveProject, setMainFile, stampLastEdited, trashFile } from './driveProjects';
+import { currentRevisions, moveFile, removeEmptyFolders, renameFolder, saveProject, setMainFile, stampLastEdited, trashFile } from './driveProjects';
 import { isTextFile } from './fileTree';
 import type { Project, ProjectFile } from './projects';
 
@@ -188,6 +188,26 @@ export class ProjectSync {
         .catch((error: unknown) => console.warn('Could not update the copy kept in the browser', error));
       this.syncDraft(file);
     });
+  }
+
+  // Renames a folder; returns the old and new paths of the files in it, so
+  // the editor can follow them. Unsaved edits move with their files.
+  renameFolder(dir: string, newName: string): Promise<[string, string][]> {
+    const moved: [string, string][] = [];
+    return this.action(async () => {
+      const before = new Map(this.project.files.map((file) => [file, file.path]));
+      const newDir = await renameFolder(this.drive, this.project, dir, newName);
+      const main = this.project.mainFile;
+      if (main?.startsWith(`${dir}/`)) await setMainFile(this.drive, this.project, newDir + main.slice(dir.length));
+      for (const [file, oldPath] of before) {
+        if (oldPath === file.path) continue;
+        moved.push([oldPath, file.path]);
+        if (this.conflicts.delete(oldPath)) this.conflicts.add(file.path);
+        this.drafts.remove({ accountId: this.accountId, projectId: this.projectId, path: oldPath })
+          .catch((error: unknown) => console.warn('Could not update the copy kept in the browser', error));
+        this.syncDraft(file);
+      }
+    }).then(() => moved);
   }
 
   setMainFile(path: string): Promise<void> {
