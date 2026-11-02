@@ -26,21 +26,26 @@
 
 In LaTeX, a tilde (`~`) is a space that never breaks: `Fig.~3` keeps "Fig." and "3" on the same line. Tilde does the same for your work: your source, your PDF and your files stay together, on your own computer and in your own Drive.
 
-It is **Overleaf for one person, with your own storage.** It covers what a researcher writing a paper, a thesis or TikZ figures needs, without a server in between.
+It covers what a researcher writing a paper, a thesis or TikZ figures needs, with nothing in between you and your files: no server, no account of ours, no cost.
 
 ## What works
 
 **Writing**
-- Editor with LaTeX colours, in light and dark, with IBM Plex Mono
-- Multi-file projects: `\input`, `\include`, images in folders, `.bib` files
-- Files: new, upload, add from Drive, rename or move, duplicate, delete, choose the main file
+- Editor with LaTeX colours, in light and dark, set in IBM Plex Mono
+- Suggestions as you type: commands, environments, your `\label`s in `\ref{}`, your `.bib` keys in `\cite{}`, your files in `\input{}` and `\includegraphics{}`
+- Brackets close by themselves, and Enter after `\begin{figure}` adds the `\end{figure}`
+- Ctrl/Cmd+B and +I for `\textbf` and `\textit`, Ctrl/Cmd+/ to comment lines out
+- An outline of your chapters and sections, through `\input` and `\include`; click to jump
+- Multi-file projects with folders: new, upload or drag in files, add from Drive, rename or move, duplicate, delete, choose the main file
 - Panes you can resize and hide (files, source, PDF); one at a time in a narrow window
 
 **Compiling**
 - pdfLaTeX from TeX Live 2026, running in your browser (WebAssembly)
-- TikZ, pgfplots, BibTeX and natbib
-- Packages that are not in the basic bundle are fetched once and kept, so later compiles work offline
+- TikZ, pgfplots, BibTeX, natbib, and biblatex with Biber
+- Packages beyond the basic set are fetched once and kept, so later compiles work offline
+- Optional auto-compile a moment after you stop typing
 - Errors and warnings in a list and as icons next to the line numbers; click one to jump to the file and line
+- PDF zoom (fit width, fit page or a size), page numbers, and Download PDF
 
 **Saving**
 - Autosave to your Google Drive a few seconds after you stop typing
@@ -49,19 +54,23 @@ It is **Overleaf for one person, with your own storage.** It covers what a resea
 - File history comes from Drive's own version history
 
 **Projects**
-- A project is a normal folder in "LaTeX Projects" in your Drive
-- Create one blank or from an example, or import a `.zip` (for example Overleaf's *Download source*) or files from your Drive
-- Search, sort, rename and delete (to Drive's trash)
+- A project is a normal folder in your Drive, inside a projects folder that you can rename, move, or swap for another one
+- Start blank or from an example, or import a `.zip` or files from your Drive
+- Download any project as a `.zip`
+- Search, sort, rename and delete (to Drive's trash, restorable for 30 days)
 
-## What does not work
+## Limits, and what to do instead
 
-- **One person per project.** No real-time co-editing, track changes or comments (they need a server).
-- **No Biber.** biblatex must use `backend=bibtex`. Plain BibTeX and natbib work.
-- **No shell escape**, so no `minted` or `--shell-escape`.
-- **One error at a time.** The engine stops at the first error; fix it and compile again.
-- **Large documents compile more slowly** than with a local TeX Live installation.
-- **Storage is your Google account's**: 15 GB on a free account, shared with Gmail and Photos.
-- **Brave and Arc** block the cookies Google's file picker needs; allow cross-site cookies for Tilde to use "Add from Google Drive".
+| Limit | What to do instead |
+|---|---|
+| **One person per project.** Real-time co-editing, track changes and comments need a server, and Tilde has none. | Send a co-author the project as a `.zip` (they can import it into their own Tilde) or the PDF. |
+| **pdfLaTeX only** for now, so no `fontspec` or system fonts. | Use a font package made for pdfLaTeX, for example `\usepackage{newtxtext}` (Times-like), together with `\usepackage[T1]{fontenc}`. Unicode text in UTF-8 works. |
+| **No shell escape**, so no `minted`. | Use `listings` for code, which needs no shell escape. |
+| **One error at a time.** The engine stops at the first error. | Fix it and compile again; with *Auto* on, that happens by itself. |
+| **Long documents compile more slowly** than with a local TeX Live. | While writing, compile one chapter with `\includeonly{chapters/method}`, or use `\documentclass[draft]{…}`, which skips images. |
+| **The first compile downloads the TeX engine** (about 125 MB; about 30 MB more the first time Biber is used). | It happens once per browser; later visits load it from the cache. |
+| **Your Google account's storage**: 15 GB on a free account, shared with Gmail and Photos. | LaTeX projects are small; images are usually what fills it. |
+| **Brave and Arc** block the cookies Google's file picker needs. | Allow cross-site cookies for Tilde (Brave: the lion icon in the address bar) to use "Add from Google Drive". |
 
 ## Your data
 
