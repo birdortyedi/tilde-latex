@@ -167,11 +167,11 @@ Mark the current milestone with **← current**. Update this list as work is com
    Choose the WASM TeX engine. Compare the realistic options on license, package coverage, maintenance activity and how package files are hosted, then recommend one to the owner. Compile all of `test-docs/` except `xetex/` in the browser and show the PDF. Report the engine's license so the owner can choose the project license.
 2. **Editor and preview** ✓ done, tested by the owner.
    CodeMirror editor beside the PDF viewer. Compile button and Ctrl/Cmd+S to compile. Multi-file projects held in memory. A file tree for switching files.
-3. **Google sign-in and Drive storage**
+3. **Google sign-in and Drive storage** ✓ done, tested by the owner.
    Sign in with Google. Create a "LaTeX Projects" folder in Drive. Create, open and save projects there.
-4. **Autosave and conflict safety** ← current
+4. **Autosave and conflict safety** ✓ done, tested by the owner.
    Everything in "Saving and conflicts" above, with tests.
-5. **Quality of life**
+5. **Quality of life** ✓ done, tested by the owner. Also added: a full project page, file actions (new, upload, rename/move, duplicate, delete, set main), error icons next to line numbers.
    Clickable error messages that jump to the right file and line. Project list. Import an existing project from a zip or via the Picker. Package caching so repeat compiles are fast.
 6. **Public release**
    README with screenshots and a clear "what works / what doesn't" section. Privacy policy page (needed for Google verification). GitHub Actions workflow that deploys to GitHub Pages. Google OAuth verification, with the app name "Tilde · LaTeX editor" (fall back to "Tilde LaTeX Editor" if the middle dot causes trouble).
