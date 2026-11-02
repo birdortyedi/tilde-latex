@@ -1,3 +1,8 @@
+import '@fontsource/ibm-plex-sans/400.css';
+import '@fontsource/ibm-plex-sans/500.css';
+import '@fontsource/ibm-plex-sans/600.css';
+import '@fontsource/ibm-plex-mono/400.css';
+import './style.css';
 import { BusyTexRunner, PdfLatex } from 'texlyre-busytex';
 import { findMainFile, groupByProject, pathProblem, type Project, type ProjectFile } from './projects';
 import { buildTree, isTextFile, type TreeNode } from './fileTree';
@@ -13,6 +18,9 @@ import { lastLatexLog, parseLog, type LogProblem } from './logParser';
 import { unzipProject } from './zipImport';
 import { isGoogleDoc, pickDriveFiles, type PickedFile } from './picker';
 import { askConfirm, askText } from './ask';
+import { initLayout } from './layout';
+import { initTheme } from './theme';
+import { openMenu } from './menu';
 
 // Files that TeX Live's basic bundle lacks (TikZ, pgfplots, ...) are fetched
 // one at a time from TeXlyre's public package server.
@@ -47,7 +55,6 @@ const importZipButton = element<HTMLButtonElement>('#import-zip');
 const zipInput = element<HTMLInputElement>('#zip-input');
 const closeProjectsButton = element<HTMLButtonElement>('#close-projects');
 const importDriveButton = element<HTMLButtonElement>('#import-drive');
-const addFromDriveButton = element<HTMLButtonElement>('#add-from-drive');
 const mainArea = element<HTMLElement>('main');
 const compileButton = element<HTMLButtonElement>('#compile');
 const syncButton = element<HTMLButtonElement>('#sync');
@@ -68,14 +75,11 @@ const treeView = element<HTMLElement>('#tree');
 const editorElement = element<HTMLDivElement>('#editor');
 const imagePreview = element<HTMLImageElement>('#image-preview');
 const logView = element<HTMLPreElement>('#log');
-const fileActions = element<HTMLDivElement>('#file-actions');
-const newFileButton = element<HTMLButtonElement>('#new-file');
-const uploadButton = element<HTMLButtonElement>('#upload-files');
+const addFilesButton = element<HTMLButtonElement>('#add-files');
+const cursorPosition = element<HTMLSpanElement>('#cursor-position');
+const problemCount = element<HTMLButtonElement>('#problem-count');
+const pdfContainer = element<HTMLDivElement>('#pdf');
 const uploadInput = element<HTMLInputElement>('#upload-input');
-const renameButton = element<HTMLButtonElement>('#rename-file');
-const duplicateButton = element<HTMLButtonElement>('#duplicate-file');
-const deleteButton = element<HTMLButtonElement>('#delete-file');
-const setMainButton = element<HTMLButtonElement>('#set-main-file');
 const problemList = element<HTMLUListElement>('#problems');
 
 let examples: Project[] = []; // the test-docs projects, shown while signed out
@@ -95,8 +99,10 @@ const editor = new Editor(editorElement, (path, text) => {
   if (!file) return;
   file.content = text;
   sync?.edited(path);
+}, (line, column) => {
+  cursorPosition.textContent = `Ln ${line}, Col ${column}`;
 });
-const pdfViewer = new PdfViewer(element<HTMLDivElement>('#pdf'));
+const pdfViewer = new PdfViewer(pdfContainer);
 
 function showError(error: unknown): void {
   statusText.textContent = `Error: ${error instanceof Error ? error.message : String(error)}`;
@@ -132,6 +138,7 @@ async function showDriveProjects(): Promise<void> {
 function showProjectsPage(visible: boolean): void {
   projectsPage.hidden = !visible;
   mainArea.hidden = visible;
+  document.body.classList.toggle('on-projects', visible);
   if (visible) renderProjectsPage();
 }
 
@@ -326,10 +333,15 @@ function showProject(newProject: Project | null): void {
     })
     : null;
   project = newProject;
-  projectNameLabel.textContent = newProject?.name ?? '';
+  projectNameLabel.textContent = newProject?.name ?? 'Tilde';
   editor.clear();
   activePath = null;
-  element<HTMLDivElement>('#pdf').replaceChildren();
+  pdfViewer.clear();
+  const empty = document.createElement('p');
+  empty.className = 'empty';
+  empty.textContent = 'Compile to see the PDF here. Ctrl/Cmd+S saves and compiles.';
+  pdfContainer.replaceChildren(empty);
+  cursorPosition.textContent = '';
   showProblems([]);
   showSyncState();
   renderTree();
@@ -511,6 +523,7 @@ function openFile(path: string): void {
   } else {
     editorElement.hidden = true;
     imagePreview.hidden = false;
+    cursorPosition.textContent = '';
     if (imagePreview.src) URL.revokeObjectURL(imagePreview.src);
     const bytes = typeof file.content === 'string' ? new TextEncoder().encode(file.content) : file.content;
     imagePreview.src = URL.createObjectURL(new Blob([bytes.slice()]));
@@ -530,17 +543,30 @@ function renderTree(): void {
         label.textContent = `${node.name}/`;
         item.append(label, toList(node.children));
       } else {
-        const button = document.createElement('button');
-        button.textContent = node.name;
+        const row = document.createElement('div');
+        row.className = 'row';
+        row.classList.toggle('active', node.path === activePath);
+        const open = document.createElement('button');
+        open.className = 'open-file';
+        open.textContent = node.name;
         if (project && node.path === findMainFile(project)) {
           const label = document.createElement('span');
           label.className = 'main-file';
           label.textContent = ' (main)';
-          button.append(label);
+          open.append(label);
         }
-        button.classList.toggle('active', node.path === activePath);
-        button.addEventListener('click', () => openFile(node.path));
-        item.append(button);
+        open.addEventListener('click', () => openFile(node.path));
+        row.append(open);
+        if (sync) {
+          const more = document.createElement('button');
+          more.className = 'file-menu';
+          more.textContent = '⋯';
+          more.title = `Actions for ${node.name}`;
+          more.setAttribute('aria-haspopup', 'menu');
+          more.addEventListener('click', () => showFileMenu(more, node.path));
+          row.append(more);
+        }
+        item.append(row);
       }
       list.append(item);
     }
@@ -548,10 +574,28 @@ function renderTree(): void {
   };
   treeView.replaceChildren(toList(buildTree(project?.files.map((f) => f.path) ?? [])));
 
-  // File actions are for Drive projects; most of them act on the open file.
-  fileActions.hidden = !sync;
-  for (const button of [renameButton, duplicateButton, deleteButton]) button.disabled = !activePath;
-  setMainButton.disabled = !activePath || !activePath.endsWith('.tex') || activePath === findMainFile(project ?? { name: '', files: [] });
+  // Adding files is for Drive projects; the examples stay as they are.
+  addFilesButton.hidden = !sync;
+}
+
+// The "⋯" menu of a file in the tree.
+function showFileMenu(anchor: HTMLElement, path: string): void {
+  const isMain = project ? path === findMainFile(project) : false;
+  openMenu(anchor, [
+    { label: 'Rename or move…', action: () => void renameFile(path) },
+    { label: 'Duplicate…', action: () => void duplicateFile(path) },
+    { label: isMain ? 'This is the main file' : 'Set as main file', action: () => void setMainFile(path), disabled: isMain || !path.endsWith('.tex') },
+    { label: 'Delete…', action: () => void deleteFile(path), danger: true },
+  ]);
+}
+
+// The "+" menu above the file tree.
+function showAddMenu(): void {
+  openMenu(addFilesButton, [
+    { label: 'New file…', action: () => void newFile() },
+    { label: 'Upload from this computer…', action: () => { uploadInput.value = ''; uploadInput.click(); } },
+    { label: 'Add from Google Drive…', action: () => void addFromDrive() },
+  ]);
 }
 
 // The folder of a path: "chapters/intro.tex" → "chapters", "main.tex" → "".
@@ -606,7 +650,7 @@ async function uploadFiles(files: File[]): Promise<void> {
   await addFiles(files.map((file) => ({ name: file.name, read: async () => new Uint8Array(await file.arrayBuffer()) })));
 }
 
-// "From Drive" in the file toolbar: copies picked files into the open project.
+// "Add from Google Drive" in the "+" menu: copies picked files into the open project.
 async function addFromDrive(): Promise<void> {
   try {
     const picked = await pickUsableFiles('Pick files to add to this project');
@@ -642,21 +686,20 @@ async function addFiles(files: IncomingFile[]): Promise<void> {
   }
 }
 
-async function renameFile(): Promise<void> {
+async function renameFile(from: string): Promise<void> {
   const projectSync = sync;
-  const from = activePath;
-  if (!projectSync || !from) return;
+  if (!projectSync) return;
   const to = await askForPath(`New name for ${from}. Change the folder part to move it, e.g. chapters/${from.split('/').pop()}:`, from, from);
   if (!to) return;
   if (await runFileAction(`Renaming ${from}`, () => projectSync.moveFile(from, to))) {
     editor.rename(from, to);
-    openFile(to);
+    if (activePath === from) openFile(to);
   }
 }
 
-async function duplicateFile(): Promise<void> {
+async function duplicateFile(original: string): Promise<void> {
   const projectSync = sync;
-  const file = projectSync?.project.files.find((f) => f.path === activePath);
+  const file = projectSync?.project.files.find((f) => f.path === original);
   if (!projectSync || !file) return;
   // "chapters/intro.tex" → "chapters/intro-copy.tex" (no spaces: LaTeX dislikes them in file names)
   const suggestion = file.path.replace(/(\.[^./]+)?$/, (extension) => `-copy${extension}`);
@@ -665,13 +708,13 @@ async function duplicateFile(): Promise<void> {
   if (path && await runFileAction(`Duplicating ${file.path}`, () => projectSync.addFile(path, content))) openFile(path);
 }
 
-async function deleteFile(): Promise<void> {
+async function deleteFile(path: string): Promise<void> {
   const projectSync = sync;
-  const path = activePath;
-  if (!projectSync || !path) return;
+  if (!projectSync) return;
   if (!await askConfirm(`Delete ${path}? It goes to the trash in your Google Drive, where you can restore it for 30 days.`, 'Delete')) return;
   if (await runFileAction(`Deleting ${path}`, () => projectSync.deleteFile(path))) {
     editor.forget(path);
+    if (activePath !== path) return;
     activePath = null;
     const next = findMainFile(projectSync.project) ?? projectSync.project.files[0]?.path;
     if (next) openFile(next);
@@ -679,10 +722,9 @@ async function deleteFile(): Promise<void> {
   }
 }
 
-async function setMainFile(): Promise<void> {
+async function setMainFile(path: string): Promise<void> {
   const projectSync = sync;
-  const path = activePath;
-  if (projectSync && path) await runFileAction(`Making ${path} the main file`, () => projectSync.setMainFile(path));
+  if (projectSync) await runFileAction(`Making ${path} the main file`, () => projectSync.setMainFile(path));
 }
 
 // The engine is downloaded and started only once, on the first compile.
@@ -785,6 +827,14 @@ function showProblems(problems: LogProblem[]): void {
     return item;
   }));
   problemList.hidden = problems.length === 0;
+  const errors = problems.filter((p) => p.level === 'error').length;
+  const warnings = problems.filter((p) => p.level === 'warning').length;
+  const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
+  problemCount.hidden = problems.length === 0;
+  problemCount.textContent = [errors && plural(errors, 'error'), warnings && plural(warnings, 'warning'),
+    !errors && !warnings && plural(problems.length, 'bad box')].filter(Boolean).join(', ');
+  problemCount.classList.toggle('has-errors', errors > 0);
+  problemCount.classList.toggle('has-warnings', errors === 0 && warnings > 0);
 
   // The same problems as icons next to the editor's line numbers.
   const marks = new Map<string, LineMark[]>();
@@ -803,22 +853,28 @@ function jumpTo(problem: LogProblem): void {
 }
 
 compileButton.addEventListener('click', () => void compile());
-newFileButton.addEventListener('click', () => void newFile());
-uploadButton.addEventListener('click', () => {
-  uploadInput.value = '';
-  uploadInput.click();
+addFilesButton.addEventListener('click', showAddMenu);
+problemCount.addEventListener('click', () => { problemList.hidden = !problemList.hidden; });
+initTheme(element<HTMLButtonElement>('#theme-toggle'));
+initLayout({
+  workspace: mainArea,
+  side: element<HTMLElement>('#side'),
+  sideHandle: element<HTMLElement>('#side-handle'),
+  editorPane: element<HTMLElement>('#editor-pane'),
+  pdfHandle: element<HTMLElement>('#pdf-handle'),
+  preview: element<HTMLElement>('#preview'),
+  toggles: {
+    files: element<HTMLButtonElement>('#toggle-files'),
+    editor: element<HTMLButtonElement>('#toggle-editor'),
+    pdf: element<HTMLButtonElement>('#toggle-pdf'),
+  },
 });
 uploadInput.addEventListener('change', () => void uploadFiles([...(uploadInput.files ?? [])]));
-renameButton.addEventListener('click', () => void renameFile());
-duplicateButton.addEventListener('click', () => void duplicateFile());
-deleteButton.addEventListener('click', () => void deleteFile());
-setMainButton.addEventListener('click', () => void setMainFile());
 syncButton.addEventListener('click', showConflict);
 logButton.addEventListener('click', () => { logView.hidden = !logView.hidden; });
 projectsButton.addEventListener('click', () => showProjectsPage(true));
 closeProjectsButton.addEventListener('click', () => showProjectsPage(false));
 importDriveButton.addEventListener('click', () => void importFromDrive());
-addFromDriveButton.addEventListener('click', () => void addFromDrive());
 importZipButton.addEventListener('click', () => {
   zipInput.value = '';
   zipInput.click();

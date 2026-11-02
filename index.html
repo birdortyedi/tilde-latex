@@ -5,125 +5,88 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text x='16' y='26' font-size='32' font-weight='900' text-anchor='middle' font-family='sans-serif'>~</text></svg>" />
     <title>Tilde · LaTeX editor</title>
-    <style>
-      body { margin: 0; background: #fff; color: #111; font-family: system-ui, sans-serif; display: flex; flex-direction: column; height: 100vh; }
-      header { display: flex; gap: 12px; align-items: center; padding: 8px 16px; border-bottom: 1px solid #ddd; }
-      header strong { font-size: 20px; }
-      #status { color: #555; flex: 1; }
-      #new-project-dialog label { display: block; margin-bottom: 12px; }
-      #project-name { font-weight: 600; }
-      #projects-page { flex: 1; overflow: auto; padding: 16px 24px; }
-      #projects-page h2 { margin: 0 0 8px; }
-      #projects-page .page-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
-      #projects-page table { border-collapse: collapse; width: 100%; max-width: 760px; }
-      #projects-page th, #projects-page td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #eee; }
-      #projects-page th { color: #666; font-weight: normal; }
-      #projects-page td:last-child { text-align: right; white-space: nowrap; }
-      #projects-page td button { margin-left: 4px; }
-      #projects-page .open-link { all: unset; cursor: pointer; color: #1a4fbf; }
-      #projects-page .open-link:hover { text-decoration: underline; }
-      #conflict-dialog, #sign-out-dialog, #ask-dialog { max-width: 460px; }
-      #ask-message { white-space: pre-line; }
-      /* Sync status: plain text, except when it needs the user (conflict). */
-      #sync:disabled { border: none; background: none; color: #2a7a2a; padding: 0; }
-      #sync.saving:disabled, #sync.unsaved:disabled { color: #555; }
-      #sync.offline:disabled, #sync.signin:disabled, #sync.error:disabled { color: #b35c00; }
-      #sync.conflict { color: #b00020; font-weight: bold; }
-      main { flex: 1; display: grid; grid-template-columns: 200px 1fr 1fr; grid-template-rows: minmax(0, 1fr); min-height: 0; }
-      #side { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid #ddd; background: #fafafa; }
-      #file-actions { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px; border-bottom: 1px solid #ddd; }
-      #file-actions button { font-size: 12px; padding: 1px 6px; }
-      #tree { flex: 1; overflow: auto; padding: 8px 0; font-size: 14px; }
-      #tree ul { list-style: none; margin: 0; padding-left: 14px; }
-      #tree > ul { padding-left: 4px; }
-      #tree button { all: unset; display: block; width: 100%; box-sizing: border-box; padding: 2px 8px; cursor: pointer; border-radius: 4px; }
-      #tree button:hover { background: #eee; }
-      #tree button.active { background: #dde8ff; }
-      #tree .folder { padding: 2px 8px; color: #666; }
-      #editor-pane { min-width: 0; overflow: hidden; border-right: 1px solid #ddd; }
-      #editor, #editor .cm-editor { height: 100%; }
-      #image-preview { max-width: 90%; margin: 24px auto; display: block; }
-      #preview { display: flex; flex-direction: column; min-width: 0; background: #e8e8e8; }
-      #pdf { flex: 1; min-height: 0; overflow: auto; padding: 16px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
-      #pdf canvas { box-shadow: 0 1px 4px rgba(0,0,0,.3); background: #fff; }
-      #problems { max-height: 35%; overflow: auto; margin: 0; padding: 4px 0; list-style: none; background: #fff; border-top: 1px solid #ccc; font-size: 13px; }
-      #problems button { all: unset; display: block; width: 100%; box-sizing: border-box; padding: 3px 10px; cursor: pointer; }
-      #problems button:hover:enabled { background: #f0f0f0; }
-      #problems button:disabled { cursor: default; }
-      #problems .level { display: inline-block; min-width: 64px; font-weight: bold; }
-      #problems .error .level { color: #b00020; }
-      #problems .warning .level { color: #b35c00; }
-      #problems .badbox .level { color: #666; }
-      #problems .where { color: #555; margin-right: 8px; }
-      #tree .main-file { color: #888; font-size: 12px; }
-      #log { height: 40%; margin: 0; padding: 8px; overflow: auto; font-size: 12px; background: #f6f6f6; white-space: pre-wrap; border-top: 1px solid #ccc; }
-      [hidden] { display: none !important; }
-    </style>
   </head>
   <body>
-    <header>
-      <strong>~ Tilde</strong>
-      <button id="show-projects">Projects</button>
-      <span id="project-name"></span>
-      <button id="compile">Compile</button>
-      <button id="toggle-log">Log</button>
-      <button id="sync" hidden disabled></button>
-      <span id="status">Ready. The first compile downloads the engine (about 125 MB).</span>
-      <button id="sign-in">Sign in with Google</button>
-      <button id="sign-out" hidden>Sign out</button>
+    <header id="topbar">
+      <div class="left">
+        <button id="show-projects" title="All projects">
+          <span class="tie" aria-hidden="true">~</span>
+          <span id="project-name">Tilde</span>
+          <span class="switch" aria-hidden="true">▾</span>
+        </button>
+      </div>
+      <div class="center">
+        <button id="compile" class="primary" title="Ctrl/Cmd+S saves and compiles">Compile</button>
+        <div class="pane-toggles" role="group" aria-label="Show or hide panes">
+          <button id="toggle-files" aria-pressed="true" title="Show or hide the files">Files</button>
+          <button id="toggle-editor" aria-pressed="true" title="Show or hide the source">Source</button>
+          <button id="toggle-pdf" aria-pressed="true" title="Show or hide the PDF">PDF</button>
+        </div>
+      </div>
+      <div class="right">
+        <button id="theme-toggle" class="quiet"></button>
+        <button id="sign-in">Sign in with Google</button>
+        <button id="sign-out" class="quiet" hidden>Sign out</button>
+      </div>
     </header>
     <dialog id="new-project-dialog">
       <form method="dialog">
         <label>Name <input id="new-project-name" required pattern="[^/]+" title="A name without slashes" /></label>
         <label>Start from <select id="new-project-template"><option value="">Blank (one main.tex)</option></select></label>
-        <button value="create">Create</button>
+        <button value="create" class="primary">Create project</button>
         <button value="cancel" formnovalidate>Cancel</button>
       </form>
     </dialog>
     <section id="projects-page" hidden>
-      <h2>Projects</h2>
-      <p id="projects-hint"></p>
-      <div class="page-actions">
-        <button id="new-project" hidden>New project</button>
-        <button id="import-zip" hidden title="For example, Overleaf's Menu → Download → Source">Import .zip</button>
-        <button id="import-drive" hidden title="Pick files in your Google Drive">Import from Drive</button>
-        <button id="close-projects" hidden>Back to the open project</button>
-        <input id="zip-input" type="file" accept=".zip,application/zip" hidden />
+      <div class="inner">
+        <h2>Projects</h2>
+        <p id="projects-hint"></p>
+        <div class="page-actions">
+          <button id="new-project" class="primary" hidden>New project</button>
+          <button id="import-zip" hidden title="For example, Overleaf's Menu, Download, Source">Import .zip</button>
+          <button id="import-drive" hidden title="Pick files in your Google Drive">Import from Drive</button>
+          <button id="close-projects" class="quiet" hidden>Back to the open project</button>
+          <input id="zip-input" type="file" accept=".zip,application/zip" hidden />
+        </div>
+        <table>
+          <thead><tr><th>Name</th><th>Last edited</th><th></th></tr></thead>
+          <tbody id="project-rows"></tbody>
+        </table>
       </div>
-      <table>
-        <thead><tr><th>Name</th><th>Last edited</th><th></th></tr></thead>
-        <tbody id="project-rows"></tbody>
-      </table>
     </section>
-    <main>
-      <div id="side">
-        <div id="file-actions" hidden>
-          <button id="new-file" title="Create an empty file">New file</button>
-          <button id="upload-files" title="Add files from your computer">Upload</button>
-          <button id="add-from-drive" title="Add files you pick in your Google Drive">From Drive</button>
-          <button id="rename-file" title="Rename or move the open file">Rename</button>
-          <button id="duplicate-file" title="Make a copy of the open file">Duplicate</button>
-          <button id="delete-file" title="Move the open file to Drive's trash">Delete</button>
-          <button id="set-main-file" title="Compile this file">Set as main</button>
-          <input id="upload-input" type="file" multiple hidden />
+    <main id="workspace">
+      <aside id="side">
+        <div class="side-head">
+          <span>Files</span>
+          <button id="add-files" class="quiet" aria-haspopup="menu" title="Add a file" hidden>+</button>
         </div>
         <nav id="tree" aria-label="Project files"></nav>
-      </div>
+        <input id="upload-input" type="file" multiple hidden />
+      </aside>
+      <div id="side-handle" class="handle" role="separator" aria-orientation="vertical" aria-label="Resize the files" tabindex="0"></div>
       <div id="editor-pane">
         <div id="editor"></div>
         <img id="image-preview" alt="" hidden />
       </div>
+      <div id="pdf-handle" class="handle" role="separator" aria-orientation="vertical" aria-label="Resize the PDF" tabindex="0"></div>
       <section id="preview">
         <div id="pdf"></div>
         <ul id="problems" hidden></ul>
         <pre id="log" hidden></pre>
       </section>
     </main>
+    <footer id="statusbar">
+      <button id="sync" hidden disabled></button>
+      <span id="cursor-position"></span>
+      <button id="problem-count" hidden title="Show or hide the errors and warnings"></button>
+      <span id="status">The first compile downloads the TeX engine (about 125 MB).</span>
+      <button id="toggle-log" title="Show or hide the full compile log">Log</button>
+    </footer>
     <dialog id="ask-dialog">
       <form method="dialog">
         <p id="ask-message"></p>
         <p><input id="ask-input" size="40" /></p>
-        <button value="ok" id="ask-ok">OK</button>
+        <button value="ok" id="ask-ok" class="primary">OK</button>
         <button value="cancel" formnovalidate>Cancel</button>
       </form>
     </dialog>
@@ -133,7 +96,7 @@
         other computer) and also here. Which version should Tilde keep?
       </p>
       <form method="dialog">
-        <button value="mine">Keep mine</button>
+        <button value="mine" class="primary">Keep mine</button>
         <button value="drive">Keep Drive's</button>
         <button type="button" id="download-both" title="Saves both versions to your Downloads folder">Download both</button>
       </form>
@@ -143,8 +106,8 @@
       <ul id="sign-out-files"></ul>
       <p>Signing out deletes them from this browser.</p>
       <form method="dialog">
-        <button value="download">Download them, then sign out</button>
-        <button value="delete">Sign out and delete them</button>
+        <button value="download" class="primary">Download them, then sign out</button>
+        <button value="delete" class="danger">Sign out and delete them</button>
         <button value="stay">Stay signed in</button>
       </form>
     </dialog>
