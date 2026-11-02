@@ -6,6 +6,8 @@ import { HighlightStyle, StreamLanguage, syntaxHighlighting } from '@codemirror/
 import { tags } from '@lezer/highlight';
 import { stex } from '@codemirror/legacy-modes/mode/stex';
 import { latexEditing } from './latexEditing';
+import { latexSpellcheck } from './spellcheck';
+import { findPanel } from './findPanel';
 import type { ProjectFile } from './projects';
 
 // Colours for LaTeX source. They are CSS variables from style.css, so they
@@ -146,6 +148,8 @@ export class Editor {
         lintGutter(),
         EditorView.lineWrapping,
         this.language,
+        latexSpellcheck,
+        findPanel,
         // Only the open file can change, so report it under its current
         // path (which a rename may have changed since this state was made).
         EditorView.updateListener.of((update) => {

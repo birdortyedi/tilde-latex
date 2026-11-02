@@ -27,13 +27,13 @@ The project owner is not a professional web developer. They will test every chan
 - Compile in the browser with PDF preview
 - TikZ and pgfplots
 - BibTeX and natbib, and biblatex with Biber (decided after Milestone 5: the engine ships Biber)
+- SyncTeX: double-click the PDF to jump to the source, and show the cursor's line in the PDF (decided before Milestone 6)
 - XeLaTeX for Unicode text and the OpenType fonts that come with TeX Live, chosen by itself when a project loads `fontspec`, `polyglossia` or `unicode-math`, or by a `% !TEX program = …` line (decided before Milestone 6). Fonts installed on the user's computer cannot be used.
 - Clickable error messages that jump to the file and line
 - Autosave to Google Drive, with conflict detection between devices
 - File history through Drive's own version history (no history system of our own)
 
 **Possible later, only when the owner asks:**
-- SyncTeX (click in the PDF to jump to the source, and back)
 - Project templates
 - Offline editing with sync on reconnect
 

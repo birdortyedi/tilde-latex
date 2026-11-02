@@ -1,6 +1,8 @@
 import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { pageScale, stepZoom, zoomPercent, type Size, type Zoom } from './pdfZoom';
+import type { PdfRect } from './synctex';
+import { countWords } from './words';
 
 // PDF.js does its parsing in its own Web Worker.
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -12,13 +14,18 @@ export interface PdfViewState {
   pages: number;
   percent: number; // the size of the first page, as a percentage of its printed size
   zoom: Zoom;
+  words: number; // in the whole PDF, for the word count
 }
 
 // Shows every page of a PDF in a scrollable column. The pages are drawn as
 // wide as the pane, a whole page at a time, or at a chosen zoom; they are
 // drawn again when the pane is resized or the zoom changes, and the view
-// stays at the same place in the document.
+// stays at the same place in the document. Each page has its text on top,
+// invisible, so it can be selected, copied and found with the browser's search.
 export class PdfViewer {
+  // Double-click on a page: the page (1 = first) and the point, in PDF points from its top-left corner.
+  onDoubleClick: (page: number, x: number, y: number) => void = () => {};
+  private words = 0;
   private last: Uint8Array | null = null;
   private zoom: Zoom = 'width';
   private firstPage: Size | null = null; // in points
@@ -37,12 +44,40 @@ export class PdfViewer {
       }, 250);
     }).observe(container);
     container.addEventListener('scroll', () => this.report(), { passive: true });
+    container.addEventListener('dblclick', (event) => {
+      const page = (event.target as HTMLElement).closest<HTMLElement>('.page');
+      if (!page) return;
+      const box = page.getBoundingClientRect();
+      const scale = Number(page.dataset.scale);
+      this.onDoubleClick(Number(page.dataset.number), (event.clientX - box.left) / scale, (event.clientY - box.top) / scale);
+    });
+  }
+
+  // Scrolls to a place in the PDF and marks it for a moment.
+  highlight(rects: PdfRect[]): void {
+    const first = rects[0];
+    const page = this.pages()[first?.page - 1];
+    if (!first || !page) return;
+    const scale = Number(page.dataset.scale);
+    for (const old of this.container.querySelectorAll('.sync-mark')) old.remove();
+    for (const rect of rects) {
+      const mark = document.createElement('div');
+      mark.className = 'sync-mark';
+      Object.assign(mark.style, {
+        left: `${rect.x * scale}px`, top: `${rect.y * scale}px`,
+        width: `${rect.width * scale}px`, height: `${rect.height * scale}px`,
+      });
+      page.append(mark);
+      mark.addEventListener('animationend', () => mark.remove());
+    }
+    this.container.scrollTop = page.offsetTop + first.y * scale - this.container.clientHeight / 3;
   }
 
   // Forget the PDF, for example when another project is opened.
   clear(): void {
     this.last = null;
     this.firstPage = null;
+    this.words = 0;
     this.report();
   }
 
@@ -79,8 +114,8 @@ export class PdfViewer {
     return { width: this.container.clientWidth - 2 * PADDING - 8, height: this.container.clientHeight - 2 * PADDING };
   }
 
-  private pages(): HTMLCanvasElement[] {
-    return [...this.container.querySelectorAll('canvas')];
+  private pages(): HTMLElement[] {
+    return [...this.container.querySelectorAll<HTMLElement>('.page')];
   }
 
   private async draw(): Promise<void> {
@@ -96,7 +131,8 @@ export class PdfViewer {
 
     // Draw all pages first, then swap them in at once, so the view does not
     // flicker and the place in the document can be kept.
-    const pages: HTMLCanvasElement[] = [];
+    const pages: HTMLElement[] = [];
+    const texts: string[] = [];
     for (let number = 1; number <= doc.numPages; number++) {
       const page = await doc.getPage(number);
       const size = page.getViewport({ scale: 1 });
@@ -106,11 +142,25 @@ export class PdfViewer {
       const canvas = document.createElement('canvas');
       canvas.width = viewport.width;
       canvas.height = viewport.height;
-      canvas.style.width = `${viewport.width / pixelRatio}px`;
-      canvas.style.height = `${viewport.height / pixelRatio}px`;
       await page.render({ canvas, viewport }).promise;
-      pages.push(canvas);
+
+      // The page's text, laid out exactly over the drawing.
+      const text = await page.getTextContent();
+      texts.push(text.items.map((item) => ('str' in item ? item.str + (item.hasEOL ? '\n' : '') : '')).join(''));
+      const textLayer = document.createElement('div');
+      textLayer.className = 'textLayer';
+      const holder = document.createElement('div');
+      holder.className = 'page';
+      holder.dataset.number = String(number);
+      holder.dataset.scale = String(scale);
+      holder.style.width = `${size.width * scale}px`;
+      holder.style.height = `${size.height * scale}px`;
+      holder.style.setProperty('--total-scale-factor', String(scale));
+      holder.append(canvas, textLayer);
+      await new pdfjs.TextLayer({ textContentSource: text, container: textLayer, viewport: page.getViewport({ scale }) }).render();
+      pages.push(holder);
     }
+    this.words = countWords(texts.join('\n'));
     await loading.destroy(); // free the memory PDF.js used for this document
     if (drawing !== this.drawing) return;
 
@@ -133,6 +183,7 @@ export class PdfViewer {
       pages: this.last ? pages.length : 0,
       percent: this.firstPage ? zoomPercent(this.zoom, this.firstPage, this.area()) : 100,
       zoom: this.zoom,
+      words: this.last ? this.words : 0,
     });
   }
 }

@@ -37,6 +37,9 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - Brackets close by themselves, and Enter after `\begin{figure}` adds the `\end{figure}`
 - Ctrl/Cmd+B and +I for `\textbf` and `\textit`, Ctrl/Cmd+/ to comment lines out
 - An outline of your chapters and sections, through `\input` and `\include`; click to jump
+- Find and replace in the open file, with match case, whole words and regular expressions, and a count of the matches
+- Fold environments and sections with the arrows next to the line numbers
+- Spell checking by your browser, in its language, leaving out commands, labels, citation keys, file names and maths
 - Multi-file projects with folders: new, upload or drag in files, add from Drive, rename or move, duplicate, delete, choose the main file
 - Panes you can resize and hide (files, source, PDF); one at a time in a narrow window
 
@@ -48,6 +51,9 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - Optional auto-compile a moment after you stop typing
 - Errors and warnings in a list and as icons next to the line numbers; click one to jump to the file and line. Common problems (a font that is not in TeX Live, characters a font lacks, `minted`) come with a hint on what to do
 - The TeX engine starts loading as soon as you open a project, so the first compile waits less
+- Jump between source and PDF (SyncTeX): double-click the PDF to go to its line in the source, or press Ctrl/Cmd+Shift+Enter (or the crosshair button) to see the cursor's line in the PDF
+- Select and copy text in the PDF, and find it with your browser's search
+- A word count of the PDF in the status bar
 - PDF zoom (fit width, fit page or a size), page numbers, and Download PDF
 
 **Saving**
@@ -75,9 +81,11 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 | Keys | Does |
 |---|---|
 | Ctrl/Cmd+S | Save to Drive and compile |
+| Ctrl/Cmd+Shift+Enter | Show the cursor's line in the PDF |
+| Double-click the PDF | Go to that line in the source |
 | Ctrl/Cmd+B, Ctrl/Cmd+I | `\textbf{…}`, `\textit{…}` around the selection |
 | Ctrl/Cmd+/ | Comment or uncomment the selected lines |
-| Ctrl/Cmd+F | Find and replace in the open file |
+| Ctrl/Cmd+F | Find and replace in the open file; Enter for the next match, Shift+Enter for the previous one, Esc to close |
 | Ctrl/Cmd and + or −, over the PDF | Zoom the PDF (Ctrl/Cmd+0 fits the width) |
 | Esc, on the project page | Back to the open project |
 

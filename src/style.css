@@ -227,7 +227,35 @@ body.resizing iframe, body.resizing canvas { pointer-events: none; }
 #preview { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--table); }
 /* A plain column (not flex), so a zoomed-in page can scroll sideways from its left edge. */
 #pdf { position: relative; flex: 1; min-height: 0; overflow: auto; padding: 20px; }
-#pdf canvas { display: block; margin: 0 auto 20px; background: #fff; box-shadow: var(--shadow); }
+#pdf .page { position: relative; margin: 0 auto 20px; background: #fff; box-shadow: var(--shadow); --scale-round-x: 1px; --scale-round-y: 1px; }
+#pdf .page canvas { display: block; width: 100%; height: 100%; }
+/* The invisible text over each page, so it can be selected and searched.
+   These rules come from PDF.js's own viewer (pdf_viewer.css). */
+#pdf .textLayer {
+  position: absolute; inset: 0; overflow: clip; line-height: 1; text-align: initial;
+  -webkit-text-size-adjust: none; text-size-adjust: none; forced-color-adjust: none;
+  transform-origin: 0 0; z-index: 0;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+#pdf .textLayer :is(span, br) { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; }
+#pdf .textLayer > :not(.markedContent), #pdf .textLayer .markedContent span:not(.markedContent) {
+  z-index: 1; --font-height: 0; font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1; --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+#pdf .textLayer .markedContent { display: contents; }
+#pdf .textLayer ::selection { background: color-mix(in srgb, var(--teal) 35%, transparent); }
+#pdf .textLayer .endOfContent { display: block; position: absolute; inset: 100% 0 0; z-index: 0; cursor: default; user-select: none; }
+/* Where a source line is in the PDF, shown for a moment after "Show in PDF". */
+#pdf .sync-mark {
+  position: absolute; z-index: 2; pointer-events: none; border-radius: 2px;
+  background: color-mix(in srgb, var(--teal) 30%, transparent);
+  animation: sync-fade 1.8s ease-out forwards;
+}
+@keyframes sync-fade { 0%, 60% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { #pdf .sync-mark { animation-duration: 3s; animation-timing-function: steps(1, end); } }
 #pdf .empty, #pdf .engine { position: absolute; inset: 0; display: grid; place-content: center; }
 
 #pdf-toolbar {
@@ -238,6 +266,7 @@ body.resizing iframe, body.resizing canvas { pointer-events: none; }
 #pdf-toolbar button { height: 28px; padding: 0 9px; color: var(--muted); }
 #pdf-toolbar button:hover:enabled { color: var(--ink); }
 #pdf-toolbar .square { width: 28px; padding: 0; font-size: 16px; }
+#pdf-toolbar .square svg { display: block; margin: auto; }
 #zoom-menu { min-width: 86px; font-variant-numeric: tabular-nums; }
 .page-nav { display: flex; align-items: center; gap: 6px; color: var(--muted); }
 #page-number { width: 44px; height: 26px; padding: 0 6px; text-align: center; font-variant-numeric: tabular-nums; }
@@ -557,3 +586,40 @@ button.link:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px;
 @keyframes toast-in { from { opacity: 0; transform: translateY(6px); } }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes progress-line { from { left: -30%; } to { left: 100%; } }
+
+/* The editor's find and replace bar (Ctrl/Cmd+F), floating at the top right. */
+.find-bar {
+  display: grid; gap: 6px; width: 470px; max-width: 100%; box-sizing: border-box; padding: 6px;
+  border: 1px solid var(--rule); border-radius: 6px; background: var(--raised); color: var(--ink);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2); font: 13px var(--ui);
+}
+.find-row { display: flex; align-items: center; gap: 2px; }
+.find-row[hidden] { display: none; }
+.replace-row { padding-left: 30px; gap: 6px; } /* lines up with the Find box, past the chevron */
+.find-field { position: relative; flex: 1; min-width: 0; }
+.find-field input {
+  width: 100%; height: 28px; box-sizing: border-box; padding: 0 76px 0 8px;
+  font: 13px var(--mono); background: var(--editor);
+}
+.replace-row .find-field input { padding-right: 8px; }
+.find-field input:focus { outline: 2px solid var(--teal); outline-offset: -1px; border-color: transparent; }
+.find-count {
+  position: absolute; top: 50%; right: 8px; transform: translateY(-50%);
+  color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none;
+}
+.find-count.none { color: var(--red); }
+.find-bar button {
+  display: inline-grid; place-items: center; height: 28px; min-width: 28px; padding: 0 6px;
+  border-color: transparent; background: none; color: var(--muted);
+}
+.find-bar button:hover:enabled { background: var(--hover); color: var(--ink); }
+.find-bar .find-option { font: 12.5px var(--mono); }
+.find-bar .find-option[aria-pressed='true'] {
+  color: var(--teal); border-color: color-mix(in srgb, var(--teal) 45%, transparent);
+  background: color-mix(in srgb, var(--teal) 12%, transparent);
+}
+.find-bar .find-expand svg { transition: transform 0.12s ease; }
+.find-bar .find-expand[aria-expanded='true'] svg { transform: rotate(90deg); }
+.find-separator { width: 1px; height: 18px; margin: 0 4px; background: var(--rule); }
+.find-bar .find-text { padding: 0 10px; border-color: var(--rule); color: var(--ink); background: var(--editor); }
+@media (prefers-reduced-motion: reduce) { .find-bar .find-expand svg { transition: none; } }

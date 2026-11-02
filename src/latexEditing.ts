@@ -1,10 +1,12 @@
 import { completionStatus, snippetCompletion, type Completion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
+import { foldService } from '@codemirror/language';
 import { EditorSelection, Prec, type Extension } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
-import { bibKeysIn, completionContext, labelsIn, unclosedEnvironment } from './latex';
+import { bibKeysIn, completionContext, foldEnd, labelsIn, unclosedEnvironment } from './latex';
 import type { ProjectFile } from './projects';
 
-// Editor helpers for LaTeX: completion, \begin…\end, and Ctrl/Cmd+B and +I.
+// Editor helpers for LaTeX: completion, \begin…\end, Ctrl/Cmd+B and +I, and
+// folding of environments and sections (the arrows next to the line numbers).
 
 const IMAGE = /\.(png|jpe?g|pdf|eps|svg)$/i;
 
@@ -100,10 +102,14 @@ export function latexEditing(files: () => ProjectFile[]): { languageData: Record
   return {
     // Brackets and $ close by themselves; quotes do not, since LaTeX writes them as `` and ''.
     languageData: { autocomplete: completions(files), closeBrackets: { brackets: ['(', '[', '{', '$'] } },
-    extensions: Prec.high(keymap.of([
+    extensions: [foldService.of((state, lineStart) => {
+      const line = state.doc.lineAt(lineStart);
+      const end = foldEnd((n) => state.doc.line(n).text, line.number, state.doc.lines);
+      return end ? { from: line.to, to: state.doc.line(end).to } : null;
+    }), Prec.high(keymap.of([
       { key: 'Enter', run: closeEnvironment },
       { key: 'Mod-b', run: wrapIn('textbf'), preventDefault: true },
       { key: 'Mod-i', run: wrapIn('textit'), preventDefault: true },
-    ])),
+    ]))],
   };
 }

@@ -85,6 +85,41 @@ export function bibliographyTool(files: ProjectFile[]): 'biber' | 'bibtex' | nul
   return 'bibtex';
 }
 
+const FOLD_LEVELS: Record<string, number> = { part: 0, chapter: 1, section: 2, subsection: 3, subsubsection: 4, paragraph: 5 };
+
+// For folding in the editor: if line `number` (1 = first) opens an
+// environment or starts a heading, the last line its fold hides; null if
+// it does neither. An environment folds up to its \end line, which stays in
+// view; a heading folds up to the next heading of the same or a higher
+// level (or \appendix, the bibliography, \end{document}).
+export function foldEnd(lineAt: (n: number) => string, number: number, lines: number): number | null {
+  const first = withoutComment(lineAt(number));
+  const environment = /\\begin\{([^}]+)\}/.exec(first);
+  if (environment) {
+    const name = environment[1].replace('*', '\\*');
+    const begin = new RegExp(`\\\\begin\\{${name}\\}`, 'g');
+    const end = new RegExp(`\\\\end\\{${name}\\}`, 'g');
+    let depth = 0;
+    for (let n = number; n <= lines; n++) {
+      const text = withoutComment(lineAt(n));
+      depth += (text.match(begin) ?? []).length - (text.match(end) ?? []).length;
+      if (depth <= 0) return n - 1 > number ? n - 1 : null;
+    }
+    return null;
+  }
+  const heading = /^\s*\\(part|chapter|section|subsection|subsubsection|paragraph)\*?[[{]/.exec(first);
+  if (!heading) return null;
+  const level = FOLD_LEVELS[heading[1]];
+  let last = number;
+  for (let n = number + 1; n <= lines; n++) {
+    const text = withoutComment(lineAt(n));
+    const next = /^\s*\\(part|chapter|section|subsection|subsubsection|paragraph)\*?[[{]/.exec(text);
+    if ((next && FOLD_LEVELS[next[1]] <= level) || /\\(appendix|bibliography\{|printbibliography|end\{document\})/.test(text)) break;
+    if (text.trim() !== '') last = n; // a blank line before the next heading stays in view
+  }
+  return last > number ? last : null;
+}
+
 export type TexEngine = 'pdflatex' | 'xelatex';
 
 // Packages that only work with XeLaTeX (or LuaLaTeX): Unicode fonts and scripts.

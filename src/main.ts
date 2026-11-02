@@ -19,6 +19,7 @@ import { lastLatexLog, parseLog, type LogProblem } from './logParser';
 import { unzipProject, zipProject } from './zipImport';
 import { timeAgo } from './time';
 import { bibliographyTool, outline, texEngine } from './latex';
+import { SyncTex } from './synctex';
 import { isGoogleDoc, pickDriveFiles, pickDriveFolder, type PickedFile } from './picker';
 import { askConfirm, askText } from './ask';
 import { initLayout, type Pane } from './layout';
@@ -103,6 +104,7 @@ const logView = element<HTMLPreElement>('#log');
 const addFilesButton = element<HTMLButtonElement>('#add-files');
 const projectActionsButton = element<HTMLButtonElement>('#project-actions');
 const cursorPosition = element<HTMLSpanElement>('#cursor-position');
+const wordCount = element<HTMLSpanElement>('#word-count');
 const problemCount = element<HTMLButtonElement>('#problem-count');
 const pdfContainer = element<HTMLDivElement>('#pdf');
 const uploadInput = element<HTMLInputElement>('#upload-input');
@@ -125,6 +127,8 @@ let project: Project | null = null; // the open project; edits change its files 
 let activePath: string | null = null;
 let runner: Promise<BusyTexRunner> | null = null; // the TeX engine, once it has started loading
 let compiling = false;
+let syncTex: SyncTex | null = null; // where each part of the PDF came from, from the last compile
+let cursorLine = 1; // in the open file, for "Show in PDF"
 let sync: ProjectSync | null = null; // saves the open project to Drive; null for examples
 let conflictShown = ''; // the file the conflict dialog was last opened for
 let braveHintShown = false;
@@ -138,6 +142,7 @@ const editor = new Editor(editorElement, (path, text) => {
   scheduleAutoCompile();
   scheduleOutline();
 }, (line, column) => {
+  cursorLine = line;
   cursorPosition.textContent = `Ln ${line}, Col ${column}`;
 }, () => project?.files ?? []);
 const pdfViewer = new PdfViewer(pdfContainer, showPdfState);
@@ -152,6 +157,7 @@ const pageNumber = element<HTMLInputElement>('#page-number');
 const pageCount = element<HTMLSpanElement>('#page-count');
 const autoCompileBox = element<HTMLInputElement>('#auto-compile');
 const downloadPdfButton = element<HTMLButtonElement>('#download-pdf');
+const showInPdfButton = element<HTMLButtonElement>('#show-in-pdf');
 const ZOOM_KEY = 'tilde.pdfZoom';
 const AUTO_COMPILE_KEY = 'tilde.autoCompile';
 const AUTO_COMPILE_DELAY = 1500; // milliseconds after the last edit
@@ -160,6 +166,9 @@ function showPdfState(state: PdfViewState): void {
   zoomLabel.textContent = state.zoom === 'width' ? 'Fit width' : state.zoom === 'page' ? 'Fit page' : `${state.percent}%`;
   const hasPdf = state.pages > 0;
   for (const button of [zoomInButton, zoomOutButton, downloadPdfButton]) button.disabled = !hasPdf;
+  showInPdfButton.disabled = !hasPdf || !syncTex;
+  wordCount.hidden = !hasPdf;
+  wordCount.textContent = `${state.words.toLocaleString()} ${state.words === 1 ? 'word' : 'words'}`;
   pageNav.hidden = !hasPdf;
   if (document.activeElement !== pageNumber) pageNumber.value = String(state.page);
   pageCount.textContent = `of ${state.pages}`;
@@ -178,6 +187,27 @@ function showZoomMenu(): void {
     ...sizes.map((size) => ({ label: `${Math.round(size * 100)}%`, action: () => setZoom(size) })),
   ]);
 }
+
+// SyncTeX: from the cursor's line to the PDF, and from a double-click in
+// the PDF back to the source.
+function showInPdf(): void {
+  if (!syncTex || !activePath) return;
+  const rects = syncTex.toPdf(activePath, cursorLine);
+  if (rects.length === 0) {
+    setStatus(`Line ${cursorLine} of ${activePath} is not in the PDF.`);
+    return;
+  }
+  reveal('pdf');
+  pdfViewer.highlight(rects);
+}
+
+pdfViewer.onDoubleClick = (page, x, y) => {
+  const place = syncTex?.toSource(page, x, y);
+  if (!place || !project?.files.some((f) => f.path === place.file)) return;
+  if (place.file !== activePath) openFile(place.file);
+  reveal('editor');
+  editor.goTo(place.line);
+};
 
 function downloadPdf(): void {
   const pdf = pdfViewer.current();
@@ -634,6 +664,7 @@ function showProject(newProject: Project | null): void {
   editor.clear();
   activePath = null;
   pdfViewer.clear();
+  syncTex = null;
   showEmptyPdf('Compile to see the PDF here. Ctrl/Cmd+S saves and compiles.');
   cursorPosition.textContent = '';
   showProblems([]);
@@ -1286,6 +1317,12 @@ async function compile(): Promise<void> {
     showProblems(problems);
     const warnings = problems.filter((p) => p.level === 'warning').length;
     if (result.success && result.pdf) {
+      try {
+        syncTex = result.synctex ? SyncTex.read(result.synctex) : null;
+      } catch (error) {
+        syncTex = null;
+        console.warn('Could not read the SyncTeX file', error);
+      }
       await pdfViewer.show(result.pdf);
       setStatus(`Compiled${withEngine} in ${seconds} s` + (warnings > 0 ? `, ${warnings} warning${warnings > 1 ? 's' : ''}` : ''));
     } else if (problems.some((p) => p.level === 'error')) {
@@ -1394,6 +1431,7 @@ zoomMenuButton.addEventListener('click', showZoomMenu);
 zoomInButton.addEventListener('click', () => pdfViewer.stepZoom(1));
 zoomOutButton.addEventListener('click', () => pdfViewer.stepZoom(-1));
 downloadPdfButton.addEventListener('click', downloadPdf);
+showInPdfButton.addEventListener('click', showInPdf);
 pageNumber.addEventListener('keydown', (event) => {
   if (event.key !== 'Enter') return;
   pdfViewer.goToPage(Number(pageNumber.value) || 1);
@@ -1562,6 +1600,10 @@ window.addEventListener('keydown', (event) => {
     event.preventDefault();
     void sync?.saveNow();
     void compile();
+  }
+  if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'Enter') {
+    event.preventDefault();
+    showInPdf();
   }
 });
 

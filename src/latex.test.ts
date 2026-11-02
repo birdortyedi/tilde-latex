@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bibKeysIn, bibliographyTool, completionContext, labelsIn, outline, texEngine, unclosedEnvironment, withoutComment } from './latex';
+import { bibKeysIn, bibliographyTool, completionContext, foldEnd, labelsIn, outline, texEngine, unclosedEnvironment, withoutComment } from './latex';
 
 const files = [
   { path: 'main.tex', content: '\\documentclass{report}\n\\begin{document}\n\\chapter{Intro}\\label{chap:intro}\n% \\section{Hidden}\n\\input{chapters/method}\n\\section*{Summary}\n\\end{document}\n' },
@@ -83,5 +83,40 @@ describe('unclosedEnvironment', () => {
   it('does nothing when the environment is already closed, or the line has more text', () => {
     expect(unclosedEnvironment('\\begin{figure}', '\\begin{figure}\n\\end{figure}')).toBeNull();
     expect(unclosedEnvironment('\\begin{figure} text', '\\begin{figure} text')).toBeNull();
+  });
+});
+
+describe('foldEnd', () => {
+  const doc = [
+    '\\section{Intro}', //            1
+    'Text.', //                       2
+    '\\begin{figure}[h]', //        3
+    '  \\begin{figure}', //         4 (nested, same name)
+    '  \\end{figure}', //           5
+    '  \\caption{A}', //            6
+    '\\end{figure}', //             7
+    '\\subsection{Detail}', //      8
+    'More.', //                       9
+    '', //                            10
+    '\\section{Next}', //           11
+    'Last.', //                       12
+    '\\end{document}', //           13
+  ];
+  const fold = (line: number) => foldEnd((n) => doc[n - 1], line, doc.length);
+
+  it('folds an environment up to the line before its \\end, past nested ones', () => {
+    expect(fold(3)).toBe(6);
+    expect(fold(4)).toBeNull(); // nothing between \\begin and \\end
+  });
+
+  it('folds a heading up to the next heading of the same or a higher level', () => {
+    expect(fold(1)).toBe(9); // the blank line 10 stays in view
+    expect(fold(8)).toBe(9);
+    expect(fold(11)).toBe(12); // stops at \\end{document}
+  });
+
+  it('does not fold other lines', () => {
+    expect(fold(2)).toBeNull();
+    expect(foldEnd(() => '% \\section{Commented out}', 1, 1)).toBeNull();
   });
 });
