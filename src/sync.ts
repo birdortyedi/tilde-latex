@@ -1,7 +1,7 @@
 import { SignInNeededError } from './auth';
 import { OfflineError, type Drive } from './drive';
 import type { DraftKey, DraftStore } from './drafts';
-import { currentRevisions, moveFile, removeEmptyFolders, renameFolder, saveProject, setMainFile, stampLastEdited, trashFile } from './driveProjects';
+import { filesOnDrive, moveFile, removeEmptyFolders, renameFolder, saveProject, setMainFile, stampLastEdited, trashFile } from './driveProjects';
 import { isTextFile } from './fileTree';
 import type { Project, ProjectFile } from './projects';
 
@@ -26,6 +26,15 @@ export interface SyncListener {
   // A file's text was replaced (by Drive's version or a restored draft),
   // so the editor must show the new text.
   fileReplaced(path: string, content: string): void;
+  // Files were added, renamed or deleted elsewhere (see checkDrive).
+  filesChanged(changes: DriveChanges): void;
+}
+
+export interface DriveChanges {
+  added: string[]; // files added elsewhere
+  moved: [string, string][]; // old and new path of files renamed or moved elsewhere
+  removed: string[]; // files deleted elsewhere
+  kept: string[]; // files deleted elsewhere but edited here: kept, and saved again
 }
 
 // Keeps one open Drive project in step with Drive: saves edits a few seconds
@@ -99,24 +108,68 @@ export class ProjectSync {
     return this.saveNow();
   }
 
-  // When the user comes back to the tab: loads files that changed in Drive
-  // meanwhile. Files also edited here become conflicts instead.
+  // When the user comes back to the tab: brings in what changed in Drive
+  // meanwhile, for example on the other computer. Changed and new files are
+  // loaded, renamed files are followed, deleted files are removed. A file
+  // also edited here becomes a conflict instead; one deleted elsewhere but
+  // edited here is kept and saved again, so the edits are not lost.
   checkDrive(): Promise<void> {
     return this.enqueue(async () => {
-      const revisions = await currentRevisions(this.drive, this.project);
-      for (const file of this.project.files) {
-        if (!file.driveId || !revisions.has(file.driveId)) continue;
-        const revision = revisions.get(file.driveId);
-        if (revision === file.revision) continue;
+      const onDrive = await filesOnDrive(this.drive, this.project);
+      const changes: DriveChanges = { added: [], moved: [], removed: [], kept: [] };
+      for (const file of [...this.project.files]) {
+        if (!file.driveId) continue; // not in Drive yet
+        const current = onDrive.get(file.driveId);
+        onDrive.delete(file.driveId);
+        if (!current) { // deleted elsewhere (it is in Drive's trash)
+          this.conflicts.delete(file.path);
+          if (file.changed) {
+            file.driveId = undefined; // the next save creates it again
+            file.revision = undefined;
+            changes.kept.push(file.path);
+          } else {
+            this.project.files.splice(this.project.files.indexOf(file), 1);
+            changes.removed.push(file.path);
+          }
+          continue;
+        }
+        if (current.path !== file.path && !this.file(current.path)) {
+          changes.moved.push([file.path, current.path]);
+          if (this.conflicts.delete(file.path)) this.conflicts.add(current.path);
+          this.drafts.remove({ accountId: this.accountId, projectId: this.projectId, path: file.path })
+            .catch((error: unknown) => console.warn('Could not update the copy kept in the browser', error));
+          file.path = current.path;
+          this.syncDraft(file);
+        }
+        if (current.revision === file.revision) continue;
         if (!file.changed) {
           const bytes = await this.drive.download(file.driveId);
           if (!file.changed) { // the user may have typed during the download
-            this.replace(file, bytes, revision);
+            this.replace(file, bytes, current.revision);
             continue;
           }
         }
         this.conflicts.add(file.path);
       }
+      // What is left in Drive's list is new.
+      for (const [driveId, { path, revision }] of onDrive) {
+        const local = this.file(path);
+        if (local) {
+          // A file of the same name that is not in Drive yet (new here, or
+          // kept above): it becomes a conflict, so neither version is lost.
+          if (local.driveId) continue;
+          local.driveId = driveId;
+          local.revision = undefined; // differs from Drive's, so saving cannot overwrite it
+          this.conflicts.add(path);
+          changes.kept = changes.kept.filter((kept) => kept !== path);
+          continue;
+        }
+        const bytes = await this.drive.download(driveId);
+        this.project.files.push({ path, content: isTextFile(path) ? new TextDecoder().decode(bytes) : bytes, driveId, revision });
+        changes.added.push(path);
+      }
+      if (changes.kept.length > 0) await this.save();
+      if (Object.values(changes).some((list) => list.length > 0)) this.listener.filesChanged(changes);
     });
   }
 

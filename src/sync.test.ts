@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { forgetOtherAccounts, type Draft, type DraftKey, type DraftStore } from './drafts';
 import { createProject, findOrCreateRootFolder, listProjects, openProject } from './driveProjects';
 import type { Project, ProjectFile } from './projects';
-import { AUTOSAVE_DELAY, ProjectSync, RETRY_DELAY, type SyncState } from './sync';
+import { AUTOSAVE_DELAY, ProjectSync, RETRY_DELAY, type DriveChanges, type SyncState } from './sync';
 import { FakeDrive } from './testing/fakeDrive';
 
 // An in-memory stand-in for the drafts kept in IndexedDB.
@@ -35,6 +35,7 @@ describe('ProjectSync', () => {
   let sync: ProjectSync;
   let replaced: Record<string, string>; // what the editor was told to show
   let states: SyncState[]; // every status shown, in order
+  let changes: DriveChanges[]; // what the editor was told about files added, moved or deleted elsewhere
 
   const file = (path: string): ProjectFile => {
     const found = project.files.find((f) => f.path === path);
@@ -62,9 +63,11 @@ describe('ProjectSync', () => {
     ]);
     replaced = {};
     states = [];
+    changes = [];
     sync = new ProjectSync(drive, drafts, 'me', project, {
       stateChanged: () => states.push(sync.state),
       fileReplaced: (path, content) => { replaced[path] = content; },
+      filesChanged: (change) => changes.push(change),
     });
   });
 
@@ -211,6 +214,60 @@ describe('ProjectSync', () => {
     expect(sync.state).toBe('conflict');
     expect(file('main.tex').content).toBe('mine');
   });
+  describe('files added, renamed or deleted on the other computer', () => {
+    const encode = (text: string) => new TextEncoder().encode(text);
+    const projectId = () => project.driveId ?? '';
+
+    it('loads a new file, also in a new folder', async () => {
+      const folder = await drive.createFolder('chapters', projectId());
+      await drive.createFile('intro.tex', folder.id, encode('Intro'));
+      await sync.checkDrive();
+      expect(file('chapters/intro.tex').content).toBe('Intro');
+      expect(changes).toEqual([{ added: ['chapters/intro.tex'], moved: [], removed: [], kept: [] }]);
+    });
+
+    it('follows a renamed file, keeping its unsaved edits', async () => {
+      type('refs.bib', 'edited');
+      await drive.updateMetadata(file('refs.bib').driveId ?? '', { name: 'references.bib' });
+      await sync.checkDrive();
+      expect(file('references.bib').content).toBe('edited');
+      expect(drafts.get('refs.bib')).toBeUndefined();
+      expect(drafts.get('references.bib')?.content).toBe('edited');
+      expect(changes[0].moved).toEqual([['refs.bib', 'references.bib']]);
+    });
+
+    it('removes a deleted file that has no edits here', async () => {
+      await drive.updateMetadata(file('refs.bib').driveId ?? '', { trashed: true });
+      await sync.checkDrive();
+      expect(project.files.map((f) => f.path)).toEqual(['main.tex']);
+      expect(changes[0].removed).toEqual(['refs.bib']);
+    });
+
+    it('keeps a deleted file that was edited here, and saves it again', async () => {
+      type('refs.bib', 'my edits');
+      await drive.updateMetadata(file('refs.bib').driveId ?? '', { trashed: true });
+      await sync.checkDrive();
+      expect(onDrive('refs.bib')).toBe('my edits');
+      expect(changes[0].kept).toEqual(['refs.bib']);
+      expect(sync.state).toBe('saved');
+    });
+
+    it('turns a new file with the same name as one made here into a conflict, overwriting neither', async () => {
+      project.files.push({ path: 'notes.tex', content: 'mine', changed: true }); // not saved yet
+      await drive.createFile('notes.tex', projectId(), encode('theirs'));
+      await sync.checkDrive();
+      await sync.saveNow();
+      expect(sync.state).toBe('conflict');
+      expect(onDrive('notes.tex')).toBe('theirs');
+      expect(file('notes.tex').content).toBe('mine');
+    });
+
+    it('tells the editor nothing when nothing changed', async () => {
+      await sync.checkDrive();
+      expect(changes).toEqual([]);
+    });
+  });
+
   describe('file actions', () => {
     it('adds a new file in a new folder and saves it', async () => {
       await sync.addFile('chapters/method.tex', 'Method');

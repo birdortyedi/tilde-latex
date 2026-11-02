@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bibKeysIn, bibliographyTool, completionContext, labelsIn, outline, unclosedEnvironment, withoutComment } from './latex';
+import { bibKeysIn, bibliographyTool, completionContext, labelsIn, outline, texEngine, unclosedEnvironment, withoutComment } from './latex';
 
 const files = [
   { path: 'main.tex', content: '\\documentclass{report}\n\\begin{document}\n\\chapter{Intro}\\label{chap:intro}\n% \\section{Hidden}\n\\input{chapters/method}\n\\section*{Summary}\n\\end{document}\n' },
@@ -38,6 +38,22 @@ describe('bibliographyTool', () => {
     expect(bibliographyTool([tex('\\usepackage[round]{natbib}'), bib])).toBe('bibtex');
     expect(bibliographyTool([tex('% \\usepackage{biblatex}'), bib])).toBe('bibtex');
     expect(bibliographyTool([tex('\\usepackage{biblatex}')])).toBeNull(); // no .bib file
+  });
+});
+
+describe('texEngine', () => {
+  const tex = (content: string, path = 'main.tex') => ({ path, content });
+  it('uses XeLaTeX for fontspec and similar packages, pdfLaTeX otherwise', () => {
+    expect(texEngine([tex('\\usepackage{amsmath}')], 'main.tex')).toBe('pdflatex');
+    expect(texEngine([tex('\\usepackage{fontspec}')], 'main.tex')).toBe('xelatex');
+    expect(texEngine([tex('\\usepackage[english]{babel}\n\\usepackage{amsmath,unicode-math}')], 'main.tex')).toBe('xelatex');
+    expect(texEngine([tex('x'), tex('\\RequirePackage{polyglossia}', 'mystyle.sty')], 'main.tex')).toBe('xelatex');
+    expect(texEngine([tex('% \\usepackage{fontspec}')], 'main.tex')).toBe('pdflatex');
+  });
+
+  it('follows a "% !TEX program" line in the main file', () => {
+    expect(texEngine([tex('% !TEX program = xelatex\n\\documentclass{article}')], 'main.tex')).toBe('xelatex');
+    expect(texEngine([tex('%!TEX TS-program = pdflatex\n\\usepackage{fontspec}')], 'main.tex')).toBe('pdflatex');
   });
 });
 

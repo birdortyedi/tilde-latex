@@ -255,6 +255,7 @@ body.resizing iframe, body.resizing canvas { pointer-events: none; }
   width: 100%; padding: 5px 12px; box-sizing: border-box; cursor: pointer;
 }
 #problems .message { grid-column: 1 / -1; overflow-wrap: anywhere; }
+#problems .hint { grid-column: 1 / -1; margin-top: 2px; color: var(--muted); }
 #problems button:hover:enabled { background: var(--hover); }
 #problems button:disabled { cursor: default; }
 #problems .level { font-weight: 600; }

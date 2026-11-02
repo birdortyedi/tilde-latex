@@ -1,0 +1,25 @@
+% Tilde compiles this with XeLaTeX, because it loads fontspec.
+\documentclass{article}
+\usepackage{fontspec}
+\usepackage{unicode-math}
+
+% Fonts that come with TeX Live. Fonts installed on your computer cannot be
+% used, since Tilde runs in the browser.
+\setmainfont{Libertinus Serif}
+\setsansfont{Libertinus Sans}
+\setmathfont{Libertinus Math}
+
+\title{Unicode text with XeLaTeX}
+\author{Test document}
+\date{}
+
+\begin{document}
+\maketitle
+
+Type any language straight in: café, naïve, Straße, İstanbul, Ελληνικά,
+Привет, Kraków.
+
+\textsf{Libertinus Sans} for headings or captions, and math in the same
+style: $∑_{i=1}^{n} α_i x_i ≤ ∞$.
+
+\end{document}

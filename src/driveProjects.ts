@@ -161,18 +161,20 @@ export async function setMainFile(drive: Drive, project: Project, path: string):
   project.mainFile = path;
 }
 
-// The current Drive revision of every file in a project, by file id.
-// Costs one request per folder, not one per file.
-export async function currentRevisions(drive: Drive, project: Project): Promise<Map<string, string | undefined>> {
-  const revisions = new Map<string, string | undefined>();
-  const walk = async (folderId: string): Promise<void> => {
+// Every file of a project as it is in Drive now, by file id: its path in
+// the project and its current revision. Costs one request per folder, not
+// one per file.
+export async function filesOnDrive(drive: Drive, project: Project): Promise<Map<string, { path: string; revision?: string }>> {
+  const files = new Map<string, { path: string; revision?: string }>();
+  const walk = async (folderId: string, prefix: string): Promise<void> => {
     await Promise.all((await drive.list(folderId)).map(async (item) => {
-      if (isFolder(item)) return walk(item.id);
-      revisions.set(item.id, item.headRevisionId);
+      const path = prefix + item.name;
+      if (isFolder(item)) return walk(item.id, `${path}/`);
+      files.set(item.id, { path, revision: item.headRevisionId });
     }));
   };
-  if (project.driveId) await walk(project.driveId);
-  return revisions;
+  if (project.driveId) await walk(project.driveId, '');
+  return files;
 }
 
 // Saves every changed file to Drive and returns the paths of files it did

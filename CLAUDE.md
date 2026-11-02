@@ -27,6 +27,7 @@ The project owner is not a professional web developer. They will test every chan
 - Compile in the browser with PDF preview
 - TikZ and pgfplots
 - BibTeX and natbib, and biblatex with Biber (decided after Milestone 5: the engine ships Biber)
+- XeLaTeX for Unicode text and the OpenType fonts that come with TeX Live, chosen by itself when a project loads `fontspec`, `polyglossia` or `unicode-math`, or by a `% !TEX program = …` line (decided before Milestone 6). Fonts installed on the user's computer cannot be used.
 - Clickable error messages that jump to the file and line
 - Autosave to Google Drive, with conflict detection between devices
 - File history through Drive's own version history (no history system of our own)
@@ -35,7 +36,6 @@ The project owner is not a professional web developer. They will test every chan
 - SyncTeX (click in the PDF to jump to the source, and back)
 - Project templates
 - Offline editing with sync on reconnect
-- XeTeX for Unicode text and system fonts
 
 **Out of scope, do not build or suggest:**
 - Real-time co-editing, track changes, or a comment system
@@ -48,7 +48,7 @@ The project owner is not a professional web developer. They will test every chan
 Everything runs in the user's browser. The app is a static site built with Vite and hosted on GitHub Pages.
 
 - **Editor:** CodeMirror 6, with LaTeX syntax highlighting.
-- **TeX engine:** [TeXlyre BusyTeX](https://github.com/TeXlyre/texlyre-busytex) (npm `texlyre-busytex`, AGPL-3.0, TeX Live 2026), used in pdfLaTeX mode with bibtex8, and Biber for biblatex. It also contains XeTeX for later. Runs in a Web Worker so the editor never freezes. Chosen in Milestone 1 over SwiftLaTeX (no BibTeX, package server gone), the original BusyTeX (no current browser build) and texlive.js (GPL-2.0, unmaintained).
+- **TeX engine:** [TeXlyre BusyTeX](https://github.com/TeXlyre/texlyre-busytex) (npm `texlyre-busytex`, AGPL-3.0, TeX Live 2026), used in pdfLaTeX and XeLaTeX modes with bibtex8, and Biber for biblatex. It also contains LuaTeX, which Tilde does not use. Runs in a Web Worker so the editor never freezes. Chosen in Milestone 1 over SwiftLaTeX (no BibTeX, package server gone), the original BusyTeX (no current browser build) and texlive.js (GPL-2.0, unmaintained).
 - **PDF viewer:** PDF.js.
 - **Drive sync:** Google Identity Services for sign-in, Google Drive API v3 called with `fetch`, and the Google Picker for importing existing files.
 - **Package files:** TeX Live package files are loaded on demand and cached in the browser (IndexedDB).
@@ -157,7 +157,7 @@ Keep a folder `test-docs/` with small LaTeX projects that every engine change mu
 - `bibtex/` — natbib with a `.bib` file
 - `biblatex/` — biblatex with Biber
 - `multifile/` — `\input`, `\include`, an image in a subfolder
-- `xetex/` — Unicode text and a system-independent font (once XeTeX works)
+- `xetex/` — Unicode text and TeX Live's OpenType fonts with XeLaTeX
 
 ## Milestones
 

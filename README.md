@@ -41,21 +41,23 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - Panes you can resize and hide (files, source, PDF); one at a time in a narrow window
 
 **Compiling**
-- pdfLaTeX from TeX Live 2026, running in your browser (WebAssembly)
-- TikZ, pgfplots, BibTeX, natbib, and biblatex with Biber
+- pdfLaTeX and XeLaTeX from TeX Live 2026, running in your browser (WebAssembly). Tilde picks XeLaTeX by itself when a project loads `fontspec`, `polyglossia` or `unicode-math`; a line `% !TEX program = xelatex` (or `pdflatex`) in the main file chooses one
+- Unicode text with XeLaTeX (Greek, Cyrillic, Arabic with `polyglossia`, Chinese with `xeCJK`), in the OpenType fonts that come with TeX Live: TeX Gyre, Libertinus, Noto, Amiri, Fandol and more
+- TikZ, pgfplots, BibTeX, natbib, biblatex with Biber, and an index with `\makeindex`
 - Packages beyond the basic set are fetched once and kept, so later compiles work offline
 - Optional auto-compile a moment after you stop typing
-- Errors and warnings in a list and as icons next to the line numbers; click one to jump to the file and line
+- Errors and warnings in a list and as icons next to the line numbers; click one to jump to the file and line. Common problems (a font that is not in TeX Live, characters a font lacks, `minted`) come with a hint on what to do
+- The TeX engine starts loading as soon as you open a project, so the first compile waits less
 - PDF zoom (fit width, fit page or a size), page numbers, and Download PDF
 
 **Saving**
 - Autosave to your Google Drive a few seconds after you stop typing
-- Works from two computers: Tilde notices when a file changed elsewhere and never overwrites it silently. You choose: keep mine, keep Drive's, or download both
+- Works from two computers: when you come back to the tab, Tilde brings in what changed on the other one: edited, added, renamed and deleted files. It never overwrites a file silently. If a file changed in both places, you choose: keep mine, keep Drive's, or download both. A file deleted elsewhere that you had edited here is kept and saved again
 - Edits not yet in Drive are kept in your browser, so a closed tab or a lost network loses nothing
 - File history comes from Drive's own version history
 
 **Projects**
-- Try it without signing in: six examples (a minimal document, maths, TikZ and pgfplots, BibTeX with natbib, biblatex with Biber, and a multi-file project)
+- Try it without signing in: seven examples (a minimal document, maths, TikZ and pgfplots, BibTeX with natbib, biblatex with Biber, a multi-file project, and Unicode text with XeLaTeX)
 - A project is a normal folder in your Drive, inside a projects folder that you can rename, move, or swap for another one
 - Start blank or from an example, or import a `.zip` or files from your Drive
 - Download any project as a `.zip`
@@ -84,12 +86,14 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 | Limit | What to do instead |
 |---|---|
 | **One person per project.** Real-time co-editing, track changes and comments need a server, and Tilde has none. | Send a co-author the project as a `.zip` (they can import it into their own Tilde) or the PDF. |
-| **pdfLaTeX only** for now, so no `fontspec`, system fonts, or scripts such as Greek, Arabic or Chinese. | Use a font package made for pdfLaTeX, for example `\usepackage{newtxtext}` (Times-like), with `\usepackage[T1]{fontenc}`. Accented Latin letters typed directly (é, ü, ğ, ş) work. |
+| **No fonts from your computer.** A browser cannot read them, so `\setmainfont{Arial}` fails. | Use a font that comes with TeX Live: TeX Gyre Termes (like Times), TeX Gyre Heros (like Helvetica), Libertinus Serif or Noto Serif. |
+| **No LuaLaTeX**, only pdfLaTeX and XeLaTeX. | XeLaTeX covers Unicode text and OpenType fonts; most `fontspec` documents compile unchanged. |
 | **No shell escape**, so no `minted`. | Use `listings` for code, which needs no shell escape. |
 | **One error at a time.** The engine stops at the first error. | Fix it and compile again; with *Auto* on, that happens by itself. |
 | **Long documents compile more slowly** than with a local TeX Live. | While writing, compile one chapter with `\includeonly{chapters/method}`, or use `\documentclass[draft]{…}`, which skips images. |
-| **The first compile downloads the TeX engine** (about 125 MB; about 30 MB more the first time Biber is used). | It happens once per browser; later visits load it from the cache. |
+| **The first compile downloads the TeX engine** (about 125 MB; about 30 MB more the first time Biber is used). | It happens once per browser, and starts as soon as you open a project; later visits load it from the cache. |
 | **Your Google account's storage**: 15 GB on a free account, shared with Gmail and Photos. | LaTeX projects are small; images are usually what fills it. |
+| **Files uploaded on the Google Drive website don't appear in Tilde**, even inside a project's folder. Tilde may only see the files it made itself and the ones you pick (the `drive.file` permission). Renaming or deleting a file on the website does come through. | Add files in Tilde: upload them, drag them in, or use "Add from Google Drive". |
 | **Brave and Arc** block the cookies Google's file picker needs. | Allow cross-site cookies for Tilde (Brave: the lion icon in the address bar) to use "Add from Google Drive". |
 
 ## Your data

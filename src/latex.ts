@@ -85,6 +85,30 @@ export function bibliographyTool(files: ProjectFile[]): 'biber' | 'bibtex' | nul
   return 'bibtex';
 }
 
+export type TexEngine = 'pdflatex' | 'xelatex';
+
+// Packages that only work with XeLaTeX (or LuaLaTeX): Unicode fonts and scripts.
+const XETEX_PACKAGES = ['fontspec', 'polyglossia', 'unicode-math', 'xeCJK', 'mathspec', 'xltxtra', 'xunicode'];
+
+// Which program compiles the project. The main file can say so with a line
+// like "% !TEX program = xelatex" (the convention other editors use too).
+// Otherwise XeLaTeX when a file loads fontspec or another package that needs
+// it, and pdfLaTeX for everything else, since it is faster.
+export function texEngine(files: ProjectFile[], mainPath: string): TexEngine {
+  const main = files.find((f) => f.path === mainPath);
+  const asked = /^\s*%\s*!\s*TEX\s+(?:TS-)?program\s*=\s*(pdflatex|xelatex)\b/im.exec(main ? text(main) : '');
+  if (asked) return asked[1].toLowerCase() as TexEngine;
+  for (const file of files) {
+    if (!/\.(tex|sty|cls)$/.test(file.path)) continue;
+    for (const raw of text(file).split('\n')) {
+      for (const match of withoutComment(raw).matchAll(/\\(?:usepackage|RequirePackage)(?:\[[^\]]*\])?\{([^}]*)\}/g)) {
+        if (match[1].split(',').some((name) => XETEX_PACKAGES.includes(name.trim()))) return 'xelatex';
+      }
+    }
+  }
+  return 'pdflatex';
+}
+
 export type CompletionKind = 'command' | 'environment' | 'label' | 'citation' | 'texfile' | 'image';
 
 export interface CompletionContext {

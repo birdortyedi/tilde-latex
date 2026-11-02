@@ -129,7 +129,73 @@ describe('parseLog', () => {
   });
 });
 
+describe('hints', () => {
+  it('joins a package error that goes on over "(package)" lines, and suggests TeX Live fonts (real log)', () => {
+    const [problem] = parseLog(log(
+      '! Package fontspec Error: ',
+      '(fontspec)                The font "Arial" cannot be found; this may be but',
+      '(fontspec)                usually is not a fontspec bug.',
+      '',
+      'l.3 \\setmainfont{Arial}',
+    ), files);
+    expect(problem.message).toBe('Package fontspec Error: The font "Arial" cannot be found; this may be but usually is not a fontspec bug.');
+    expect(problem.line).toBe(3);
+    expect(problem.hint).toContain('TeX Gyre Termes');
+  });
+
+  it('explains that minted needs shell escape (real log)', () => {
+    const [problem] = parseLog(log(
+      '! Package minted Error: Missing definition for highlighting style "default" (mi',
+      'nted executable is unavailable or disabled); attempting to substitute fallback ',
+      'style.',
+    ), files);
+    expect(problem.hint).toContain('listings');
+  });
+
+  it('suggests fontspec when pdfLaTeX cannot typeset a character (real log)', () => {
+    const [problem] = parseLog(log(
+      '! LaTeX Error: Unicode character ^^d0^^9f (U+041F)',
+      '               not set up for use with LaTeX.',
+      '',
+      'l.3 ^^d',
+    ), files);
+    expect(problem.message).toBe('LaTeX Error: Unicode character ^^d0^^9f (U+041F) not set up for use with LaTeX.');
+    expect(problem.hint).toContain('\\usepackage{fontspec}');
+  });
+
+  it('names a missing package file', () => {
+    const [problem] = parseLog(log("! LaTeX Error: File `notapackage.sty' not found."), files);
+    expect(problem.hint).toContain('notapackage.sty');
+  });
+
+  it('collects the characters a font does not have into one warning (real log)', () => {
+    const problems = parseLog(log(
+      'Missing character: There is no П (U+041F) in font [lmroman10-regular]:mapping=t',
+      'ex-text;!',
+      'Missing character: There is no р (U+0440) in font [lmroman10-regular]:mapping=t',
+      'ex-text;!',
+      'Missing character: There is no П (U+041F) in font [lmroman10-regular]:mapping=t',
+      'ex-text;!',
+    ), files);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatchObject({ level: 'warning', message: 'The font lmroman10-regular has no П р, so they are left out of the PDF.' });
+    expect(problems[0].hint).toContain('Noto Serif');
+  });
+
+  it('gives no hint to ordinary errors', () => {
+    const [problem] = parseLog(log('! Undefined control sequence.', 'l.3 Intro \\badmacro'), files);
+    expect(problem.hint).toBeUndefined();
+  });
+});
+
 describe('lastLatexLog', () => {
+  it('reads XeLaTeX runs too', () => {
+    expect(lastLatexLog([
+      { cmd: 'xelatex --no-pdf main.tex', log: 'xe' },
+      { cmd: 'xdvipdfmx -o main.pdf main.xdv', log: 'pdf' },
+    ])).toBe('xe');
+  });
+
   it('picks the log of the last pdfLaTeX run, not BibTeX', () => {
     expect(lastLatexLog([
       { cmd: 'pdflatex main.tex', log: 'first' },

@@ -3,7 +3,7 @@ import '@fontsource/ibm-plex-sans/500.css';
 import '@fontsource/ibm-plex-sans/600.css';
 import '@fontsource/ibm-plex-mono/400.css';
 import './style.css';
-import { BusyTexRunner, PdfLatex } from 'texlyre-busytex';
+import { BusyTexRunner, PdfLatex, XeLatex } from 'texlyre-busytex';
 import { findMainFile, groupByProject, pathProblem, type Project, type ProjectFile } from './projects';
 import { buildTree, isTextFile, type TreeNode } from './fileTree';
 import { Editor, type LineMark } from './editor';
@@ -13,12 +13,12 @@ import { forgetToken, restoreSignIn, signIn, SignInNeededError, signOut } from '
 import { googleDrive, type DriveFile } from './drive';
 import { createProject, lastEdited, listProjects, moveProjectsFolder, openProject, projectsFolder } from './driveProjects';
 import { browserDrafts, forgetOtherAccounts, type Draft } from './drafts';
-import { ProjectSync, type SyncState } from './sync';
+import { ProjectSync, type DriveChanges, type SyncState } from './sync';
 import { cachedPackages, REMOTE_DIR, storeNewPackages } from './packageCache';
 import { lastLatexLog, parseLog, type LogProblem } from './logParser';
 import { unzipProject, zipProject } from './zipImport';
 import { timeAgo } from './time';
-import { bibliographyTool, outline } from './latex';
+import { bibliographyTool, outline, texEngine } from './latex';
 import { isGoogleDoc, pickDriveFiles, pickDriveFolder, type PickedFile } from './picker';
 import { askConfirm, askText } from './ask';
 import { initLayout, type Pane } from './layout';
@@ -38,6 +38,7 @@ const EXAMPLE_NOTES: Record<string, string> = {
   bibtex: 'Citations with natbib and BibTeX',
   biblatex: 'Citations with biblatex and Biber',
   multifile: '\\input, \\include and an image in a folder',
+  xetex: 'Unicode text and OpenType fonts with XeLaTeX',
 };
 
 const BLANK_PROJECT: ProjectFile[] = [{
@@ -122,7 +123,7 @@ let accountId = ''; // the signed-in Google account; drafts are tagged with it
 let unsavedAtSignOut: Draft[] = []; // shown in the sign-out dialog
 let project: Project | null = null; // the open project; edits change its files in memory
 let activePath: string | null = null;
-let runner: BusyTexRunner | null = null;
+let runner: Promise<BusyTexRunner> | null = null; // the TeX engine, once it has started loading
 let compiling = false;
 let sync: ProjectSync | null = null; // saves the open project to Drive; null for examples
 let conflictShown = ''; // the file the conflict dialog was last opened for
@@ -624,6 +625,7 @@ function showProject(newProject: Project | null): void {
     ? new ProjectSync(googleDrive, browserDrafts, accountId, newProject, {
       stateChanged: showSyncState,
       fileReplaced: (path, content) => editor.replace(path, content),
+      filesChanged: showDriveChanges,
     })
     : null;
   project = newProject;
@@ -645,6 +647,28 @@ function showProject(newProject: Project | null): void {
   const main = findMainFile(project);
   if (main) openFile(main);
   void sync?.restoreDrafts(); // edits from last time that never reached Drive
+  preloadEngine();
+}
+
+// Files added, renamed or deleted on another computer: the editor and the
+// file tree follow them.
+function showDriveChanges({ moved, removed, kept }: DriveChanges): void {
+  for (const [from, to] of moved) editor.rename(from, to);
+  for (const path of removed) editor.forget(path);
+  for (const path of kept) {
+    notify(`${path} was deleted in Google Drive, but you had edited it here. Your version is kept and saved again.`);
+  }
+  const renamed = moved.find(([from]) => from === activePath)?.[1];
+  if (activePath && removed.includes(activePath)) {
+    activePath = null;
+    const next = project && (findMainFile(project) ?? project.files[0]?.path);
+    if (next) openFile(next);
+    else editor.clear();
+  } else if (renamed) {
+    openFile(renamed);
+  }
+  renderTree();
+  scheduleOutline();
 }
 
 const SYNC_TEXT: Record<SyncState, string> = {
@@ -1180,9 +1204,27 @@ function showEngineDownload(percent: number): void {
   setStatus(`Loading the TeX engine… ${Math.round(percent)}%`);
 }
 
-// The engine is downloaded and started only once, on the first compile.
-async function getRunner(): Promise<BusyTexRunner> {
-  if (runner) return runner;
+// The engine is downloaded and started only once. That starts as soon as a
+// project opens, so the first compile has less to wait for.
+function getRunner(): Promise<BusyTexRunner> {
+  runner ??= startRunner().catch((error: unknown) => {
+    runner = null; // try again on the next compile
+    throw error;
+  });
+  return runner;
+}
+
+// Loads the engine in the background. If it fails, the next compile tries
+// again and shows the error.
+function preloadEngine(): void {
+  getRunner().then(() => {
+    if (compiling) return; // the compile takes it from here
+    if (pdfContainer.querySelector('.engine')) showEmptyPdf('The TeX engine is ready. Compile to see the PDF here. Ctrl/Cmd+S saves and compiles.');
+    setStatus('');
+  }).catch((error: unknown) => console.warn('Could not load the TeX engine yet', error));
+}
+
+async function startRunner(): Promise<BusyTexRunner> {
   const newRunner = new BusyTexRunner({
     busytexBasePath: `${import.meta.env.BASE_URL}core/busytex`,
     preloadDataPackages: [`${import.meta.env.BASE_URL}core/busytex/texlive-basic.js`],
@@ -1196,8 +1238,7 @@ async function getRunner(): Promise<BusyTexRunner> {
   } catch (error) {
     console.warn('Could not load the cached TeX packages', error);
   }
-  runner = newRunner;
-  return runner;
+  return newRunner;
 }
 
 async function compile(): Promise<void> {
@@ -1216,8 +1257,11 @@ async function compile(): Promise<void> {
   try {
     const currentRunner = await getRunner();
     if (pdfContainer.querySelector('.engine')) showEmptyPdf('');
-    const engine = new PdfLatex(currentRunner);
-    setStatus('Compiling…');
+    // XeLaTeX for fontspec and Unicode fonts, pdfLaTeX for everything else.
+    const engineName = texEngine(project.files, main.path);
+    const engine = engineName === 'xelatex' ? new XeLatex(currentRunner) : new PdfLatex(currentRunner);
+    const withEngine = engineName === 'xelatex' ? ' with XeLaTeX' : '';
+    setStatus(`Compiling${withEngine}…`);
     const started = performance.now();
     const result = await engine.compile({
       input: main.content,
@@ -1243,7 +1287,7 @@ async function compile(): Promise<void> {
     const warnings = problems.filter((p) => p.level === 'warning').length;
     if (result.success && result.pdf) {
       await pdfViewer.show(result.pdf);
-      setStatus(`Compiled in ${seconds} s` + (warnings > 0 ? `, ${warnings} warning${warnings > 1 ? 's' : ''}` : ''));
+      setStatus(`Compiled${withEngine} in ${seconds} s` + (warnings > 0 ? `, ${warnings} warning${warnings > 1 ? 's' : ''}` : ''));
     } else if (problems.some((p) => p.level === 'error')) {
       setStatus(`Compile stopped at an error after ${seconds} s`);
       if (!pdfContainer.querySelector('canvas')) showEmptyPdf('The PDF appears here once the error below is fixed.');
@@ -1286,6 +1330,12 @@ function showProblems(problems: LogProblem[]): void {
     message.className = 'message';
     message.textContent = problem.message;
     button.append(level, where, message);
+    if (problem.hint) {
+      const hint = document.createElement('span');
+      hint.className = 'hint';
+      hint.textContent = problem.hint;
+      button.append(hint);
+    }
     button.disabled = !problem.file;
     button.addEventListener('click', () => jumpTo(problem));
     const item = document.createElement('li');
