@@ -1,4 +1,4 @@
-import { unzipSync } from 'fflate';
+import { unzipSync, zipSync } from 'fflate';
 import { isTextFile } from './fileTree';
 import type { ProjectFile } from './projects';
 
@@ -27,4 +27,14 @@ export function filesFromZip(entries: Record<string, Uint8Array>): ProjectFile[]
 
 export function unzipProject(zip: Uint8Array): ProjectFile[] {
   return filesFromZip(unzipSync(zip));
+}
+
+// A .zip of a whole project, inside a folder named after it, ready to
+// download (and to import again).
+export function zipProject(name: string, files: ProjectFile[]): Uint8Array {
+  const entries: Record<string, Uint8Array> = {};
+  for (const file of files) {
+    entries[`${name}/${file.path}`] = typeof file.content === 'string' ? new TextEncoder().encode(file.content) : file.content;
+  }
+  return zipSync(entries);
 }

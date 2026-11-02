@@ -182,6 +182,7 @@ body.resizing iframe, body.resizing canvas { pointer-events: none; }
 #side { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .side-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 8px 4px 14px; color: var(--muted); }
 .side-head button { padding: 0 7px; font-size: 16px; line-height: 22px; }
+.side-actions { display: flex; gap: 2px; }
 
 #tree { flex: 1; overflow: auto; padding: 2px 6px 12px; font-size: 13.5px; }
 #tree ul { list-style: none; margin: 0; padding-left: 12px; }

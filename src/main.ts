@@ -16,7 +16,7 @@ import { browserDrafts, forgetOtherAccounts, type Draft } from './drafts';
 import { ProjectSync, type SyncState } from './sync';
 import { cachedPackages, REMOTE_DIR, storeNewPackages } from './packageCache';
 import { lastLatexLog, parseLog, type LogProblem } from './logParser';
-import { unzipProject } from './zipImport';
+import { unzipProject, zipProject } from './zipImport';
 import { timeAgo } from './time';
 import { outline } from './latex';
 import { isGoogleDoc, pickDriveFiles, type PickedFile } from './picker';
@@ -98,6 +98,7 @@ const editorElement = element<HTMLDivElement>('#editor');
 const imagePreview = element<HTMLImageElement>('#image-preview');
 const logView = element<HTMLPreElement>('#log');
 const addFilesButton = element<HTMLButtonElement>('#add-files');
+const projectActionsButton = element<HTMLButtonElement>('#project-actions');
 const cursorPosition = element<HTMLSpanElement>('#cursor-position');
 const problemCount = element<HTMLButtonElement>('#problem-count');
 const pdfContainer = element<HTMLDivElement>('#pdf');
@@ -350,6 +351,7 @@ function renderProjectList(): void {
     more.setAttribute('aria-haspopup', 'menu');
     more.addEventListener('click', () => openMenu(more, [
       { label: 'Open', action: () => void openProjectById(row.id) },
+      { label: 'Download as .zip', action: () => void downloadProjectZip(row.id) },
       { label: 'Rename…', action: () => void renameProject(row.id, row.name) },
       { label: 'Delete…', action: () => void deleteProject(row.id, row.name), danger: true },
     ]));
@@ -498,6 +500,26 @@ async function importFromDrive(): Promise<void> {
       files.push({ path: file.name, content: toContent(file.name, await googleDrive.download(file.id)) });
     }
     await createAndOpen(name, files);
+  } catch (error) {
+    showError(error);
+  }
+}
+
+// Saves a whole project as a .zip on the computer. The open project comes
+// from memory (so edits not yet in Drive are included); others are read from Drive.
+async function downloadProjectZip(id?: string): Promise<void> {
+  try {
+    let target = project;
+    if (id && project?.driveId !== id) {
+      const folder = driveFolders.find((f) => f.id === id);
+      if (!folder) return;
+      showBusy(`Reading ${folder.name}…`);
+      target = await openProject(googleDrive, folder);
+      hideBusy();
+    }
+    if (!target) return;
+    downloadFile(`${target.name}.zip`, zipProject(target.name, target.files));
+    notify(`Saved ${target.name}.zip to your downloads.`);
   } catch (error) {
     showError(error);
   }
@@ -809,6 +831,7 @@ function renderTree(): void {
 
   // Adding files is for Drive projects; the examples stay as they are.
   addFilesButton.hidden = !sync;
+  projectActionsButton.hidden = !project;
   renderOutline();
 }
 
@@ -1218,6 +1241,10 @@ function jumpTo(problem: LogProblem): void {
 
 compileButton.addEventListener('click', () => void compile());
 addFilesButton.addEventListener('click', showAddMenu);
+projectActionsButton.addEventListener('click', () => openMenu(projectActionsButton, [
+  { label: 'Download as .zip', action: () => void downloadProjectZip() },
+  { label: 'All projects', action: () => showProjectsPage(true) },
+]));
 outlineToggle.addEventListener('click', () => {
   const open = outlineToggle.getAttribute('aria-expanded') !== 'true';
   outlineToggle.setAttribute('aria-expanded', String(open));

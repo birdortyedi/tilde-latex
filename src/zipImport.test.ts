@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { strToU8, zipSync } from 'fflate';
-import { unzipProject } from './zipImport';
+import { strToU8, unzipSync, zipSync } from 'fflate';
+import { unzipProject, zipProject } from './zipImport';
 
 const paths = (zip: Record<string, Uint8Array>) => unzipProject(zipSync(zip)).map((f) => f.path).sort();
+
+describe('zipProject', () => {
+  it('packs a project into one folder, and unpacks to the same files', () => {
+    const files = [{ path: 'main.tex', content: 'x' }, { path: 'figures/a.png', content: new Uint8Array([1, 2]) }];
+    const zip = zipProject('paper', files);
+    expect(Object.keys(unzipSync(zip)).sort()).toEqual(['paper/figures/a.png', 'paper/main.tex']);
+    expect(unzipProject(zip)).toEqual([files[0], files[1]]);
+  });
+});
 
 describe('unzipProject', () => {
   it('reads a typical project zip: text as text, images as bytes', () => {
