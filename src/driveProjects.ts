@@ -15,11 +15,35 @@ function splitPath(path: string): [string, string] {
   return [slash < 0 ? '' : path.slice(0, slash), path.slice(slash + 1)];
 }
 
-// Finds the "LaTeX Projects" folder, or creates it the first time.
-// Because of the drive.file scope, Drive only shows us a folder Tilde created.
+// Tilde's note on the folder that holds the projects. Tilde finds the folder
+// by this note, not by its name, so the user can rename it or move it
+// anywhere in Drive.
+const PROJECTS_TAG = 'tildeProjects';
+
+// The folder that holds the projects. The first time, it is created as
+// "LaTeX Projects" at the top of Drive (or found there, from before the note
+// existed). Because of the drive.file scope, Drive only shows us folders
+// Tilde created or the user picked.
+export async function projectsFolder(drive: Drive): Promise<DriveFile> {
+  const tagged = (await drive.findByProperty(PROJECTS_TAG, 'true')).find(isFolder);
+  if (tagged) return tagged;
+  const named = (await drive.list('root')).find((f) => isFolder(f) && f.name === ROOT_FOLDER_NAME);
+  const folder = named ?? (await drive.createFolder(ROOT_FOLDER_NAME, 'root'));
+  return drive.updateMetadata(folder.id, { appProperties: { [PROJECTS_TAG]: 'true' } });
+}
+
 export async function findOrCreateRootFolder(drive: Drive): Promise<string> {
-  const existing = (await drive.list('root')).find((f) => isFolder(f) && f.name === ROOT_FOLDER_NAME);
-  return existing?.id ?? (await drive.createFolder(ROOT_FOLDER_NAME, 'root')).id;
+  return (await projectsFolder(drive)).id;
+}
+
+// Makes another folder (one the user picked) the projects folder, and moves
+// every project into it. Returns how many projects moved.
+export async function moveProjectsFolder(drive: Drive, fromId: string, to: DriveFile): Promise<number> {
+  const projects = await listProjects(drive, fromId);
+  for (const project of projects) await drive.updateMetadata(project.id, {}, { from: fromId, to: to.id });
+  await drive.updateMetadata(to.id, { appProperties: { [PROJECTS_TAG]: 'true' } });
+  await drive.updateMetadata(fromId, { appProperties: { [PROJECTS_TAG]: null } });
+  return projects.length;
 }
 
 // The project folders, sorted by name.

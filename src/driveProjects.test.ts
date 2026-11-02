@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { FakeDrive } from './testing/fakeDrive';
-import { createProject, findOrCreateRootFolder, listProjects, openProject, saveProject } from './driveProjects';
+import { createProject, findOrCreateRootFolder, listProjects, moveProjectsFolder, openProject, projectsFolder, saveProject } from './driveProjects';
 
 const text = (s: string) => new TextEncoder().encode(s);
 
@@ -16,6 +16,31 @@ describe('Drive projects', () => {
   it('creates the "LaTeX Projects" folder once and reuses it', async () => {
     expect(await findOrCreateRootFolder(drive)).toBe(rootId);
     expect(await drive.list('root')).toHaveLength(1);
+  });
+
+  it('finds the projects folder by its note, even after it was renamed', async () => {
+    const id = drive.items.get(rootId);
+    if (id) id.name = 'My papers';
+    expect((await projectsFolder(drive)).id).toBe(rootId);
+    expect(await drive.list('root')).toHaveLength(1); // no new "LaTeX Projects"
+  });
+
+  it('adopts a "LaTeX Projects" folder from before the note existed', async () => {
+    const old = new FakeDrive();
+    const folder = await old.createFolder('LaTeX Projects', 'root');
+    expect((await projectsFolder(old)).id).toBe(folder.id);
+    expect(old.items.get(folder.id)?.appProperties).toEqual({ tildeProjects: 'true' });
+  });
+
+  it('moves every project into a folder the user picked, and finds that folder from then on', async () => {
+    await createProject(drive, rootId, 'paper', [{ path: 'main.tex', content: 'x' }]);
+    await createProject(drive, rootId, 'thesis', [{ path: 'main.tex', content: 'y' }]);
+    const picked = await drive.createFolder('Research', 'root');
+    expect(await moveProjectsFolder(drive, rootId, picked)).toBe(2);
+    expect((await projectsFolder(drive)).id).toBe(picked.id);
+    expect((await listProjects(drive, picked.id)).map((p) => p.name)).toEqual(['paper', 'thesis']);
+    expect(drive.read('Research/thesis/main.tex')).toBe('y');
+    expect(await listProjects(drive, rootId)).toEqual([]);
   });
 
   it('creates a project with subfolders and opens it again', async () => {

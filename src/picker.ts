@@ -29,6 +29,21 @@ function loadPicker(): Promise<void> {
 
 // Opens the Picker and resolves with the chosen files (none if cancelled).
 export async function pickDriveFiles(title: string): Promise<PickedFile[]> {
+  return openPicker(title, true, (view) => view
+    .setIncludeFolders(true) // to browse into folders
+    .setSelectFolderEnabled(false)); // picking a folder would not give access to its files
+}
+
+// Opens the Picker for choosing one folder, e.g. where the projects live.
+export async function pickDriveFolder(title: string): Promise<PickedFile | null> {
+  const [folder] = await openPicker(title, false, (view) => view
+    .setIncludeFolders(true)
+    .setSelectFolderEnabled(true)
+    .setMimeTypes('application/vnd.google-apps.folder'));
+  return folder ?? null;
+}
+
+async function openPicker(title: string, several: boolean, configure: (view: google.picker.DocsView) => google.picker.DocsView): Promise<PickedFile[]> {
   if (!GOOGLE_API_KEY) throw new Error('No Google API key yet. Put it in the file .env.local and restart npm run dev (see docs/google-picker-setup.md).');
   const token = await getAccessToken();
   await loadPicker();
@@ -41,13 +56,9 @@ export async function pickDriveFiles(title: string): Promise<PickedFile[]> {
       picker?.dispose();
       setTimeout(() => resolve(files), 0);
     };
-    const view = new google.picker.DocsView(google.picker.ViewId.DOCS)
-      .setIncludeFolders(true) // to browse into folders
-      .setSelectFolderEnabled(false) // picking a folder would not give access to its files
-      .setMode(google.picker.DocsViewMode.LIST);
-    picker = new google.picker.PickerBuilder()
+    const view = configure(new google.picker.DocsView(google.picker.ViewId.DOCS).setMode(google.picker.DocsViewMode.LIST));
+    let builder = new google.picker.PickerBuilder()
       .addView(view)
-      .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
       .setOAuthToken(token)
       .setDeveloperKey(GOOGLE_API_KEY)
       .setAppId(GOOGLE_PROJECT_NUMBER)
@@ -55,8 +66,9 @@ export async function pickDriveFiles(title: string): Promise<PickedFile[]> {
       .setCallback((response) => {
         if (response.action === 'picked') finish(response.docs ?? []);
         if (response.action === 'cancel') finish([]);
-      })
-      .build();
+      });
+    if (several) builder = builder.enableFeature(google.picker.Feature.MULTISELECT_ENABLED);
+    picker = builder.build();
     picker.setVisible(true);
   });
 }

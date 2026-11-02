@@ -21,11 +21,13 @@ export interface DriveFile {
 export interface MetadataChanges {
   name?: string;
   trashed?: boolean; // true moves it to Drive's trash, restorable for 30 days
-  appProperties?: Record<string, string>;
+  appProperties?: Record<string, string | null>; // null removes a note
 }
 
 // The Drive operations Tilde needs. Tests use an in-memory fake instead.
 export interface Drive {
+  // Files and folders carrying one of Tilde's private notes (not in the trash).
+  findByProperty(key: string, value: string): Promise<DriveFile[]>;
   // A stable id of the signed-in Google account (not the email address).
   whoAmI(): Promise<string>;
   list(folderId: string): Promise<DriveFile[]>;
@@ -67,6 +69,15 @@ async function request(url: string, init: { method?: string; headers?: Record<st
 }
 
 export const googleDrive: Drive = {
+  async findByProperty(key, value) {
+    const params = new URLSearchParams({
+      q: `appProperties has { key='${key}' and value='${value}' } and trashed = false`,
+      fields: `files(${FIELDS})`,
+      orderBy: 'modifiedTime desc',
+    });
+    return ((await (await request(`${API}?${params}`)).json()) as { files: DriveFile[] }).files;
+  },
+
   async whoAmI() {
     const about = (await (await request(`https://www.googleapis.com/drive/v3/about?fields=user(permissionId)`)).json()) as
       { user: { permissionId: string } };

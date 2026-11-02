@@ -11,7 +11,7 @@ import { PdfViewer, type PdfViewState } from './pdfViewer';
 import type { Zoom } from './pdfZoom';
 import { forgetToken, restoreSignIn, signIn, SignInNeededError, signOut } from './auth';
 import { googleDrive, type DriveFile } from './drive';
-import { createProject, findOrCreateRootFolder, lastEdited, listProjects, openProject } from './driveProjects';
+import { createProject, lastEdited, listProjects, moveProjectsFolder, openProject, projectsFolder } from './driveProjects';
 import { browserDrafts, forgetOtherAccounts, type Draft } from './drafts';
 import { ProjectSync, type SyncState } from './sync';
 import { cachedPackages, REMOTE_DIR, storeNewPackages } from './packageCache';
@@ -19,7 +19,7 @@ import { lastLatexLog, parseLog, type LogProblem } from './logParser';
 import { unzipProject, zipProject } from './zipImport';
 import { timeAgo } from './time';
 import { outline } from './latex';
-import { isGoogleDoc, pickDriveFiles, type PickedFile } from './picker';
+import { isGoogleDoc, pickDriveFiles, pickDriveFolder, type PickedFile } from './picker';
 import { askConfirm, askText } from './ask';
 import { initLayout, type Pane } from './layout';
 import { initTheme } from './theme';
@@ -62,7 +62,8 @@ function element<T extends HTMLElement>(selector: string): T {
 const projectsButton = element<HTMLButtonElement>('#show-projects');
 const projectNameLabel = element<HTMLSpanElement>('#project-name');
 const projectsPage = element<HTMLElement>('#projects-page');
-const projectsHint = element<HTMLParagraphElement>('#projects-hint');
+const projectsWhere = element<HTMLSpanElement>('#projects-where');
+const changeFolderButton = element<HTMLButtonElement>('#change-folder');
 const projectList = element<HTMLUListElement>('#project-list');
 const projectSearch = element<HTMLInputElement>('#project-search');
 const projectSort = element<HTMLSelectElement>('#project-sort');
@@ -114,7 +115,8 @@ const welcome = element<HTMLDivElement>('#welcome');
 
 let examples: Project[] = []; // the test-docs projects, shown while signed out
 let driveFolders: DriveFile[] = []; // the project folders in Drive, shown while signed in
-let rootId: string | null = null; // the "LaTeX Projects" folder in Drive; null while signed out
+let rootId: string | null = null; // the folder in Drive that holds the projects; null while signed out
+let rootName = ''; // its name, which the user may change in Drive
 let accountId = ''; // the signed-in Google account; drafts are tagged with it
 let unsavedAtSignOut: Draft[] = []; // shown in the sign-out dialog
 let project: Project | null = null; // the open project; edits change its files in memory
@@ -309,9 +311,9 @@ function renderProjectsPage(): void {
 // The signed-in list: filtered by the search box, sorted by last edit or name.
 function renderProjectList(): void {
   const count = driveFolders.length;
-  projectsHint.textContent = count === 0
-    ? 'Kept in the "LaTeX Projects" folder of your Google Drive.'
-    : `${count} ${count === 1 ? 'project' : 'projects'} in the "LaTeX Projects" folder of your Google Drive.`;
+  projectsWhere.textContent = count === 0
+    ? `Kept in the folder "${rootName}" in your Google Drive.`
+    : `${count} ${count === 1 ? 'project' : 'projects'} in the folder "${rootName}" in your Google Drive.`;
   projectsEmpty.hidden = count > 0;
   projectsTools.hidden = count === 0;
 
@@ -525,6 +527,37 @@ async function downloadProjectZip(id?: string): Promise<void> {
   }
 }
 
+// "Choose another folder…": the user picks a folder in Drive, and every
+// project moves into it. The old folder stays, empty, where it was.
+async function chooseProjectsFolder(): Promise<void> {
+  const fromId = rootId;
+  if (!fromId) return;
+  try {
+    const picked = await pickDriveFolder('Choose the folder for your LaTeX projects');
+    if (!picked || picked.id === fromId) return;
+    if (driveFolders.some((f) => f.id === picked.id)) {
+      notify(`"${picked.name}" is one of your projects. Choose a folder that is not a project.`, 'error');
+      return;
+    }
+    const count = driveFolders.length;
+    const question = count === 0
+      ? `Keep new projects in "${picked.name}"?`
+      : `Move your ${count} ${count === 1 ? 'project' : 'projects'} from "${rootName}" into "${picked.name}"? `
+        + 'The folders move in Drive with all their files and history; nothing is copied or deleted.';
+    if (!await askConfirm(question, count === 0 ? 'Use this folder' : 'Move projects')) return;
+    await sync?.saveNow();
+    showBusy(`Moving projects to ${picked.name}…`);
+    const moved = await moveProjectsFolder(googleDrive, fromId, { id: picked.id, name: picked.name, mimeType: picked.mimeType });
+    rootId = picked.id;
+    rootName = picked.name;
+    await refreshProjects();
+    hideBusy();
+    notify(moved > 0 ? `Moved ${moved} ${moved === 1 ? 'project' : 'projects'} to "${picked.name}".` : `New projects will go into "${picked.name}".`);
+  } catch (error) {
+    showError(error);
+  }
+}
+
 async function importZip(file: File): Promise<void> {
   let files: ProjectFile[];
   try {
@@ -667,7 +700,9 @@ async function startDrive(): Promise<void> {
     // Unsaved edits left in this browser by another Google account are deleted.
     await forgetOtherAccounts(browserDrafts, accountId)
       .catch((error: unknown) => console.warn('Could not clean up the copies kept in the browser', error));
-    rootId = await findOrCreateRootFolder(googleDrive);
+    const folder = await projectsFolder(googleDrive);
+    rootId = folder.id;
+    rootName = folder.name;
     showAccount('signed-in');
     await showDriveProjects();
     hideBusy();
@@ -1368,6 +1403,7 @@ window.addEventListener('keydown', (event) => {
   if (document.querySelector('dialog[open], .menu')) return;
   showProjectsPage(false);
 });
+changeFolderButton.addEventListener('click', () => void chooseProjectsFolder());
 importMenuButton.addEventListener('click', () => openMenu(importMenuButton, [
   { label: 'From a .zip file…', action: () => { zipInput.value = ''; zipInput.click(); } },
   { label: 'From Google Drive…', action: () => void importFromDrive() },

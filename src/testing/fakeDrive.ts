@@ -45,6 +45,10 @@ export class FakeDrive implements Drive {
   }
 
   async whoAmI() { this.check(); return 'me'; }
+  async findByProperty(key: string, value: string) {
+    this.check();
+    return [...this.items.values()].filter((i) => !i.trashed && i.appProperties?.[key] === value).map((i) => this.info(i.id));
+  }
   async list(folderId: string) {
     this.check();
     return [...this.items.values()].filter((i) => i.parentId === folderId && !i.trashed).map((i) => this.info(i.id));
@@ -63,7 +67,11 @@ export class FakeDrive implements Drive {
     if (move) item.parentId = move.to;
     if (changes.name !== undefined) item.name = changes.name;
     if (changes.trashed !== undefined) item.trashed = changes.trashed;
-    if (changes.appProperties) item.appProperties = { ...item.appProperties, ...changes.appProperties };
+    if (changes.appProperties) {
+      // Like Drive: new notes are added, a null removes one.
+      const merged = { ...item.appProperties, ...changes.appProperties };
+      item.appProperties = Object.fromEntries(Object.entries(merged).filter((entry): entry is [string, string] => entry[1] !== null));
+    }
     return this.info(fileId);
   }
   async updateFile(fileId: string, content: Uint8Array) {
