@@ -31,6 +31,16 @@
       #preview { display: flex; flex-direction: column; min-width: 0; background: #e8e8e8; }
       #pdf { flex: 1; min-height: 0; overflow: auto; padding: 16px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
       #pdf canvas { box-shadow: 0 1px 4px rgba(0,0,0,.3); background: #fff; }
+      #problems { max-height: 35%; overflow: auto; margin: 0; padding: 4px 0; list-style: none; background: #fff; border-top: 1px solid #ccc; font-size: 13px; }
+      #problems button { all: unset; display: block; width: 100%; box-sizing: border-box; padding: 3px 10px; cursor: pointer; }
+      #problems button:hover:enabled { background: #f0f0f0; }
+      #problems button:disabled { cursor: default; }
+      #problems .level { display: inline-block; min-width: 64px; font-weight: bold; }
+      #problems .error .level { color: #b00020; }
+      #problems .warning .level { color: #b35c00; }
+      #problems .badbox .level { color: #666; }
+      #problems .where { color: #555; margin-right: 8px; }
+      #tree .main-file { color: #888; font-size: 12px; }
       #log { height: 40%; margin: 0; padding: 8px; overflow: auto; font-size: 12px; background: #f6f6f6; white-space: pre-wrap; border-top: 1px solid #ccc; }
       [hidden] { display: none !important; }
     </style>
@@ -63,6 +73,7 @@
       </div>
       <section id="preview">
         <div id="pdf"></div>
+        <ul id="problems" hidden></ul>
         <pre id="log" hidden></pre>
       </section>
     </main>

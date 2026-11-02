@@ -1,21 +1,22 @@
 import { BusyTexRunner, PdfLatex } from 'texlyre-busytex';
-import { groupByProject, type Project, type ProjectFile } from './projects';
+import { findMainFile, groupByProject, type Project, type ProjectFile } from './projects';
 import { buildTree, isTextFile, type TreeNode } from './fileTree';
-import { Editor } from './editor';
+import { Editor, type LineMark } from './editor';
 import { PdfViewer } from './pdfViewer';
 import { forgetToken, restoreSignIn, signIn, SignInNeededError, signOut } from './auth';
 import { googleDrive, type DriveFile } from './drive';
 import { createProject, findOrCreateRootFolder, listProjects, openProject } from './driveProjects';
 import { browserDrafts, forgetOtherAccounts, type Draft } from './drafts';
 import { ProjectSync, type SyncState } from './sync';
+import { cachedPackages, REMOTE_DIR, storeNewPackages } from './packageCache';
+import { lastLatexLog, parseLog, type LogProblem } from './logParser';
 
 // Files that TeX Live's basic bundle lacks (TikZ, pgfplots, ...) are fetched
 // one at a time from TeXlyre's public package server.
 const PACKAGE_SERVER = 'https://texlive2026.texlyre.org';
-const MAIN_FILE = 'main.tex';
 const LAST_PROJECT_KEY = 'tilde.lastProject'; // reopened after a reload
 const BLANK_PROJECT: ProjectFile[] = [{
-  path: MAIN_FILE,
+  path: 'main.tex',
   content: '\\documentclass{article}\n\\begin{document}\nHello from Tilde.\n\\end{document}\n',
 }];
 
@@ -54,6 +55,7 @@ const treeView = element<HTMLElement>('#tree');
 const editorElement = element<HTMLDivElement>('#editor');
 const imagePreview = element<HTMLImageElement>('#image-preview');
 const logView = element<HTMLPreElement>('#log');
+const problemList = element<HTMLUListElement>('#problems');
 
 let examples: Project[] = []; // the test-docs projects, shown while signed out
 let driveFolders: DriveFile[] = []; // the project folders in Drive, shown while signed in
@@ -148,6 +150,7 @@ function showProject(newProject: Project | null): void {
   editor.clear();
   activePath = null;
   element<HTMLDivElement>('#pdf').replaceChildren();
+  showProblems([]);
   showSyncState();
   renderTree();
   if (!project) return;
@@ -155,7 +158,8 @@ function showProject(newProject: Project | null): void {
     try { localStorage.setItem(LAST_PROJECT_KEY, project.driveId); } catch { /* storage blocked */ }
   }
   statusText.textContent = `Opened ${project.name}. Press Compile or Ctrl/Cmd+S.`;
-  openFile(MAIN_FILE);
+  const main = findMainFile(project);
+  if (main) openFile(main);
   void sync?.restoreDrafts(); // edits from last time that never reached Drive
 }
 
@@ -359,6 +363,12 @@ function renderTree(): void {
       } else {
         const button = document.createElement('button');
         button.textContent = node.name;
+        if (project && node.path === findMainFile(project)) {
+          const label = document.createElement('span');
+          label.className = 'main-file';
+          label.textContent = ' (main)';
+          button.append(label);
+        }
         button.classList.toggle('active', node.path === activePath);
         button.addEventListener('click', () => openFile(node.path));
         item.append(button);
@@ -382,27 +392,35 @@ async function getRunner(): Promise<BusyTexRunner> {
   });
   statusText.textContent = 'Starting engine…';
   await newRunner.initialize(true); // true = run the engine in a Web Worker
+  try {
+    // Package files downloaded on earlier visits, so they are not downloaded again.
+    await newRunner.writeTexliveRemoteFiles(await cachedPackages(PACKAGE_SERVER));
+  } catch (error) {
+    console.warn('Could not load the cached TeX packages', error);
+  }
   runner = newRunner;
   return runner;
 }
 
 async function compile(): Promise<void> {
   if (compiling || !project) return;
-  const main = project.files.find((f) => f.path === MAIN_FILE);
+  const mainPath = findMainFile(project);
+  const main = project.files.find((f) => f.path === mainPath);
   if (!main || typeof main.content !== 'string') {
-    statusText.textContent = `This project has no ${MAIN_FILE}.`;
+    statusText.textContent = 'This project has no .tex file with \\documentclass to compile.';
     return;
   }
 
   compiling = true;
   compileButton.disabled = true;
   try {
-    const engine = new PdfLatex(await getRunner());
+    const currentRunner = await getRunner();
+    const engine = new PdfLatex(currentRunner);
     statusText.textContent = `Compiling ${project.name}…`;
     const started = performance.now();
     const result = await engine.compile({
       input: main.content,
-      mainTexPath: MAIN_FILE,
+      mainTexPath: main.path,
       additionalFiles: project.files.filter((f) => f !== main),
       bibtex: project.files.some((f) => f.path.endsWith('.bib')),
       rerun: true, // run LaTeX again so references and citations resolve
@@ -410,10 +428,22 @@ async function compile(): Promise<void> {
     });
     const seconds = ((performance.now() - started) / 1000).toFixed(1);
     logView.textContent = result.log;
+    try {
+      // Keep the package files this compile downloaded, for next time.
+      await storeNewPackages(PACKAGE_SERVER, await currentRunner.readProjectFiles(REMOTE_DIR));
+    } catch (error) {
+      console.warn('Could not cache the downloaded TeX packages', error);
+    }
 
+    const problems = parseLog(lastLatexLog(result.logs), project.files);
+    showProblems(problems);
+    const warnings = problems.filter((p) => p.level === 'warning').length;
     if (result.success && result.pdf) {
       await pdfViewer.show(result.pdf);
-      statusText.textContent = `Compiled ${project.name} in ${seconds} s.`;
+      statusText.textContent = `Compiled ${project.name} in ${seconds} s`
+        + (warnings > 0 ? `, ${warnings} warning${warnings > 1 ? 's' : ''}.` : '.');
+    } else if (problems.some((p) => p.level === 'error')) {
+      statusText.textContent = `Compile failed after ${seconds} s. Click the error below to go to it.`;
     } else {
       logView.hidden = false;
       statusText.textContent = `Compile failed after ${seconds} s. See the log.`;
@@ -424,6 +454,47 @@ async function compile(): Promise<void> {
     compiling = false;
     compileButton.disabled = false;
   }
+}
+
+const PROBLEM_LABEL: Record<LogProblem['level'], string> = { error: 'Error', warning: 'Warning', badbox: 'Bad box' };
+const PROBLEM_ORDER: Record<LogProblem['level'], number> = { error: 0, warning: 1, badbox: 2 };
+
+// The list of errors and warnings under the PDF. Clicking one opens its file
+// at its line; problems inside TeX's own files cannot be clicked.
+function showProblems(problems: LogProblem[]): void {
+  const sorted = [...problems].sort((a, b) => PROBLEM_ORDER[a.level] - PROBLEM_ORDER[b.level]);
+  problemList.replaceChildren(...sorted.map((problem) => {
+    const button = document.createElement('button');
+    button.className = problem.level;
+    const level = document.createElement('span');
+    level.className = 'level';
+    level.textContent = PROBLEM_LABEL[problem.level];
+    const where = document.createElement('span');
+    where.className = 'where';
+    where.textContent = problem.file ? `${problem.file}${problem.line ? `:${problem.line}` : ''}` : '';
+    button.append(level, where, problem.message);
+    button.disabled = !problem.file;
+    button.addEventListener('click', () => jumpTo(problem));
+    const item = document.createElement('li');
+    item.append(button);
+    return item;
+  }));
+  problemList.hidden = problems.length === 0;
+
+  // The same problems as icons next to the editor's line numbers.
+  const marks = new Map<string, LineMark[]>();
+  for (const problem of problems) {
+    if (!problem.file || !problem.line) continue;
+    const severity = problem.level === 'badbox' ? 'info' : problem.level;
+    marks.set(problem.file, [...(marks.get(problem.file) ?? []), { line: problem.line, severity, message: problem.message }]);
+  }
+  editor.showMarks(marks);
+}
+
+function jumpTo(problem: LogProblem): void {
+  if (!problem.file) return;
+  openFile(problem.file);
+  if (problem.line && problem.file === activePath) editor.goTo(problem.line);
 }
 
 compileButton.addEventListener('click', () => void compile());

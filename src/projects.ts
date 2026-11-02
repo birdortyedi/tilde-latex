@@ -10,6 +10,22 @@ export interface Project {
   name: string;
   files: ProjectFile[];
   driveId?: string; // the project's folder in Google Drive
+  mainFile?: string; // the file to compile, if the user chose one
+}
+
+const depth = (path: string): number => path.split('/').length;
+
+// The file to compile: the user's choice, else main.tex, else a .tex file
+// with \documentclass (outside a comment), preferring top-level files.
+export function findMainFile(project: Project): string | undefined {
+  const texFiles = project.files.filter((f) => f.path.endsWith('.tex') && typeof f.content === 'string');
+  const paths = texFiles.map((f) => f.path);
+  if (project.mainFile && paths.includes(project.mainFile)) return project.mainFile;
+  if (paths.includes('main.tex')) return 'main.tex';
+  return texFiles
+    .filter((f) => /^[^%\n]*\\documentclass/m.test(f.content as string))
+    .map((f) => f.path)
+    .sort((a, b) => depth(a) - depth(b) || a.localeCompare(b))[0];
 }
 
 // Turns a flat map like { "/test-docs/math/main.tex": "..." } into one

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { groupByProject } from './projects';
+import { findMainFile, groupByProject } from './projects';
 
 describe('groupByProject', () => {
   it('groups files by folder and makes paths relative to the project', () => {
@@ -26,5 +26,29 @@ describe('groupByProject', () => {
       '/elsewhere/x/main.tex': 'other',
     });
     expect(projects).toEqual([]);
+  });
+});
+
+describe('findMainFile', () => {
+  const file = (path: string, content = '') => ({ path, content });
+
+  it('prefers the file the user chose', () => {
+    expect(findMainFile({ name: 'p', mainFile: 'b.tex', files: [file('main.tex'), file('b.tex')] })).toBe('b.tex');
+  });
+
+  it('uses main.tex when there is no choice', () => {
+    expect(findMainFile({ name: 'p', files: [file('paper.tex', '\\documentclass{article}'), file('main.tex')] })).toBe('main.tex');
+  });
+
+  it('otherwise finds the top-level file with \\documentclass', () => {
+    expect(findMainFile({ name: 'p', files: [
+      file('figures/plot.tex', '\\documentclass{standalone}'),
+      file('chapters/intro.tex', 'Intro'),
+      file('paper.tex', '% my paper\n\\documentclass{article}'),
+    ] })).toBe('paper.tex');
+  });
+
+  it('ignores \\documentclass inside a comment', () => {
+    expect(findMainFile({ name: 'p', files: [file('notes.tex', '% \\documentclass{article}')] })).toBeUndefined();
   });
 });
