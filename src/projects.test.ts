@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findMainFile, groupByProject } from './projects';
+import { findMainFile, groupByProject, pathProblem } from './projects';
 
 describe('groupByProject', () => {
   it('groups files by folder and makes paths relative to the project', () => {
@@ -50,5 +50,23 @@ describe('findMainFile', () => {
 
   it('ignores \\documentclass inside a comment', () => {
     expect(findMainFile({ name: 'p', files: [file('notes.tex', '% \\documentclass{article}')] })).toBeUndefined();
+  });
+});
+
+describe('pathProblem', () => {
+  const project = { name: 'p', files: [{ path: 'main.tex', content: '' }, { path: 'chapters/intro.tex', content: '' }] };
+
+  it('accepts a new path, also in a new folder', () => {
+    expect(pathProblem(project, 'chapters/method.tex')).toBeNull();
+    expect(pathProblem(project, 'figures/plot.png')).toBeNull();
+  });
+
+  it('rejects taken names, folders and odd paths', () => {
+    expect(pathProblem(project, 'main.tex')).toMatch('already exists');
+    expect(pathProblem(project, 'chapters')).toMatch('is a folder');
+    expect(pathProblem(project, 'main.tex/x.tex')).toMatch('is a file');
+    expect(pathProblem(project, '/abs.tex')).not.toBeNull();
+    expect(pathProblem(project, '../up.tex')).not.toBeNull();
+    expect(pathProblem(project, '')).not.toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 import { BusyTexRunner, PdfLatex } from 'texlyre-busytex';
-import { findMainFile, groupByProject, type Project, type ProjectFile } from './projects';
+import { findMainFile, groupByProject, pathProblem, type Project, type ProjectFile } from './projects';
 import { buildTree, isTextFile, type TreeNode } from './fileTree';
 import { Editor, type LineMark } from './editor';
 import { PdfViewer } from './pdfViewer';
@@ -55,6 +55,14 @@ const treeView = element<HTMLElement>('#tree');
 const editorElement = element<HTMLDivElement>('#editor');
 const imagePreview = element<HTMLImageElement>('#image-preview');
 const logView = element<HTMLPreElement>('#log');
+const fileActions = element<HTMLDivElement>('#file-actions');
+const newFileButton = element<HTMLButtonElement>('#new-file');
+const uploadButton = element<HTMLButtonElement>('#upload-files');
+const uploadInput = element<HTMLInputElement>('#upload-input');
+const renameButton = element<HTMLButtonElement>('#rename-file');
+const duplicateButton = element<HTMLButtonElement>('#duplicate-file');
+const deleteButton = element<HTMLButtonElement>('#delete-file');
+const setMainButton = element<HTMLButtonElement>('#set-main-file');
 const problemList = element<HTMLUListElement>('#problems');
 
 let examples: Project[] = []; // the test-docs projects, shown while signed out
@@ -378,6 +386,117 @@ function renderTree(): void {
     return list;
   };
   treeView.replaceChildren(toList(buildTree(project?.files.map((f) => f.path) ?? [])));
+
+  // File actions are for Drive projects; most of them act on the open file.
+  fileActions.hidden = !sync;
+  for (const button of [renameButton, duplicateButton, deleteButton]) button.disabled = !activePath;
+  setMainButton.disabled = !activePath || !activePath.endsWith('.tex') || activePath === findMainFile(project ?? { name: '', files: [] });
+}
+
+// The folder of a path: "chapters/intro.tex" → "chapters", "main.tex" → "".
+const folderOf = (path: string | null): string => path?.split('/').slice(0, -1).join('/') ?? '';
+
+// Asks for a file path until it is usable. Returns null if the user cancels
+// or keeps the path unchanged.
+function askForPath(question: string, suggestion: string, unchanged?: string): string | null {
+  let message = question;
+  let answer = suggestion;
+  for (;;) {
+    const typed = prompt(message, answer);
+    if (typed === null) return null;
+    answer = typed.trim();
+    if (answer === unchanged) return null;
+    const problem = project ? pathProblem(project, answer) : null;
+    if (!problem) return answer;
+    message = `${problem}\n\n${question}`;
+  }
+}
+
+// Runs a file action with a status message. Returns false if it failed.
+async function runFileAction(description: string, action: () => Promise<void>): Promise<boolean> {
+  statusText.textContent = `${description}…`;
+  try {
+    await action();
+    statusText.textContent = `${description}: done.`;
+    return true;
+  } catch (error) {
+    showError(error);
+    return false;
+  } finally {
+    renderTree();
+  }
+}
+
+async function newFile(): Promise<void> {
+  const projectSync = sync;
+  if (!projectSync) return;
+  const folder = folderOf(activePath);
+  const path = askForPath('Name of the new file, e.g. method.tex or chapters/method.tex:', folder ? `${folder}/` : '');
+  if (path && await runFileAction(`Creating ${path}`, () => projectSync.addFile(path, ''))) openFile(path);
+}
+
+async function uploadFiles(files: File[]): Promise<void> {
+  const projectSync = sync;
+  if (!projectSync || files.length === 0) return;
+  const answer = prompt('Upload into which folder? Leave empty for the top level.', folderOf(activePath));
+  if (answer === null) return;
+  const folder = answer.trim().replace(/^\/+|\/+$/g, '');
+  for (const upload of files) {
+    const path = folder ? `${folder}/${upload.name}` : upload.name;
+    const exists = projectSync.project.files.some((f) => f.path === path);
+    const problem = pathProblem(projectSync.project, path);
+    if (problem && !exists) {
+      showError(new Error(problem));
+      return;
+    }
+    if (exists && !confirm(`${path} already exists. Replace it? Drive keeps the old version in its version history.`)) continue;
+    const bytes = new Uint8Array(await upload.arrayBuffer());
+    const content = isTextFile(path) ? new TextDecoder().decode(bytes) : bytes;
+    if (!await runFileAction(`Uploading ${path}`, () => projectSync.addFile(path, content))) return;
+  }
+}
+
+async function renameFile(): Promise<void> {
+  const projectSync = sync;
+  const from = activePath;
+  if (!projectSync || !from) return;
+  const to = askForPath(`New name for ${from}. Change the folder part to move it, e.g. chapters/${from.split('/').pop()}:`, from, from);
+  if (!to) return;
+  if (await runFileAction(`Renaming ${from}`, () => projectSync.moveFile(from, to))) {
+    editor.rename(from, to);
+    openFile(to);
+  }
+}
+
+async function duplicateFile(): Promise<void> {
+  const projectSync = sync;
+  const file = projectSync?.project.files.find((f) => f.path === activePath);
+  if (!projectSync || !file) return;
+  // "chapters/intro.tex" → "chapters/intro-copy.tex" (no spaces: LaTeX dislikes them in file names)
+  const suggestion = file.path.replace(/(\.[^./]+)?$/, (extension) => `-copy${extension}`);
+  const path = askForPath(`Name for the copy of ${file.path}:`, suggestion);
+  const content = typeof file.content === 'string' ? file.content : file.content.slice();
+  if (path && await runFileAction(`Duplicating ${file.path}`, () => projectSync.addFile(path, content))) openFile(path);
+}
+
+async function deleteFile(): Promise<void> {
+  const projectSync = sync;
+  const path = activePath;
+  if (!projectSync || !path) return;
+  if (!confirm(`Delete ${path}? It goes to the trash in your Google Drive, where you can restore it for 30 days.`)) return;
+  if (await runFileAction(`Deleting ${path}`, () => projectSync.deleteFile(path))) {
+    editor.forget(path);
+    activePath = null;
+    const next = findMainFile(projectSync.project) ?? projectSync.project.files[0]?.path;
+    if (next) openFile(next);
+    else editor.clear();
+  }
+}
+
+async function setMainFile(): Promise<void> {
+  const projectSync = sync;
+  const path = activePath;
+  if (projectSync && path) await runFileAction(`Making ${path} the main file`, () => projectSync.setMainFile(path));
 }
 
 // The engine is downloaded and started only once, on the first compile.
@@ -498,6 +617,16 @@ function jumpTo(problem: LogProblem): void {
 }
 
 compileButton.addEventListener('click', () => void compile());
+newFileButton.addEventListener('click', () => void newFile());
+uploadButton.addEventListener('click', () => {
+  uploadInput.value = '';
+  uploadInput.click();
+});
+uploadInput.addEventListener('change', () => void uploadFiles([...(uploadInput.files ?? [])]));
+renameButton.addEventListener('click', () => void renameFile());
+duplicateButton.addEventListener('click', () => void duplicateFile());
+deleteButton.addEventListener('click', () => void deleteFile());
+setMainButton.addEventListener('click', () => void setMainFile());
 syncButton.addEventListener('click', showConflict);
 logButton.addEventListener('click', () => { logView.hidden = !logView.hidden; });
 projectSelect.addEventListener('change', () => void selectProject(projectSelect.value));

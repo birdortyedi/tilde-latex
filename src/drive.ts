@@ -12,6 +12,15 @@ export interface DriveFile {
   // Changes every time the file's content is saved; used to notice that
   // another computer changed the file since we loaded it.
   headRevisionId?: string;
+  // Small private notes Tilde keeps on a file, e.g. a project's main file.
+  appProperties?: Record<string, string>;
+}
+
+// Changes to a file's details (not its content).
+export interface MetadataChanges {
+  name?: string;
+  trashed?: boolean; // true moves it to Drive's trash, restorable for 30 days
+  appProperties?: Record<string, string>;
 }
 
 // The Drive operations Tilde needs. Tests use an in-memory fake instead.
@@ -24,6 +33,8 @@ export interface Drive {
   createFolder(name: string, parentId: string): Promise<DriveFile>;
   createFile(name: string, parentId: string, content: Uint8Array): Promise<DriveFile>;
   updateFile(fileId: string, content: Uint8Array): Promise<DriveFile>;
+  // Changes a file's details; with `move`, also moves it to another folder.
+  updateMetadata(fileId: string, changes: MetadataChanges, move?: { from: string; to: string }): Promise<DriveFile>;
 }
 
 // Thrown when Drive cannot be reached because the computer is offline.
@@ -35,7 +46,7 @@ export class OfflineError extends Error {
 
 const API = 'https://www.googleapis.com/drive/v3/files';
 const UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3/files';
-const FIELDS = 'id,name,mimeType,headRevisionId';
+const FIELDS = 'id,name,mimeType,headRevisionId,appProperties';
 
 async function request(url: string, init: { method?: string; headers?: Record<string, string>; body?: BodyInit } = {}): Promise<Response> {
   if (!navigator.onLine) throw new OfflineError();
@@ -110,6 +121,20 @@ export const googleDrive: Drive = {
       method: 'POST',
       headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
       body,
+    });
+    return response.json();
+  },
+
+  async updateMetadata(fileId, changes, move) {
+    const params = new URLSearchParams({ fields: FIELDS });
+    if (move) {
+      params.set('addParents', move.to);
+      params.set('removeParents', move.from);
+    }
+    const response = await request(`${API}/${fileId}?${params}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(changes),
     });
     return response.json();
   },

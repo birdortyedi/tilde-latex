@@ -1,9 +1,12 @@
 import { SignInNeededError } from './auth';
 import { OfflineError, type Drive } from './drive';
 import type { DraftKey, DraftStore } from './drafts';
-import { currentRevisions, saveProject } from './driveProjects';
+import { currentRevisions, moveFile, removeEmptyFolders, saveProject, setMainFile, trashFile } from './driveProjects';
 import { isTextFile } from './fileTree';
 import type { Project, ProjectFile } from './projects';
+
+// "chapters/intro.tex" → "chapters"; "main.tex" → ""
+const folderOf = (path: string): string => path.split('/').slice(0, -1).join('/');
 
 export const AUTOSAVE_DELAY = 3_000; // milliseconds after the last edit
 export const RETRY_DELAY = 30_000; // milliseconds before trying again after a failed save
@@ -137,6 +140,58 @@ export class ProjectSync {
     });
   }
 
+  // File actions. They run in the same queue as saving, so they never clash
+  // with a save, and their errors are passed to the caller.
+
+  // Adds a file (new, uploaded or duplicated), or replaces the content of an
+  // existing one, and saves it to Drive.
+  addFile(path: string, content: string | Uint8Array): Promise<void> {
+    return this.action(async () => {
+      const existing = this.file(path);
+      if (existing) {
+        existing.content = content;
+        existing.changed = true;
+        if (typeof content === 'string') this.listener.fileReplaced(path, content);
+      } else {
+        this.project.files.push({ path, content, changed: true });
+      }
+      await this.save();
+    });
+  }
+
+  // Moves a file to Drive's trash (restorable there for 30 days).
+  deleteFile(path: string): Promise<void> {
+    return this.action(async () => {
+      const file = this.file(path);
+      if (!file) return;
+      await trashFile(this.drive, file);
+      this.project.files.splice(this.project.files.indexOf(file), 1);
+      await removeEmptyFolders(this.drive, this.project, folderOf(path));
+      this.conflicts.delete(path);
+      file.changed = false;
+      this.syncDraft(file); // removes its draft
+    });
+  }
+
+  // Renames a file or moves it to another folder; unsaved edits move with it.
+  moveFile(from: string, to: string): Promise<void> {
+    return this.action(async () => {
+      const file = this.file(from);
+      if (!file) return;
+      await moveFile(this.drive, this.project, file, to);
+      await removeEmptyFolders(this.drive, this.project, folderOf(from));
+      if (this.project.mainFile === from) await setMainFile(this.drive, this.project, to);
+      if (this.conflicts.delete(from)) this.conflicts.add(to);
+      this.drafts.remove({ accountId: this.accountId, projectId: this.projectId, path: from })
+        .catch((error: unknown) => console.warn('Could not update the copy kept in the browser', error));
+      this.syncDraft(file);
+    });
+  }
+
+  setMainFile(path: string): Promise<void> {
+    return this.action(() => setMainFile(this.drive, this.project, path));
+  }
+
   // Drive's version of a file, for the conflict choice "Download both".
   async driveVersion(path: string): Promise<Uint8Array> {
     const file = this.file(path);
@@ -181,6 +236,22 @@ export class ProjectSync {
     file.changed = false;
     this.syncDraft(file);
     if (typeof file.content === 'string') this.listener.fileReplaced(file.path, file.content);
+  }
+
+  // Like enqueue, but the caller also gets the error, to show it.
+  private action(task: () => Promise<void>): Promise<void> {
+    let failure: { error: unknown } | null = null;
+    this.enqueue(async () => {
+      try {
+        await task();
+      } catch (error) {
+        failure = { error };
+        throw error;
+      }
+    });
+    return this.queue.then(() => {
+      if (failure) throw failure.error;
+    });
   }
 
   private enqueue(task: () => Promise<void>): Promise<void> {

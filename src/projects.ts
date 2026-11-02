@@ -15,6 +15,22 @@ export interface Project {
 
 const depth = (path: string): number => path.split('/').length;
 
+// What is wrong with a path the user typed for a new or renamed file, or
+// null if it can be used. Paths look like "chapters/method.tex".
+export function pathProblem(project: Project, path: string): string | null {
+  if (!path) return 'Type a file name.';
+  const parts = path.split('/');
+  if (parts.some((part) => part === '' || part === '.' || part === '..')) {
+    return 'Use a name like "method.tex" or "chapters/method.tex" (no leading "/", "." or "..").';
+  }
+  for (const file of project.files) {
+    if (file.path === path) return `${path} already exists.`;
+    if (file.path.startsWith(`${path}/`)) return `${path} is a folder.`;
+    if (path.startsWith(`${file.path}/`)) return `${file.path} is a file, not a folder.`;
+  }
+  return null;
+}
+
 // The file to compile: the user's choice, else main.tex, else a .tex file
 // with \documentclass (outside a comment), preferring top-level files.
 export function findMainFile(project: Project): string | undefined {

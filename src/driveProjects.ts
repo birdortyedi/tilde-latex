@@ -9,6 +9,12 @@ export const ROOT_FOLDER_NAME = 'LaTeX Projects';
 
 const isFolder = (file: DriveFile): boolean => file.mimeType === FOLDER_TYPE;
 
+// "chapters/intro.tex" → ["chapters", "intro.tex"]; "main.tex" → ["", "main.tex"]
+function splitPath(path: string): [string, string] {
+  const slash = path.lastIndexOf('/');
+  return [slash < 0 ? '' : path.slice(0, slash), path.slice(slash + 1)];
+}
+
 // Finds the "LaTeX Projects" folder, or creates it the first time.
 // Because of the drive.file scope, Drive only shows us a folder Tilde created.
 export async function findOrCreateRootFolder(drive: Drive): Promise<string> {
@@ -48,7 +54,52 @@ export async function openProject(drive: Drive, folder: DriveFile): Promise<Proj
     }));
   };
   await walk(folder.id, '');
-  return { name: folder.name, driveId: folder.id, files };
+  return { name: folder.name, driveId: folder.id, files, mainFile: folder.appProperties?.mainFile };
+}
+
+// Renames a file and/or moves it to another folder of the project, creating
+// missing folders. Drive keeps the file's version history.
+export async function moveFile(drive: Drive, project: Project, file: ProjectFile, newPath: string): Promise<void> {
+  if (!project.driveId) throw new Error(`${project.name} is not in Google Drive.`);
+  if (file.driveId) {
+    const folders = new Map<string, string>([['', project.driveId]]);
+    const [oldDir] = splitPath(file.path);
+    const [newDir, newName] = splitPath(newPath);
+    const from = await folderFor(drive, folders, oldDir);
+    const to = await folderFor(drive, folders, newDir);
+    await drive.updateMetadata(file.driveId, { name: newName }, from === to ? undefined : { from, to });
+  }
+  file.path = newPath;
+}
+
+// After a file was deleted or moved out of `dir`, moves `dir` and its parent
+// folders to Drive's trash if they are now empty. A folder is kept if the
+// project still has files in it, or if Drive still shows anything in it.
+export async function removeEmptyFolders(drive: Drive, project: Project, dir: string): Promise<void> {
+  if (!project.driveId) return;
+  for (let current = dir; current !== ''; current = splitPath(current)[0]) {
+    if (project.files.some((f) => f.path.startsWith(`${current}/`))) return;
+    // Find the folder by walking down from the project folder.
+    let folderId: string | undefined = project.driveId;
+    for (const name of current.split('/')) {
+      if (!folderId) break;
+      folderId = (await drive.list(folderId)).find((f) => isFolder(f) && f.name === name)?.id;
+    }
+    if (!folderId || (await drive.list(folderId)).length > 0) return;
+    await drive.updateMetadata(folderId, { trashed: true });
+  }
+}
+
+// Moves a file to Drive's trash, where it can be restored for 30 days.
+export async function trashFile(drive: Drive, file: ProjectFile): Promise<void> {
+  if (file.driveId) await drive.updateMetadata(file.driveId, { trashed: true });
+}
+
+// Remembers the main file on the project folder, so every computer uses the same one.
+export async function setMainFile(drive: Drive, project: Project, path: string): Promise<void> {
+  if (!project.driveId) throw new Error(`${project.name} is not in Google Drive.`);
+  await drive.updateMetadata(project.driveId, { appProperties: { mainFile: path } });
+  project.mainFile = path;
 }
 
 // The current Drive revision of every file in a project, by file id.
@@ -85,9 +136,8 @@ export async function saveProject(drive: Drive, project: Project): Promise<strin
       }
       saved = await drive.updateFile(file.driveId, bytes);
     } else {
-      const slash = file.path.lastIndexOf('/');
-      const parentId = await folderFor(drive, folders, slash < 0 ? '' : file.path.slice(0, slash));
-      saved = await drive.createFile(file.path.slice(slash + 1), parentId, bytes);
+      const [dir, name] = splitPath(file.path);
+      saved = await drive.createFile(name, await folderFor(drive, folders, dir), bytes);
     }
     file.driveId = saved.id;
     file.revision = saved.headRevisionId;
@@ -102,9 +152,8 @@ export async function saveProject(drive: Drive, project: Project): Promise<strin
 async function folderFor(drive: Drive, folders: Map<string, string>, dir: string): Promise<string> {
   const known = folders.get(dir);
   if (known) return known;
-  const slash = dir.lastIndexOf('/');
-  const parentId = await folderFor(drive, folders, slash < 0 ? '' : dir.slice(0, slash));
-  const name = dir.slice(slash + 1);
+  const [parent, name] = splitPath(dir);
+  const parentId = await folderFor(drive, folders, parent);
   const existing = (await drive.list(parentId)).find((f) => isFolder(f) && f.name === name);
   const id = existing?.id ?? (await drive.createFolder(name, parentId)).id;
   folders.set(dir, id);

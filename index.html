@@ -18,7 +18,10 @@
       #sync.offline:disabled, #sync.signin:disabled, #sync.error:disabled { color: #b35c00; }
       #sync.conflict { color: #b00020; font-weight: bold; }
       main { flex: 1; display: grid; grid-template-columns: 200px 1fr 1fr; grid-template-rows: minmax(0, 1fr); min-height: 0; }
-      #tree { overflow: auto; padding: 8px 0; border-right: 1px solid #ddd; background: #fafafa; font-size: 14px; }
+      #side { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid #ddd; background: #fafafa; }
+      #file-actions { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px; border-bottom: 1px solid #ddd; }
+      #file-actions button { font-size: 12px; padding: 1px 6px; }
+      #tree { flex: 1; overflow: auto; padding: 8px 0; font-size: 14px; }
       #tree ul { list-style: none; margin: 0; padding-left: 14px; }
       #tree > ul { padding-left: 4px; }
       #tree button { all: unset; display: block; width: 100%; box-sizing: border-box; padding: 2px 8px; cursor: pointer; border-radius: 4px; }
@@ -66,7 +69,18 @@
       </form>
     </dialog>
     <main>
-      <nav id="tree" aria-label="Project files"></nav>
+      <div id="side">
+        <div id="file-actions" hidden>
+          <button id="new-file" title="Create an empty file">New file</button>
+          <button id="upload-files" title="Add files from your computer">Upload</button>
+          <button id="rename-file" title="Rename or move the open file">Rename</button>
+          <button id="duplicate-file" title="Make a copy of the open file">Duplicate</button>
+          <button id="delete-file" title="Move the open file to Drive's trash">Delete</button>
+          <button id="set-main-file" title="Compile this file">Set as main</button>
+          <input id="upload-input" type="file" multiple hidden />
+        </div>
+        <nav id="tree" aria-label="Project files"></nav>
+      </div>
       <div id="editor-pane">
         <div id="editor"></div>
         <img id="image-preview" alt="" hidden />

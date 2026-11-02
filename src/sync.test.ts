@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { forgetOtherAccounts, type Draft, type DraftKey, type DraftStore } from './drafts';
-import { createProject, findOrCreateRootFolder } from './driveProjects';
+import { createProject, findOrCreateRootFolder, listProjects, openProject } from './driveProjects';
 import type { Project, ProjectFile } from './projects';
 import { AUTOSAVE_DELAY, ProjectSync, RETRY_DELAY, type SyncState } from './sync';
 import { FakeDrive } from './testing/fakeDrive';
@@ -203,5 +203,77 @@ describe('ProjectSync', () => {
     await sync.checkDrive();
     expect(sync.state).toBe('conflict');
     expect(file('main.tex').content).toBe('mine');
+  });
+  describe('file actions', () => {
+    it('adds a new file in a new folder and saves it', async () => {
+      await sync.addFile('chapters/method.tex', 'Method');
+      expect(onDrive('chapters/method.tex')).toBe('Method');
+      expect(sync.state).toBe('saved');
+    });
+
+    it('replaces an existing file and shows the new text', async () => {
+      await sync.addFile('refs.bib', 'new bib');
+      expect(onDrive('refs.bib')).toBe('new bib');
+      expect(replaced['refs.bib']).toBe('new bib');
+    });
+
+    it('moves a deleted file to the trash and forgets its unsaved edits', async () => {
+      type('refs.bib', 'unsaved');
+      await sync.deleteFile('refs.bib');
+      expect(onDrive('refs.bib')).toBeUndefined();
+      expect(project.files.map((f) => f.path)).toEqual(['main.tex']);
+      expect(drafts.all.size).toBe(0);
+      expect(sync.state).toBe('saved');
+    });
+
+    it('moves a file to another folder, keeping its unsaved edits', async () => {
+      type('main.tex', 'edited');
+      await sync.moveFile('main.tex', 'src/paper.tex');
+      expect(file('src/paper.tex').path).toBe('src/paper.tex');
+      expect(drafts.get('main.tex')).toBeUndefined();
+      expect(drafts.get('src/paper.tex')?.content).toBe('edited');
+      await sync.saveNow();
+      expect(onDrive('main.tex')).toBeUndefined();
+      expect(onDrive('src/paper.tex')).toBe('edited');
+    });
+
+    it('trashes folders that a delete leaves empty, but keeps folders still in use', async () => {
+      await sync.addFile('a/b/one.tex', '1');
+      await sync.addFile('a/two.tex', '2');
+      const folder = (name: string) => [...drive.items.values()].find((i) => i.name === name);
+      await sync.deleteFile('a/b/one.tex');
+      expect(folder('b')?.trashed).toBe(true);
+      expect(folder('a')?.trashed).toBeFalsy(); // a/two.tex is still there
+      await sync.deleteFile('a/two.tex');
+      expect(folder('a')?.trashed).toBe(true);
+    });
+
+    it('trashes the folder a file was moved out of, if it is now empty', async () => {
+      await sync.addFile('old/x.tex', 'x');
+      await sync.moveFile('old/x.tex', 'new/x.tex');
+      expect([...drive.items.values()].find((i) => i.name === 'old')?.trashed).toBe(true);
+      expect(onDrive('new/x.tex')).toBe('x');
+    });
+
+    it('keeps a folder that Drive still shows something in', async () => {
+      await sync.addFile('figs/a.png', new Uint8Array([1]));
+      const figs = [...drive.items.values()].find((i) => i.name === 'figs');
+      await drive.createFile('not-in-tilde.png', figs?.id ?? '', new Uint8Array([2])); // e.g. added another way
+      await sync.deleteFile('figs/a.png');
+      expect(figs?.trashed).toBeFalsy();
+    });
+
+    it('remembers the main file in Drive, also when it is renamed', async () => {
+      await sync.setMainFile('main.tex');
+      await sync.moveFile('main.tex', 'paper.tex');
+      const [folder] = await listProjects(drive, (await findOrCreateRootFolder(drive)));
+      expect((await openProject(drive, folder)).mainFile).toBe('paper.tex');
+    });
+
+    it('reports a failed action to the caller', async () => {
+      drive.offline = true;
+      await expect(sync.deleteFile('refs.bib')).rejects.toThrow('Offline');
+      expect(project.files).toHaveLength(2);
+    });
   });
 });

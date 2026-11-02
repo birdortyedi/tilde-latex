@@ -38,6 +38,20 @@ export class Editor {
     else this.states.delete(path); // open() will start from the new text
   }
 
+  // A file was renamed or moved: keep its undo history under the new path.
+  rename(from: string, to: string): void {
+    const state = this.states.get(from);
+    this.states.delete(from);
+    if (state) this.states.set(to, state);
+    if (this.currentPath === from) this.currentPath = to;
+  }
+
+  // A file was deleted.
+  forget(path: string): void {
+    this.states.delete(path);
+    if (this.currentPath === path) this.currentPath = null;
+  }
+
   // Selects a line (1 = first) of the open file and scrolls it into the middle.
   goTo(line: number): void {
     const doc = this.view.state.doc;
@@ -81,8 +95,10 @@ export class Editor {
         lintGutter(),
         EditorView.lineWrapping,
         StreamLanguage.define(stex),
+        // Only the open file can change, so report it under its current
+        // path (which a rename may have changed since this state was made).
         EditorView.updateListener.of((update) => {
-          if (update.docChanged) this.onChange(path, update.state.doc.toString());
+          if (update.docChanged && this.currentPath) this.onChange(this.currentPath, update.state.doc.toString());
         }),
       ],
     });
