@@ -1,10 +1,12 @@
 import { basicSetup } from 'codemirror';
-import { EditorState, type TransactionSpec } from '@codemirror/state';
+import { EditorState, type Extension, type TransactionSpec } from '@codemirror/state';
 import { EditorView, scrollPastEnd } from '@codemirror/view';
 import { lintGutter, setDiagnostics, type Diagnostic } from '@codemirror/lint';
 import { HighlightStyle, StreamLanguage, syntaxHighlighting } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
 import { stex } from '@codemirror/legacy-modes/mode/stex';
+import { latexEditing } from './latexEditing';
+import type { ProjectFile } from './projects';
 
 // Colours for LaTeX source. They are CSS variables from style.css, so they
 // follow the light and dark themes by themselves.
@@ -47,13 +49,20 @@ export class Editor {
   private states = new Map<string, EditorState>();
   private currentPath: string | null = null;
   private marks = new Map<string, LineMark[]>(); // by file path
+  private language: Extension; // LaTeX colours, completion and editing helpers
 
   constructor(
     parent: HTMLElement,
     private onChange: (path: string, text: string) => void,
     private onCursor: (line: number, column: number) => void = () => {},
+    files: () => ProjectFile[] = () => [], // the project's files, for completing labels, citations and paths
   ) {
     this.view = new EditorView({ parent });
+    const latex = latexEditing(files);
+    this.language = [
+      StreamLanguage.define({ ...stex, languageData: { ...stex.languageData, ...latex.languageData } }),
+      latex.extensions,
+    ];
   }
 
   private reportCursor(state: EditorState): void {
@@ -136,7 +145,7 @@ export class Editor {
         scrollPastEnd(), // the last line can scroll up, away from the bottom edge
         lintGutter(),
         EditorView.lineWrapping,
-        StreamLanguage.define(stex),
+        this.language,
         // Only the open file can change, so report it under its current
         // path (which a rename may have changed since this state was made).
         EditorView.updateListener.of((update) => {

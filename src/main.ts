@@ -18,6 +18,7 @@ import { cachedPackages, REMOTE_DIR, storeNewPackages } from './packageCache';
 import { lastLatexLog, parseLog, type LogProblem } from './logParser';
 import { unzipProject } from './zipImport';
 import { timeAgo } from './time';
+import { outline } from './latex';
 import { isGoogleDoc, pickDriveFiles, type PickedFile } from './picker';
 import { askConfirm, askText } from './ask';
 import { initLayout, type Pane } from './layout';
@@ -104,6 +105,9 @@ const pdfContainer = element<HTMLDivElement>('#pdf');
 const uploadInput = element<HTMLInputElement>('#upload-input');
 const problemList = element<HTMLUListElement>('#problems');
 const problemsPanel = element<HTMLElement>('#problems-panel');
+const outlinePanel = element<HTMLElement>('#outline-panel');
+const outlineToggle = element<HTMLButtonElement>('#outline-toggle');
+const outlineView = element<HTMLElement>('#outline');
 const problemsTitle = element<HTMLSpanElement>('#problems-title');
 const preview = element<HTMLElement>('#preview');
 const welcome = element<HTMLDivElement>('#welcome');
@@ -128,9 +132,10 @@ const editor = new Editor(editorElement, (path, text) => {
   file.content = text;
   sync?.edited(path);
   scheduleAutoCompile();
+  scheduleOutline();
 }, (line, column) => {
   cursorPosition.textContent = `Ln ${line}, Col ${column}`;
-});
+}, () => project?.files ?? []);
 const pdfViewer = new PdfViewer(pdfContainer, showPdfState);
 
 // The toolbar above the PDF: zoom, page number, auto-compile, download.
@@ -758,6 +763,33 @@ function renderTree(): void {
 
   // Adding files is for Drive projects; the examples stay as they are.
   addFilesButton.hidden = !sync;
+  renderOutline();
+}
+
+// The outline: the document's headings, following \input and \include from
+// the main file. It is rebuilt shortly after typing stops.
+let outlineTimer: ReturnType<typeof setTimeout> | undefined;
+function scheduleOutline(): void {
+  clearTimeout(outlineTimer);
+  outlineTimer = setTimeout(renderOutline, 500);
+}
+
+function renderOutline(): void {
+  const main = project ? findMainFile(project) : undefined;
+  const entries = project && main ? outline(project.files, main) : [];
+  outlinePanel.hidden = entries.length === 0;
+  outlineView.replaceChildren(...entries.map((entry) => {
+    const button = document.createElement('button');
+    button.className = `level-${entry.level}`;
+    button.textContent = entry.title || '(no title)';
+    button.title = `${entry.title} · ${entry.file}:${entry.line}`;
+    button.addEventListener('click', () => {
+      openFile(entry.file);
+      reveal('editor');
+      editor.goTo(entry.line);
+    });
+    return button;
+  }));
 }
 
 // The "⋯" menu of a file in the tree.
@@ -1083,6 +1115,18 @@ function jumpTo(problem: LogProblem): void {
 
 compileButton.addEventListener('click', () => void compile());
 addFilesButton.addEventListener('click', showAddMenu);
+outlineToggle.addEventListener('click', () => {
+  const open = outlineToggle.getAttribute('aria-expanded') !== 'true';
+  outlineToggle.setAttribute('aria-expanded', String(open));
+  outlineView.hidden = !open;
+  try { localStorage.setItem('tilde.outlineOpen', String(open)); } catch { /* not remembered */ }
+});
+try {
+  if (localStorage.getItem('tilde.outlineOpen') === 'false') {
+    outlineToggle.setAttribute('aria-expanded', 'false');
+    outlineView.hidden = true;
+  }
+} catch { /* open */ }
 
 // PDF toolbar
 zoomMenuButton.addEventListener('click', showZoomMenu);

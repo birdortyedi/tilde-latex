@@ -120,6 +120,12 @@
           <button id="add-files" class="quiet" aria-haspopup="menu" title="Add a file" hidden>+</button>
         </div>
         <nav id="tree" aria-label="Project files"></nav>
+        <section id="outline-panel" hidden>
+          <button id="outline-toggle" class="side-head" aria-expanded="true" aria-controls="outline">
+            <span>Outline</span><span class="chevron" aria-hidden="true"></span>
+          </button>
+          <nav id="outline" aria-label="Document outline"></nav>
+        </section>
         <input id="upload-input" type="file" multiple hidden />
       </aside>
       <div id="side-handle" class="handle" role="separator" aria-orientation="vertical" aria-label="Resize the files" tabindex="0"></div>
