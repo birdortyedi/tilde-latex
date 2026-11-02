@@ -1,4 +1,4 @@
-import { getAccessToken } from './auth';
+import { forgetToken, getAccessToken, SignInNeededError } from './auth';
 
 // Thin wrapper around the Google Drive API v3, using plain fetch calls.
 // See https://developers.google.com/drive/api/reference/rest/v3/files
@@ -16,6 +16,8 @@ export interface DriveFile {
 
 // The Drive operations Tilde needs. Tests use an in-memory fake instead.
 export interface Drive {
+  // A stable id of the signed-in Google account (not the email address).
+  whoAmI(): Promise<string>;
   list(folderId: string): Promise<DriveFile[]>;
   get(fileId: string): Promise<DriveFile>;
   download(fileId: string): Promise<Uint8Array>;
@@ -24,18 +26,41 @@ export interface Drive {
   updateFile(fileId: string, content: Uint8Array): Promise<DriveFile>;
 }
 
+// Thrown when Drive cannot be reached because the computer is offline.
+export class OfflineError extends Error {
+  constructor() {
+    super('Offline');
+  }
+}
+
 const API = 'https://www.googleapis.com/drive/v3/files';
 const UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3/files';
 const FIELDS = 'id,name,mimeType,headRevisionId';
 
 async function request(url: string, init: { method?: string; headers?: Record<string, string>; body?: BodyInit } = {}): Promise<Response> {
+  if (!navigator.onLine) throw new OfflineError();
   const token = await getAccessToken();
-  const response = await fetch(url, { ...init, headers: { ...init.headers, Authorization: `Bearer ${token}` } });
+  let response: Response;
+  try {
+    response = await fetch(url, { ...init, headers: { ...init.headers, Authorization: `Bearer ${token}` } });
+  } catch {
+    throw new OfflineError(); // fetch only fails like this when the network is unreachable
+  }
+  if (response.status === 401) {
+    forgetToken();
+    throw new SignInNeededError();
+  }
   if (!response.ok) throw new Error(`Google Drive answered ${response.status}: ${await response.text()}`);
   return response;
 }
 
 export const googleDrive: Drive = {
+  async whoAmI() {
+    const about = (await (await request(`https://www.googleapis.com/drive/v3/about?fields=user(permissionId)`)).json()) as
+      { user: { permissionId: string } };
+    return about.user.permissionId;
+  },
+
   // Lists a folder's files and subfolders (not the ones in the trash).
   async list(folderId) {
     const files: DriveFile[] = [];

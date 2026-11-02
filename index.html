@@ -11,6 +11,12 @@
       header strong { font-size: 20px; }
       #status { color: #555; flex: 1; }
       #new-project-dialog label { display: block; margin-bottom: 12px; }
+      #conflict-dialog, #sign-out-dialog { max-width: 460px; }
+      /* Sync status: plain text, except when it needs the user (conflict). */
+      #sync:disabled { border: none; background: none; color: #2a7a2a; padding: 0; }
+      #sync.saving:disabled, #sync.unsaved:disabled { color: #555; }
+      #sync.offline:disabled, #sync.signin:disabled, #sync.error:disabled { color: #b35c00; }
+      #sync.conflict { color: #b00020; font-weight: bold; }
       main { flex: 1; display: grid; grid-template-columns: 200px 1fr 1fr; grid-template-rows: minmax(0, 1fr); min-height: 0; }
       #tree { overflow: auto; padding: 8px 0; border-right: 1px solid #ddd; background: #fafafa; font-size: 14px; }
       #tree ul { list-style: none; margin: 0; padding-left: 14px; }
@@ -34,9 +40,9 @@
       <strong>~ Tilde</strong>
       <label>Project <select id="project"></select></label>
       <button id="new-project" hidden>New project</button>
-      <button id="save" title="Ctrl+S or Cmd+S saves and compiles" hidden>Save</button>
       <button id="compile">Compile</button>
       <button id="toggle-log">Log</button>
+      <button id="sync" hidden disabled></button>
       <span id="status">Ready. The first compile downloads the engine (about 125 MB).</span>
       <button id="sign-in">Sign in with Google</button>
       <button id="sign-out" hidden>Sign out</button>
@@ -60,6 +66,27 @@
         <pre id="log" hidden></pre>
       </section>
     </main>
+    <dialog id="conflict-dialog">
+      <p>
+        <strong id="conflict-path"></strong> was changed in Google Drive (maybe on your
+        other computer) and also here. Which version should Tilde keep?
+      </p>
+      <form method="dialog">
+        <button value="mine">Keep mine</button>
+        <button value="drive">Keep Drive's</button>
+        <button type="button" id="download-both" title="Saves both versions to your Downloads folder">Download both</button>
+      </form>
+    </dialog>
+    <dialog id="sign-out-dialog">
+      <p>These files have changes that are not in Google Drive yet:</p>
+      <ul id="sign-out-files"></ul>
+      <p>Signing out deletes them from this browser.</p>
+      <form method="dialog">
+        <button value="download">Download them, then sign out</button>
+        <button value="delete">Sign out and delete them</button>
+        <button value="stay">Stay signed in</button>
+      </form>
+    </dialog>
     <!-- Google Identity Services, for "Sign in with Google" -->
     <script src="https://accounts.google.com/gsi/client" async></script>
     <script type="module" src="/src/main.ts"></script>

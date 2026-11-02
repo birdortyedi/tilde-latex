@@ -3,14 +3,17 @@ import { groupByProject, type Project, type ProjectFile } from './projects';
 import { buildTree, isTextFile, type TreeNode } from './fileTree';
 import { Editor } from './editor';
 import { PdfViewer } from './pdfViewer';
-import { signIn, signOut } from './auth';
+import { forgetToken, restoreSignIn, signIn, SignInNeededError, signOut } from './auth';
 import { googleDrive, type DriveFile } from './drive';
-import { createProject, findOrCreateRootFolder, listProjects, openProject, saveProject } from './driveProjects';
+import { createProject, findOrCreateRootFolder, listProjects, openProject } from './driveProjects';
+import { browserDrafts, forgetOtherAccounts, type Draft } from './drafts';
+import { ProjectSync, type SyncState } from './sync';
 
 // Files that TeX Live's basic bundle lacks (TikZ, pgfplots, ...) are fetched
 // one at a time from TeXlyre's public package server.
 const PACKAGE_SERVER = 'https://texlive2026.texlyre.org';
 const MAIN_FILE = 'main.tex';
+const LAST_PROJECT_KEY = 'tilde.lastProject'; // reopened after a reload
 const BLANK_PROJECT: ProjectFile[] = [{
   path: MAIN_FILE,
   content: '\\documentclass{article}\n\\begin{document}\nHello from Tilde.\n\\end{document}\n',
@@ -33,7 +36,12 @@ function element<T extends HTMLElement>(selector: string): T {
 
 const projectSelect = element<HTMLSelectElement>('#project');
 const compileButton = element<HTMLButtonElement>('#compile');
-const saveButton = element<HTMLButtonElement>('#save');
+const syncButton = element<HTMLButtonElement>('#sync');
+const conflictDialog = element<HTMLDialogElement>('#conflict-dialog');
+const conflictPath = element<HTMLElement>('#conflict-path');
+const downloadBothButton = element<HTMLButtonElement>('#download-both');
+const signOutDialog = element<HTMLDialogElement>('#sign-out-dialog');
+const signOutFiles = element<HTMLUListElement>('#sign-out-files');
 const newProjectButton = element<HTMLButtonElement>('#new-project');
 const signInButton = element<HTMLButtonElement>('#sign-in');
 const signOutButton = element<HTMLButtonElement>('#sign-out');
@@ -50,23 +58,26 @@ const logView = element<HTMLPreElement>('#log');
 let examples: Project[] = []; // the test-docs projects, shown while signed out
 let driveFolders: DriveFile[] = []; // the project folders in Drive, shown while signed in
 let rootId: string | null = null; // the "LaTeX Projects" folder in Drive; null while signed out
+let accountId = ''; // the signed-in Google account; drafts are tagged with it
+let unsavedAtSignOut: Draft[] = []; // shown in the sign-out dialog
 let project: Project | null = null; // the open project; edits change its files in memory
 let activePath: string | null = null;
 let runner: BusyTexRunner | null = null;
 let compiling = false;
-let saving = false;
+let sync: ProjectSync | null = null; // saves the open project to Drive; null for examples
+let conflictShown = ''; // the file the conflict dialog was last opened for
 
 const editor = new Editor(editorElement, (path, text) => {
   const file = project?.files.find((f) => f.path === path);
-  if (file) {
-    file.content = text;
-    file.changed = true;
-  }
+  if (!file) return;
+  file.content = text;
+  sync?.edited(path);
 });
 const pdfViewer = new PdfViewer(element<HTMLDivElement>('#pdf'));
 
 function showError(error: unknown): void {
   statusText.textContent = `Error: ${error instanceof Error ? error.message : String(error)}`;
+  if (error instanceof SignInNeededError) signInButton.hidden = false;
 }
 
 async function loadExamples(): Promise<void> {
@@ -93,7 +104,9 @@ async function showDriveProjects(): Promise<void> {
     statusText.textContent = 'You have no projects in Drive yet. Click "New project".';
     return;
   }
-  await selectProject(driveFolders[0].id);
+  let last: string | null = null;
+  try { last = localStorage.getItem(LAST_PROJECT_KEY); } catch { /* storage blocked */ }
+  await selectProject(driveFolders.find((f) => f.id === last)?.id ?? driveFolders[0].id);
 }
 
 // Fills the project menu with [value, label] pairs.
@@ -104,10 +117,6 @@ function setProjectOptions(options: [string, string][]): void {
 // Called when the user picks a project in the menu. Examples are already in
 // memory; Drive projects are downloaded first.
 async function selectProject(value: string): Promise<void> {
-  if (!confirmDiscard()) {
-    projectSelect.value = project?.driveId ?? project?.name ?? '';
-    return;
-  }
   projectSelect.value = value;
   if (!rootId) {
     showProject(examples.find((p) => p.name === value) ?? null);
@@ -117,40 +126,136 @@ async function selectProject(value: string): Promise<void> {
   if (!folder) return;
   statusText.textContent = `Opening ${folder.name} from Drive…`;
   try {
+    // Save the project we leave. Whatever cannot be saved now stays in the
+    // browser and is saved the next time that project is opened.
+    await sync?.saveNow();
     showProject(await openProject(googleDrive, folder));
   } catch (error) {
+    projectSelect.value = project?.driveId ?? '';
     showError(error);
   }
 }
 
 function showProject(newProject: Project | null): void {
+  sync?.close();
+  sync = newProject?.driveId
+    ? new ProjectSync(googleDrive, browserDrafts, accountId, newProject, {
+      stateChanged: showSyncState,
+      fileReplaced: (path, content) => editor.replace(path, content),
+    })
+    : null;
   project = newProject;
   editor.clear();
   activePath = null;
   element<HTMLDivElement>('#pdf').replaceChildren();
-  saveButton.hidden = !project?.driveId;
+  showSyncState();
   renderTree();
   if (!project) return;
+  if (project.driveId) {
+    try { localStorage.setItem(LAST_PROJECT_KEY, project.driveId); } catch { /* storage blocked */ }
+  }
   statusText.textContent = `Opened ${project.name}. Press Compile or Ctrl/Cmd+S.`;
   openFile(MAIN_FILE);
+  void sync?.restoreDrafts(); // edits from last time that never reached Drive
 }
 
-// Paths of files edited since the last save to Drive.
-function unsavedPaths(): string[] {
-  return project?.driveId ? project.files.filter((f) => f.changed).map((f) => f.path) : [];
+const SYNC_TEXT: Record<SyncState, string> = {
+  saved: 'Saved',
+  unsaved: 'Unsaved changes',
+  saving: 'Saving…',
+  offline: 'Offline, changes kept locally',
+  signin: 'Sign in again to keep saving',
+  error: 'Not saved yet, will try again',
+  conflict: 'Conflict',
+};
+
+// Shows the sync status next to the buttons. In a conflict it becomes a
+// button that opens the conflict dialog.
+function showSyncState(): void {
+  syncButton.hidden = !sync;
+  if (!sync) return;
+  syncButton.textContent = SYNC_TEXT[sync.state];
+  syncButton.className = sync.state;
+  syncButton.title = sync.state === 'error' ? sync.errorMessage : '';
+  syncButton.disabled = sync.state !== 'conflict';
+  if (sync.state === 'signin') signInButton.hidden = false;
+  // Open the dialog by itself once for each new conflict.
+  if (!sync.conflicts.has(conflictShown)) conflictShown = '';
+  const first = sync.conflicts.values().next().value;
+  if (first && first !== conflictShown && !conflictDialog.open) showConflict();
 }
 
-// True if there is nothing unsaved, or the user agrees to lose it.
-function confirmDiscard(): boolean {
-  const unsaved = unsavedPaths();
-  return unsaved.length === 0
-    || confirm(`These files have changes that are not saved to Drive:\n${unsaved.join('\n')}\n\nDiscard the changes?`);
+function showConflict(): void {
+  const path = sync?.conflicts.values().next().value;
+  if (!path) return;
+  conflictShown = path;
+  conflictPath.textContent = path;
+  conflictDialog.returnValue = '';
+  conflictDialog.showModal();
+}
+
+// "Download both": saves this computer's and Drive's version of the file to
+// the Downloads folder, as for example "main (mine).tex" and "main (Drive).tex".
+// The dialog stays open, so the user still chooses which one Tilde keeps.
+async function downloadBoth(): Promise<void> {
+  const file = project?.files.find((f) => f.path === conflictShown);
+  if (!file || !sync) return;
+  const name = conflictShown.split('/').pop() ?? conflictShown;
+  const dot = name.lastIndexOf('.');
+  const [base, extension] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ''];
+  try {
+    downloadFile(`${base} (mine)${extension}`, file.content);
+    downloadFile(`${base} (Drive)${extension}`, await sync.driveVersion(conflictShown));
+  } catch (error) {
+    showError(error);
+  }
+}
+
+function downloadFile(name: string, content: string | Uint8Array): void {
+  const url = URL.createObjectURL(new Blob([typeof content === 'string' ? content : content.slice()]));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
 async function handleSignIn(): Promise<void> {
   try {
     await signIn();
-    statusText.textContent = 'Signed in. Loading your projects…';
+  } catch (error) {
+    showError(error);
+    return;
+  }
+  if (rootId) {
+    // The sign-in had run out while working: carry on where we were, but
+    // only with the same Google account.
+    try {
+      if (await googleDrive.whoAmI() !== accountId) {
+        forgetToken();
+        statusText.textContent = 'That is a different Google account. Sign in with the one you used before, or sign out first.';
+        return;
+      }
+    } catch (error) {
+      showError(error);
+      return;
+    }
+    signInButton.hidden = true;
+    statusText.textContent = 'Signed in again.';
+    void sync?.saveNow();
+    return;
+  }
+  await startDrive();
+}
+
+// After sign-in, or after a reload while still signed in: show the user's projects.
+async function startDrive(): Promise<void> {
+  statusText.textContent = 'Loading your projects from Drive…';
+  try {
+    accountId = await googleDrive.whoAmI();
+    // Unsaved edits left in this browser by another Google account are deleted.
+    await forgetOtherAccounts(browserDrafts, accountId)
+      .catch((error: unknown) => console.warn('Could not clean up the copies kept in the browser', error));
     rootId = await findOrCreateRootFolder(googleDrive);
     signInButton.hidden = true;
     signOutButton.hidden = false;
@@ -161,24 +266,55 @@ async function handleSignIn(): Promise<void> {
   }
 }
 
-function handleSignOut(): void {
-  if (!confirmDiscard()) return;
-  signOut();
+// Signing out deletes everything Tilde keeps in this browser for the user.
+// Edits that could not be saved to Drive are listed first, with the choice
+// to download them.
+async function handleSignOut(): Promise<void> {
+  await sync?.saveNow();
+  try {
+    unsavedAtSignOut = await browserDrafts.list();
+  } catch {
+    unsavedAtSignOut = [];
+  }
+  if (unsavedAtSignOut.length === 0) {
+    await finishSignOut();
+    return;
+  }
+  signOutFiles.replaceChildren(...unsavedAtSignOut.map((draft) => {
+    const item = document.createElement('li');
+    item.textContent = `${draft.projectName}/${draft.path}`;
+    return item;
+  }));
+  signOutDialog.returnValue = '';
+  signOutDialog.showModal(); // continues in the dialog's "close" handler
+}
+
+async function finishSignOut(): Promise<void> {
   rootId = null;
+  accountId = '';
   driveFolders = [];
   signInButton.hidden = false;
   signOutButton.hidden = true;
   newProjectButton.hidden = true;
-  showExamples();
+  showExamples(); // also stops saving the Drive project
+  signOut();
+  try {
+    await browserDrafts.clear();
+    localStorage.removeItem(LAST_PROJECT_KEY);
+  } catch (error) {
+    console.warn('Could not clean up the copies kept in the browser', error);
+  }
+  statusText.textContent = 'Signed out. Nothing of yours is kept in this browser.';
 }
 
 // Runs when the "New project" dialog closes with the Create button.
 async function createFromDialog(): Promise<void> {
-  if (!rootId || !confirmDiscard()) return;
+  if (!rootId) return;
   const name = newProjectName.value.trim();
   const template = examples.find((p) => p.name === newProjectTemplate.value);
   statusText.textContent = `Creating ${name} in Drive…`;
   try {
+    await sync?.saveNow();
     const created = await createProject(googleDrive, rootId, name, template?.files ?? BLANK_PROJECT);
     driveFolders = await listProjects(googleDrive, rootId);
     setProjectOptions(driveFolders.map((f) => [f.id, f.name]));
@@ -186,31 +322,6 @@ async function createFromDialog(): Promise<void> {
     showProject(created);
   } catch (error) {
     showError(error);
-  }
-}
-
-// Saves the changed files to Drive. Returns false if something was not saved.
-async function save(): Promise<boolean> {
-  if (!project?.driveId) return true; // examples are not saved anywhere
-  if (saving) return false;
-  saving = true;
-  saveButton.disabled = true;
-  statusText.textContent = 'Saving…';
-  try {
-    const conflicts = await saveProject(googleDrive, project);
-    if (conflicts.length > 0) {
-      statusText.textContent = `Not saved: ${conflicts.join(', ')} changed in Drive since you opened this project `
-        + '(maybe on another computer). Copy your edits somewhere safe, then reopen the project.';
-      return false;
-    }
-    statusText.textContent = 'Saved to Drive.';
-    return true;
-  } catch (error) {
-    showError(error);
-    return false;
-  } finally {
-    saving = false;
-    saveButton.disabled = false;
   }
 }
 
@@ -316,11 +427,11 @@ async function compile(): Promise<void> {
 }
 
 compileButton.addEventListener('click', () => void compile());
-saveButton.addEventListener('click', () => void save());
+syncButton.addEventListener('click', showConflict);
 logButton.addEventListener('click', () => { logView.hidden = !logView.hidden; });
 projectSelect.addEventListener('change', () => void selectProject(projectSelect.value));
 signInButton.addEventListener('click', () => void handleSignIn());
-signOutButton.addEventListener('click', handleSignOut);
+signOutButton.addEventListener('click', () => void handleSignOut());
 newProjectButton.addEventListener('click', () => {
   newProjectName.value = '';
   newProjectDialog.returnValue = '';
@@ -329,20 +440,46 @@ newProjectButton.addEventListener('click', () => {
 newProjectDialog.addEventListener('close', () => {
   if (newProjectDialog.returnValue === 'create') void createFromDialog();
 });
+conflictDialog.addEventListener('close', () => {
+  if (conflictDialog.returnValue === 'mine') void sync?.keepMine(conflictShown);
+  if (conflictDialog.returnValue === 'drive') void sync?.keepDrive(conflictShown);
+});
+downloadBothButton.addEventListener('click', () => void downloadBoth());
+signOutDialog.addEventListener('close', () => {
+  const choice = signOutDialog.returnValue;
+  if (choice === 'download') {
+    for (const draft of unsavedAtSignOut) {
+      downloadFile(`${draft.projectName} - ${draft.path.replaceAll('/', ' - ')}`, draft.content);
+    }
+  }
+  if (choice === 'download' || choice === 'delete') void finishSignOut();
+});
 
-// Ctrl+S (Cmd+S on a Mac) saves to Drive and then compiles, instead of
-// opening the browser's "Save page" dialog. If saving fails, it does not
-// compile, so the message about the failed save stays visible.
+// Ctrl+S (Cmd+S on a Mac) saves to Drive right away and compiles, instead
+// of opening the browser's "Save page" dialog.
 window.addEventListener('keydown', (event) => {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
     event.preventDefault();
-    void save().then((saved) => { if (saved) void compile(); });
+    void sync?.saveNow();
+    void compile();
   }
 });
 
-// The browser asks "Leave site?" when closing the tab with unsaved changes.
+// Save when the user leaves the tab or closes it; look for changes made
+// elsewhere (for example on the other computer) when they come back.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) void sync?.saveNow();
+});
+window.addEventListener('pagehide', () => void sync?.saveNow());
+window.addEventListener('focus', () => void sync?.checkDrive());
+window.addEventListener('online', () => void sync?.saveNow());
+
+// The browser asks "Leave site?" while edits have not reached Drive yet.
+// (They are kept in the browser either way and saved on the next visit.)
 window.addEventListener('beforeunload', (event) => {
-  if (unsavedPaths().length > 0) event.preventDefault();
+  if (sync?.hasUnsaved()) event.preventDefault();
 });
 
-void loadExamples();
+void loadExamples().then(() => {
+  if (restoreSignIn()) void startDrive(); // still signed in from before a reload
+});

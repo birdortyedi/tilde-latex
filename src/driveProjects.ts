@@ -51,6 +51,20 @@ export async function openProject(drive: Drive, folder: DriveFile): Promise<Proj
   return { name: folder.name, driveId: folder.id, files };
 }
 
+// The current Drive revision of every file in a project, by file id.
+// Costs one request per folder, not one per file.
+export async function currentRevisions(drive: Drive, project: Project): Promise<Map<string, string | undefined>> {
+  const revisions = new Map<string, string | undefined>();
+  const walk = async (folderId: string): Promise<void> => {
+    await Promise.all((await drive.list(folderId)).map(async (item) => {
+      if (isFolder(item)) return walk(item.id);
+      revisions.set(item.id, item.headRevisionId);
+    }));
+  };
+  if (project.driveId) await walk(project.driveId);
+  return revisions;
+}
+
 // Saves every changed file to Drive and returns the paths of files it did
 // NOT save: those that changed in Drive (for example on another computer)
 // since we loaded them. Those are never overwritten silently.

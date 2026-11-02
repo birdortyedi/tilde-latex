@@ -22,6 +22,13 @@ export class Editor {
     this.view.focus();
   }
 
+  // Shows new text for a file that changed outside the editor (for example,
+  // Drive's version was loaded). That file's undo history starts over.
+  replace(path: string, text: string): void {
+    if (path === this.currentPath) this.view.setState(this.newState(path, text));
+    else this.states.delete(path); // open() will start from the new text
+  }
+
   // Forget all files, for example when another project is opened.
   clear(): void {
     this.states.clear();
