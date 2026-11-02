@@ -1,13 +1,20 @@
 import { BusyTexRunner, PdfLatex } from 'texlyre-busytex';
-import { groupByProject, type Project } from './projects';
+import { groupByProject, type Project, type ProjectFile } from './projects';
 import { buildTree, isTextFile, type TreeNode } from './fileTree';
 import { Editor } from './editor';
 import { PdfViewer } from './pdfViewer';
+import { signIn, signOut } from './auth';
+import { googleDrive, type DriveFile } from './drive';
+import { createProject, findOrCreateRootFolder, listProjects, openProject, saveProject } from './driveProjects';
 
 // Files that TeX Live's basic bundle lacks (TikZ, pgfplots, ...) are fetched
 // one at a time from TeXlyre's public package server.
 const PACKAGE_SERVER = 'https://texlive2026.texlyre.org';
 const MAIN_FILE = 'main.tex';
+const BLANK_PROJECT: ProjectFile[] = [{
+  path: MAIN_FILE,
+  content: '\\documentclass{article}\n\\begin{document}\nHello from Tilde.\n\\end{document}\n',
+}];
 
 // Vite collects the test documents at build time: text files as strings,
 // binary files (images) as URLs that we download when the page loads.
@@ -26,6 +33,13 @@ function element<T extends HTMLElement>(selector: string): T {
 
 const projectSelect = element<HTMLSelectElement>('#project');
 const compileButton = element<HTMLButtonElement>('#compile');
+const saveButton = element<HTMLButtonElement>('#save');
+const newProjectButton = element<HTMLButtonElement>('#new-project');
+const signInButton = element<HTMLButtonElement>('#sign-in');
+const signOutButton = element<HTMLButtonElement>('#sign-out');
+const newProjectDialog = element<HTMLDialogElement>('#new-project-dialog');
+const newProjectName = element<HTMLInputElement>('#new-project-name');
+const newProjectTemplate = element<HTMLSelectElement>('#new-project-template');
 const logButton = element<HTMLButtonElement>('#toggle-log');
 const statusText = element<HTMLSpanElement>('#status');
 const treeView = element<HTMLElement>('#tree');
@@ -33,36 +47,171 @@ const editorElement = element<HTMLDivElement>('#editor');
 const imagePreview = element<HTMLImageElement>('#image-preview');
 const logView = element<HTMLPreElement>('#log');
 
-let projects: Project[] = [];
+let examples: Project[] = []; // the test-docs projects, shown while signed out
+let driveFolders: DriveFile[] = []; // the project folders in Drive, shown while signed in
+let rootId: string | null = null; // the "LaTeX Projects" folder in Drive; null while signed out
 let project: Project | null = null; // the open project; edits change its files in memory
 let activePath: string | null = null;
 let runner: BusyTexRunner | null = null;
 let compiling = false;
+let saving = false;
 
 const editor = new Editor(editorElement, (path, text) => {
   const file = project?.files.find((f) => f.path === path);
-  if (file) file.content = text;
+  if (file) {
+    file.content = text;
+    file.changed = true;
+  }
 });
 const pdfViewer = new PdfViewer(element<HTMLDivElement>('#pdf'));
 
-async function loadProjects(): Promise<void> {
+function showError(error: unknown): void {
+  statusText.textContent = `Error: ${error instanceof Error ? error.message : String(error)}`;
+}
+
+async function loadExamples(): Promise<void> {
   const binaryFiles: Record<string, Uint8Array> = {};
   for (const [path, url] of Object.entries(binaryFileUrls)) {
     binaryFiles[path] = new Uint8Array(await (await fetch(url)).arrayBuffer());
   }
-  projects = groupByProject('/test-docs', { ...textFiles, ...binaryFiles });
-  for (const p of projects) projectSelect.add(new Option(p.name, p.name));
-  openProject(projectSelect.value);
+  examples = groupByProject('/test-docs', { ...textFiles, ...binaryFiles });
+  for (const p of examples) newProjectTemplate.add(new Option(`Example: ${p.name}`, p.name));
+  showExamples();
 }
 
-function openProject(name: string): void {
-  project = projects.find((p) => p.name === name) ?? null;
-  if (!project) return;
+function showExamples(): void {
+  setProjectOptions(examples.map((p) => [p.name, p.name]));
+  showProject(examples[0] ?? null);
+}
+
+async function showDriveProjects(): Promise<void> {
+  if (!rootId) return;
+  driveFolders = await listProjects(googleDrive, rootId);
+  setProjectOptions(driveFolders.map((f) => [f.id, f.name]));
+  if (driveFolders.length === 0) {
+    showProject(null);
+    statusText.textContent = 'You have no projects in Drive yet. Click "New project".';
+    return;
+  }
+  await selectProject(driveFolders[0].id);
+}
+
+// Fills the project menu with [value, label] pairs.
+function setProjectOptions(options: [string, string][]): void {
+  projectSelect.replaceChildren(...options.map(([value, label]) => new Option(label, value)));
+}
+
+// Called when the user picks a project in the menu. Examples are already in
+// memory; Drive projects are downloaded first.
+async function selectProject(value: string): Promise<void> {
+  if (!confirmDiscard()) {
+    projectSelect.value = project?.driveId ?? project?.name ?? '';
+    return;
+  }
+  projectSelect.value = value;
+  if (!rootId) {
+    showProject(examples.find((p) => p.name === value) ?? null);
+    return;
+  }
+  const folder = driveFolders.find((f) => f.id === value);
+  if (!folder) return;
+  statusText.textContent = `Opening ${folder.name} from Drive…`;
+  try {
+    showProject(await openProject(googleDrive, folder));
+  } catch (error) {
+    showError(error);
+  }
+}
+
+function showProject(newProject: Project | null): void {
+  project = newProject;
   editor.clear();
   activePath = null;
   element<HTMLDivElement>('#pdf').replaceChildren();
-  statusText.textContent = `Opened ${name}. Press Compile or Ctrl/Cmd+S.`;
+  saveButton.hidden = !project?.driveId;
+  renderTree();
+  if (!project) return;
+  statusText.textContent = `Opened ${project.name}. Press Compile or Ctrl/Cmd+S.`;
   openFile(MAIN_FILE);
+}
+
+// Paths of files edited since the last save to Drive.
+function unsavedPaths(): string[] {
+  return project?.driveId ? project.files.filter((f) => f.changed).map((f) => f.path) : [];
+}
+
+// True if there is nothing unsaved, or the user agrees to lose it.
+function confirmDiscard(): boolean {
+  const unsaved = unsavedPaths();
+  return unsaved.length === 0
+    || confirm(`These files have changes that are not saved to Drive:\n${unsaved.join('\n')}\n\nDiscard the changes?`);
+}
+
+async function handleSignIn(): Promise<void> {
+  try {
+    await signIn();
+    statusText.textContent = 'Signed in. Loading your projects…';
+    rootId = await findOrCreateRootFolder(googleDrive);
+    signInButton.hidden = true;
+    signOutButton.hidden = false;
+    newProjectButton.hidden = false;
+    await showDriveProjects();
+  } catch (error) {
+    showError(error);
+  }
+}
+
+function handleSignOut(): void {
+  if (!confirmDiscard()) return;
+  signOut();
+  rootId = null;
+  driveFolders = [];
+  signInButton.hidden = false;
+  signOutButton.hidden = true;
+  newProjectButton.hidden = true;
+  showExamples();
+}
+
+// Runs when the "New project" dialog closes with the Create button.
+async function createFromDialog(): Promise<void> {
+  if (!rootId || !confirmDiscard()) return;
+  const name = newProjectName.value.trim();
+  const template = examples.find((p) => p.name === newProjectTemplate.value);
+  statusText.textContent = `Creating ${name} in Drive…`;
+  try {
+    const created = await createProject(googleDrive, rootId, name, template?.files ?? BLANK_PROJECT);
+    driveFolders = await listProjects(googleDrive, rootId);
+    setProjectOptions(driveFolders.map((f) => [f.id, f.name]));
+    projectSelect.value = created.driveId ?? '';
+    showProject(created);
+  } catch (error) {
+    showError(error);
+  }
+}
+
+// Saves the changed files to Drive. Returns false if something was not saved.
+async function save(): Promise<boolean> {
+  if (!project?.driveId) return true; // examples are not saved anywhere
+  if (saving) return false;
+  saving = true;
+  saveButton.disabled = true;
+  statusText.textContent = 'Saving…';
+  try {
+    const conflicts = await saveProject(googleDrive, project);
+    if (conflicts.length > 0) {
+      statusText.textContent = `Not saved: ${conflicts.join(', ')} changed in Drive since you opened this project `
+        + '(maybe on another computer). Copy your edits somewhere safe, then reopen the project.';
+      return false;
+    }
+    statusText.textContent = 'Saved to Drive.';
+    return true;
+  } catch (error) {
+    showError(error);
+    return false;
+  } finally {
+    saving = false;
+    saveButton.disabled = false;
+  }
 }
 
 function openFile(path: string): void {
@@ -159,7 +308,7 @@ async function compile(): Promise<void> {
       statusText.textContent = `Compile failed after ${seconds} s. See the log.`;
     }
   } catch (error) {
-    statusText.textContent = `Error: ${error instanceof Error ? error.message : String(error)}`;
+    showError(error);
   } finally {
     compiling = false;
     compileButton.disabled = false;
@@ -167,15 +316,33 @@ async function compile(): Promise<void> {
 }
 
 compileButton.addEventListener('click', () => void compile());
+saveButton.addEventListener('click', () => void save());
 logButton.addEventListener('click', () => { logView.hidden = !logView.hidden; });
-projectSelect.addEventListener('change', () => openProject(projectSelect.value));
+projectSelect.addEventListener('change', () => void selectProject(projectSelect.value));
+signInButton.addEventListener('click', () => void handleSignIn());
+signOutButton.addEventListener('click', handleSignOut);
+newProjectButton.addEventListener('click', () => {
+  newProjectName.value = '';
+  newProjectDialog.returnValue = '';
+  newProjectDialog.showModal();
+});
+newProjectDialog.addEventListener('close', () => {
+  if (newProjectDialog.returnValue === 'create') void createFromDialog();
+});
 
-// Ctrl+S (Cmd+S on a Mac) compiles instead of opening the browser's "Save page" dialog.
+// Ctrl+S (Cmd+S on a Mac) saves to Drive and then compiles, instead of
+// opening the browser's "Save page" dialog. If saving fails, it does not
+// compile, so the message about the failed save stays visible.
 window.addEventListener('keydown', (event) => {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
     event.preventDefault();
-    void compile();
+    void save().then((saved) => { if (saved) void compile(); });
   }
 });
 
-void loadProjects();
+// The browser asks "Leave site?" when closing the tab with unsaved changes.
+window.addEventListener('beforeunload', (event) => {
+  if (unsavedPaths().length > 0) event.preventDefault();
+});
+
+void loadExamples();

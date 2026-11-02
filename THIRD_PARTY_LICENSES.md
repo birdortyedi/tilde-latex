@@ -35,11 +35,13 @@ compatible with AGPL-3.0.
 | fontconfig 2.13.96 | MIT-style (fontconfig license) |
 | Emscripten 5.0.4 runtime | MIT / University of Illinois NCSA |
 
-### Outside service
+### Outside services
 
 | Name | License | Link | Used for |
 |---|---|---|---|
 | TeXlyre TeX Live package server | Serves unmodified TeX Live files (licenses as above) | https://texlive2026.texlyre.org | Fetches package files missing from the basic bundle (TikZ, pgfplots, ...) |
+| Google Identity Services (`https://accounts.google.com/gsi/client`) | Google's own terms (Google APIs Terms of Service); loaded from Google at runtime, not bundled or redistributed by Tilde | https://developers.google.com/identity/oauth2/web | "Sign in with Google" and access tokens for Drive |
+| Google Drive API v3 | Google APIs Terms of Service; called with `fetch`, no Google code bundled | https://developers.google.com/drive/api | Storing projects in the user's own Drive |
 
 ## Development tools only (never shipped)
 

@@ -1,0 +1,100 @@
+import { getAccessToken } from './auth';
+
+// Thin wrapper around the Google Drive API v3, using plain fetch calls.
+// See https://developers.google.com/drive/api/reference/rest/v3/files
+
+export const FOLDER_TYPE = 'application/vnd.google-apps.folder';
+
+export interface DriveFile {
+  id: string;
+  name: string;
+  mimeType: string;
+  // Changes every time the file's content is saved; used to notice that
+  // another computer changed the file since we loaded it.
+  headRevisionId?: string;
+}
+
+// The Drive operations Tilde needs. Tests use an in-memory fake instead.
+export interface Drive {
+  list(folderId: string): Promise<DriveFile[]>;
+  get(fileId: string): Promise<DriveFile>;
+  download(fileId: string): Promise<Uint8Array>;
+  createFolder(name: string, parentId: string): Promise<DriveFile>;
+  createFile(name: string, parentId: string, content: Uint8Array): Promise<DriveFile>;
+  updateFile(fileId: string, content: Uint8Array): Promise<DriveFile>;
+}
+
+const API = 'https://www.googleapis.com/drive/v3/files';
+const UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3/files';
+const FIELDS = 'id,name,mimeType,headRevisionId';
+
+async function request(url: string, init: { method?: string; headers?: Record<string, string>; body?: BodyInit } = {}): Promise<Response> {
+  const token = await getAccessToken();
+  const response = await fetch(url, { ...init, headers: { ...init.headers, Authorization: `Bearer ${token}` } });
+  if (!response.ok) throw new Error(`Google Drive answered ${response.status}: ${await response.text()}`);
+  return response;
+}
+
+export const googleDrive: Drive = {
+  // Lists a folder's files and subfolders (not the ones in the trash).
+  async list(folderId) {
+    const files: DriveFile[] = [];
+    let pageToken = '';
+    do {
+      const params = new URLSearchParams({
+        q: `'${folderId}' in parents and trashed = false`,
+        fields: `nextPageToken,files(${FIELDS})`,
+        pageSize: '1000',
+      });
+      if (pageToken) params.set('pageToken', pageToken);
+      const page = (await (await request(`${API}?${params}`)).json()) as { files: DriveFile[]; nextPageToken?: string };
+      files.push(...page.files);
+      pageToken = page.nextPageToken ?? '';
+    } while (pageToken);
+    return files;
+  },
+
+  async get(fileId) {
+    return (await request(`${API}/${fileId}?fields=${FIELDS}`)).json();
+  },
+
+  async download(fileId) {
+    return new Uint8Array(await (await request(`${API}/${fileId}?alt=media`)).arrayBuffer());
+  },
+
+  async createFolder(name, parentId) {
+    const response = await request(`${API}?fields=${FIELDS}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, parents: [parentId], mimeType: FOLDER_TYPE }),
+    });
+    return response.json();
+  },
+
+  // Uploads a new file: its name and folder, then its content, in one request.
+  async createFile(name, parentId, content) {
+    const boundary = `tilde-${crypto.randomUUID()}`;
+    const body = new Blob([
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`,
+      JSON.stringify({ name, parents: [parentId] }),
+      `\r\n--${boundary}\r\nContent-Type: application/octet-stream\r\n\r\n`,
+      content.slice(),
+      `\r\n--${boundary}--`,
+    ]);
+    const response = await request(`${UPLOAD_API}?uploadType=multipart&fields=${FIELDS}`, {
+      method: 'POST',
+      headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+      body,
+    });
+    return response.json();
+  },
+
+  // Replaces a file's content. Drive keeps the old content in its version history.
+  async updateFile(fileId, content) {
+    const response = await request(`${UPLOAD_API}/${fileId}?uploadType=media&fields=${FIELDS}`, {
+      method: 'PATCH',
+      body: content.slice(),
+    });
+    return response.json();
+  },
+};

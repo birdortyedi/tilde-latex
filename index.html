@@ -9,7 +9,8 @@
       body { margin: 0; background: #fff; color: #111; font-family: system-ui, sans-serif; display: flex; flex-direction: column; height: 100vh; }
       header { display: flex; gap: 12px; align-items: center; padding: 8px 16px; border-bottom: 1px solid #ddd; }
       header strong { font-size: 20px; }
-      #status { color: #555; }
+      #status { color: #555; flex: 1; }
+      #new-project-dialog label { display: block; margin-bottom: 12px; }
       main { flex: 1; display: grid; grid-template-columns: 200px 1fr 1fr; grid-template-rows: minmax(0, 1fr); min-height: 0; }
       #tree { overflow: auto; padding: 8px 0; border-right: 1px solid #ddd; background: #fafafa; font-size: 14px; }
       #tree ul { list-style: none; margin: 0; padding-left: 14px; }
@@ -32,10 +33,22 @@
     <header>
       <strong>~ Tilde</strong>
       <label>Project <select id="project"></select></label>
-      <button id="compile" title="Ctrl+S or Cmd+S">Compile</button>
+      <button id="new-project" hidden>New project</button>
+      <button id="save" title="Ctrl+S or Cmd+S saves and compiles" hidden>Save</button>
+      <button id="compile">Compile</button>
       <button id="toggle-log">Log</button>
       <span id="status">Ready. The first compile downloads the engine (about 125 MB).</span>
+      <button id="sign-in">Sign in with Google</button>
+      <button id="sign-out" hidden>Sign out</button>
     </header>
+    <dialog id="new-project-dialog">
+      <form method="dialog">
+        <label>Name <input id="new-project-name" required pattern="[^/]+" title="A name without slashes" /></label>
+        <label>Start from <select id="new-project-template"><option value="">Blank (one main.tex)</option></select></label>
+        <button value="create">Create</button>
+        <button value="cancel" formnovalidate>Cancel</button>
+      </form>
+    </dialog>
     <main>
       <nav id="tree" aria-label="Project files"></nav>
       <div id="editor-pane">
@@ -47,6 +60,8 @@
         <pre id="log" hidden></pre>
       </section>
     </main>
+    <!-- Google Identity Services, for "Sign in with Google" -->
+    <script src="https://accounts.google.com/gsi/client" async></script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

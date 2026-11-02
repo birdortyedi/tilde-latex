@@ -1,11 +1,15 @@
 export interface ProjectFile {
   path: string;
   content: string | Uint8Array;
+  driveId?: string; // set once the file is in Google Drive
+  revision?: string; // the Drive revision we loaded or last saved
+  changed?: boolean; // edited since the last save to Drive
 }
 
 export interface Project {
   name: string;
   files: ProjectFile[];
+  driveId?: string; // the project's folder in Google Drive
 }
 
 // Turns a flat map like { "/test-docs/math/main.tex": "..." } into one
