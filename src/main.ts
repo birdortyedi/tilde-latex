@@ -105,6 +105,7 @@ const starterGroups = element<HTMLDivElement>('#starter-groups');
 const kitSteps = element<HTMLDivElement>('#kit-steps');
 const kitLink = element<HTMLAnchorElement>('#kit-link');
 const kitFind = element<HTMLSpanElement>('#kit-find');
+const kitNote = element<HTMLParagraphElement>('#kit-note');
 const kitInput = element<HTMLInputElement>('#kit-input');
 const createProjectButton = element<HTMLButtonElement>('#create-project');
 const exampleList = element<HTMLUListElement>('#example-list');
@@ -476,6 +477,8 @@ function showKitSteps(): void {
   kitLink.href = kit.page;
   kitLink.textContent = `open the ${starter.name} page`;
   kitFind.textContent = `choose ${kit.find}`;
+  kitNote.hidden = !kit.note;
+  kitNote.textContent = kit.note ?? '';
 }
 
 // After sign-in: reopens the last project, or shows the project page.

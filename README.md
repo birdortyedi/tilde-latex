@@ -76,7 +76,7 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - Try it without signing in: seven examples (a minimal document, maths, TikZ and pgfplots, BibTeX with natbib, biblatex with Biber, a multi-file project, and Unicode text with XeLaTeX)
 - A project is a normal folder in your Drive, inside a projects folder that you can rename, move, or swap for another one
 - Start a new project from a blank file, a starter (IEEE, ACM, Springer LNCS, a thesis with a file per chapter, beamer slides, a cover letter, a CV) or an example
-- Conference papers from the official author kit: pick CVPR, NeurIPS, ICML or ECCV, download the kit from the conference's page (Tilde links to it) and choose the `.zip`. The kit comes from the conference, so it is always that year's version
+- Conference papers from the official author kit: pick CVPR, ICCV, ECCV, ICIP, NeurIPS or ICML, download the kit from the conference's page (Tilde links to it) and choose the `.zip`. The kit comes from the conference, so it is always that year's version
 - Import a `.zip` or files from your Drive
 - Download any project as a `.zip`
 - Search, sort, rename and delete (to Drive's trash, restorable for 30 days)
@@ -84,7 +84,7 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/new-project-dark.png">
-    <img src="docs/screenshots/new-project-light.png" alt="The New project dialog: kinds of starting points on the left (Blank, Papers, Conferences, Thesis and slides, Letter and CV, Examples), CVPR chosen among the conferences, with the two steps to get its official author kit" width="900">
+    <img src="docs/screenshots/new-project-light.png" alt="The New project dialog: kinds of starting points on the left (Blank, Papers, Conferences, Thesis and slides, Letter and CV, Examples), CVPR chosen among the six conferences, with the two steps to get its official author kit" width="900">
   </picture>
 </p>
 

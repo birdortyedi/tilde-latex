@@ -20,6 +20,7 @@ export interface Kit {
   find: string; // what the link is called on that page
   styleFile: RegExp; // a file the kit's .zip must have, to tell it is the right one
   main?: RegExp; // the paper's .tex file, when it is not main.tex
+  note?: string; // something to know before downloading it
 }
 
 export interface Starter {
@@ -39,16 +40,32 @@ export const STARTERS: Starter[] = [
     kit: { page: 'https://github.com/cvpr-org/author-kit', find: '“Code”, then “Download ZIP”', styleFile: /(^|\/)cvpr\.sty$/ },
   },
   {
+    // ICCV is every other year. Point to the 2027 kit once ICCV publishes it.
+    id: 'iccv', name: 'ICCV 2025', note: 'From the official author kit', group: 'conferences',
+    kit: {
+      page: 'https://iccv.thecvf.com/Conferences/2025/AuthorGuidelines', find: '“ICCV 2025 Author Kit”', styleFile: /(^|\/)iccv\.sty$/,
+      note: 'ICCV 2027 has not published its kit yet; this is the latest one, from ICCV 2025.',
+    },
+  },
+  {
+    id: 'eccv', name: 'ECCV 2026', note: 'From the official author kit', group: 'conferences',
+    kit: { page: 'https://eccv2024.ecva.net/Conferences/2026/SubmissionPolicies', find: 'the author kit’s “ZIP file”', styleFile: /(^|\/)(eccv\.sty|llncs\.cls)$/ },
+  },
+  {
+    id: 'icip', name: 'ICIP 2026', note: 'From the official author kit', group: 'conferences',
+    kit: {
+      page: 'https://2026.ieeeicip.org/author-kit/', find: '“Download LaTeX template”', styleFile: /(^|\/)spconf\.sty$/,
+      note: 'Its sample figures are EPS images, which Tilde cannot convert, so the first compile stops at them. '
+        + 'Put your own figures in as PNG or PDF (paste or drop them into the text), or delete the three sample \\includegraphics lines.',
+    },
+  },
+  {
     id: 'neurips', name: 'NeurIPS 2026', note: 'From the official author kit', group: 'conferences',
     kit: { page: 'https://neurips.cc/Conferences/2026/CallForPapers', find: '“Paper template”', styleFile: /(^|\/)neurips_\d{4}\.sty$/, main: /^neurips_\d{4}\.tex$/ },
   },
   {
     id: 'icml', name: 'ICML 2026', note: 'From the official author kit', group: 'conferences',
     kit: { page: 'https://icml.cc/Conferences/2026/AuthorInstructions', find: '“LaTeX style files”', styleFile: /(^|\/)icml\d{4}\.sty$/, main: /^example_paper\.tex$/ },
-  },
-  {
-    id: 'eccv', name: 'ECCV 2026', note: 'From the official author kit', group: 'conferences',
-    kit: { page: 'https://eccv2024.ecva.net/Conferences/2026/SubmissionPolicies', find: 'the author kit’s “ZIP file”', styleFile: /(^|\/)(eccv\.sty|llncs\.cls)$/ },
   },
   { id: 'thesis', name: 'Thesis', note: 'Report with a file per chapter, front matter and appendix', group: 'thesis' },
   { id: 'beamer', name: 'Slides', note: 'A talk with beamer, 16:9', group: 'thesis' },

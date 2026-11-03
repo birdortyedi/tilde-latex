@@ -20,6 +20,9 @@ describe('starters', () => {
     expect(kit('neurips')?.styleFile.test('Formatting_Instructions/neurips_2026.sty')).toBe(true);
     expect(kit('icml')?.styleFile.test('icml2026.sty')).toBe(true);
     expect(kit('eccv')?.styleFile.test('llncs.cls')).toBe(true);
+    expect(kit('iccv')?.styleFile.test('ICCV2025-Author-Kit-Feb/iccv.sty')).toBe(true);
+    expect(kit('icip')?.styleFile.test('spconf.sty')).toBe(true);
+    expect(kit('iccv')?.styleFile.test('cvpr.sty')).toBe(false);
     expect(kit('neurips')?.styleFile.test('cvpr.sty')).toBe(false);
   });
 

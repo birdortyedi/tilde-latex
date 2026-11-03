@@ -398,6 +398,7 @@ dialog.starters { width: min(880px, 94vw); }
 #kit-steps ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
 #kit-steps p { margin: 8px 0 0; color: var(--muted); font-size: 12.5px; }
 #kit-steps a { color: var(--teal); font-weight: 500; }
+#kit-steps .kit-note { color: var(--ink); padding-left: 10px; border-left: 2px solid var(--amber); }
 /* A template choice: the chosen one gets the teal box. */
 .choice {
   display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto 1fr; column-gap: 10px; row-gap: 3px;
