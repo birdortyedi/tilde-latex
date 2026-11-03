@@ -175,3 +175,5 @@ Every dependency and its license is listed in [THIRD_PARTY_LICENSES.md](THIRD_PA
 ## License
 
 [AGPL-3.0-or-later](LICENSE). You may use, study, change and share Tilde. If you share a changed version, or run one as a service for others, you must publish your source under the same license.
+
+The starters in the New project dialog ([`starters/`](starters/LICENSE)) and the examples ([`test-docs/`](test-docs/LICENSE)) are [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/): use them for your own papers, theses and slides with no conditions. Your documents are yours, whatever you start them from.

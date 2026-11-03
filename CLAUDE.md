@@ -87,6 +87,8 @@ Compiling runs on the user's own computer. The first visit downloads about 125 M
 
 Tilde is licensed **AGPL-3.0-or-later** (decided in Milestone 1, because the engine is AGPL-3.0). The owner wants Tilde to stay free and open: AGPL lets anyone use and change it, but anyone who shares a changed version or runs it as a service must publish their source under the same license. Every dependency must be compatible with AGPL-3.0.
 
+Exception: the starters (`starters/`) and examples (`test-docs/`) are **CC0-1.0** (decided before Milestone 6), each folder with its own `LICENSE`, so that users' papers made from them carry no conditions. Write new starters and examples ourselves; never copy third-party templates into these folders.
+
 Before adding any dependency (npm package, WASM build, font, data file):
 
 1. Find its license and state it to the owner.
