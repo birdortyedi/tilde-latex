@@ -51,6 +51,13 @@ describe('texEngine', () => {
     expect(texEngine([tex('% \\usepackage{fontspec}')], 'main.tex')).toBe('pdflatex');
   });
 
+  it('uses LuaLaTeX for documents that run Lua code', () => {
+    expect(texEngine([tex('\\usepackage{luacode}')], 'main.tex')).toBe('lualatex');
+    expect(texEngine([tex('The answer is \\directlua{tex.print(6*7)}.')], 'main.tex')).toBe('lualatex');
+    expect(texEngine([tex('% \\directlua{x}\n\\usepackage{fontspec}')], 'main.tex')).toBe('xelatex');
+    expect(texEngine([tex('% !TEX program = lualatex\n\\usepackage{fontspec}')], 'main.tex')).toBe('lualatex');
+  });
+
   it('follows a "% !TEX program" line in the main file', () => {
     expect(texEngine([tex('% !TEX program = xelatex\n\\documentclass{article}')], 'main.tex')).toBe('xelatex');
     expect(texEngine([tex('%!TEX TS-program = pdflatex\n\\usepackage{fontspec}')], 'main.tex')).toBe('pdflatex');

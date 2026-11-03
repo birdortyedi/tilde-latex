@@ -43,7 +43,7 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - Suggestions as you type: commands, environments, your `\label`s in `\ref{}`, your `.bib` keys in `\cite{}`, your files in `\input{}` and `\includegraphics{}`
 - Brackets close by themselves, and Enter after `\begin{figure}` adds the `\end{figure}`
 - Ctrl/Cmd+B and +I for `\textbf` and `\textit`, Ctrl/Cmd+/ to comment lines out
-- Paste or drop an image into the text: it is saved in the project's image folder (`figures/` if there is none yet) and a figure for it is written at the cursor, with `graphicx` loaded if needed
+- Paste or drop an image into the text: it is saved in the project's image folder (`figures/` if there is none yet) and a figure for it is written at the cursor (never inside another figure), with `graphicx` loaded if needed. GIF, WebP and SVG images become PNG on the way in
 - Citations from a DOI or an arXiv link: type it inside `\cite{}`, or pick "Add a paper from its DOI…" there or in the "+" menu. Tilde fetches the BibTeX from doi.org, tidies it and adds it to your `.bib` file
 - An outline of your chapters and sections, through `\input` and `\include`; click to jump
 - Find and replace in the open file, with match case, whole words and regular expressions, and a count of the matches
@@ -53,11 +53,11 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - Panes you can resize and hide (files, source, PDF); one at a time in a narrow window
 
 **Compiling**
-- pdfLaTeX and XeLaTeX from TeX Live 2026, running in your browser (WebAssembly). Tilde picks XeLaTeX by itself when a project loads `fontspec`, `polyglossia` or `unicode-math`; a line `% !TEX program = xelatex` (or `pdflatex`) in the main file chooses one
-- Unicode text with XeLaTeX (Greek, Cyrillic, Arabic with `polyglossia`, Chinese with `xeCJK`), in the OpenType fonts that come with TeX Live: TeX Gyre, Libertinus, Noto, Amiri, Fandol and more
+- pdfLaTeX, XeLaTeX and LuaLaTeX from TeX Live 2026, running in your browser (WebAssembly). Tilde picks XeLaTeX by itself when a project loads `fontspec`, `polyglossia` or `unicode-math`, and LuaLaTeX when it runs Lua (`luacode`, `\directlua`); a line `% !TEX program = lualatex` (or `xelatex`, `pdflatex`) in the main file chooses one
+- Unicode text with XeLaTeX (Greek, Cyrillic, Arabic with `polyglossia`, Chinese with `xeCJK`), in the OpenType fonts that come with TeX Live (TeX Gyre, Libertinus, Noto, Amiri, Fandol and more) or in your own: upload the `.otf` or `.ttf` file, or in Chrome and Edge use "+" → "Add a font from this computer"
 - TikZ, pgfplots, BibTeX, natbib, biblatex with Biber, and an index with `\makeindex`
 - Packages beyond the basic set are fetched once and kept, so later compiles work offline
-- Optional auto-compile a moment after you stop typing
+- Optional auto-compile a moment after you stop typing. It is quick: one LaTeX pass, reusing what the last compile learned (labels, page numbers, the bibliography), with a full run by itself when a new citation needs one. Compile and Ctrl/Cmd+S always do the full run
 - Errors and warnings in a list and as icons next to the line numbers; click one to jump to the file and line. Common problems (a font that is not in TeX Live, characters a font lacks, EPS images, `minted`) come with a hint on what to do
 - The TeX engine starts loading as soon as you open a project, so the first compile waits less
 - Jump between source and PDF (SyncTeX): double-click the PDF to go to its line in the source, or press Ctrl/Cmd+Shift+Enter (or the crosshair button) to see the cursor's line in the PDF
@@ -107,15 +107,14 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 | Limit | What to do instead |
 |---|---|
 | **One person per project.** Real-time co-editing, track changes and comments need a server, and Tilde has none. | Send a co-author the project as a `.zip` (they can import it into their own Tilde) or the PDF. |
-| **No fonts from your computer.** A browser cannot read them, so `\setmainfont{Arial}` fails. | Use a font that comes with TeX Live: TeX Gyre Termes (like Times), TeX Gyre Heros (like Helvetica), Libertinus Serif or Noto Serif. |
-| **No LuaLaTeX**, only pdfLaTeX and XeLaTeX. | XeLaTeX covers Unicode text and OpenType fonts; most `fontspec` documents compile unchanged. |
-| **Images must be PNG, JPG or PDF.** LaTeX cannot include GIF, WebP or SVG, and EPS needs a converter program, which a browser cannot run. | Save or export the image as PNG (screenshots), JPG (photos) or PDF (plots and diagrams), then paste or drop it in. |
+| **Fonts installed on your computer are not found by name**, so `\setmainfont{Arial}` fails. | Put the font file in the project and load it by file name: `\setmainfont{Arial.ttf}[Path=fonts/]`. In Chrome and Edge, "+" → "Add a font from this computer" copies a font and its bold and italic files for you. Or use one that comes with TeX Live, such as TeX Gyre Termes (like Times) or TeX Gyre Heros (like Helvetica). |
+| **EPS images** need a converter program, which a browser cannot run. | Convert them to PDF (most drawing and plotting programs export PDF), then add those. |
 | **No shell escape**, so no `minted`. | Use `listings` for code, which needs no shell escape. |
 | **One error at a time.** The engine stops at the first error. | Fix it and compile again; with *Auto* on, that happens by itself. |
-| **Long documents compile more slowly** than with a local TeX Live. | While writing, compile one chapter with `\includeonly{chapters/method}`, or use `\documentclass[draft]{…}`, which skips images. |
+| **Long documents compile more slowly** than with a local TeX Live. | Turn on *Auto*: its quick compiles run LaTeX once instead of three or four times. For very long ones, compile one chapter with `\includeonly{chapters/method}`, or use `\documentclass[draft]{…}`, which skips images. |
 | **The first compile downloads the TeX engine** (about 125 MB; about 30 MB more the first time Biber is used). | It happens once per browser, and starts as soon as you open a project; later visits load it from the cache. |
 | **Your Google account's storage**: 15 GB on a free account, shared with Gmail and Photos. | LaTeX projects are small; images are usually what fills it. A safe copy of a `.tex` file takes a few KB. |
-| **Files uploaded on the Google Drive website don't appear in Tilde**, even inside a project's folder. Tilde may only see the files it made itself and the ones you pick (the `drive.file` permission). Renaming or deleting a file on the website does come through. | Add files in Tilde: upload them, drag them in, or use "Add from Google Drive". |
+| **Files uploaded on the Google Drive website don't appear in Tilde**, even inside a project's folder. Tilde may only see the files it made itself and the ones you pick (the `drive.file` permission). Renaming or deleting a file on the website does come through. | Use "Add from Google Drive": it opens in the project's own folder, and the files you pick there join the project where they are. Or upload them, or drag them in. |
 | **Brave and Arc** block the cookies Google's file picker needs. | Allow cross-site cookies for Tilde (Brave: the lion icon in the address bar) to use "Add from Google Drive". |
 
 ## Your data

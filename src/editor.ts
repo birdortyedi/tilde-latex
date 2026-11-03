@@ -137,6 +137,11 @@ export class Editor {
     return from + insert.length;
   }
 
+  // The text of the open file.
+  text(): string {
+    return this.view.state.doc.toString();
+  }
+
   // Inserts text at the cursor of the open file.
   insertAtCursor(text: string): void {
     const { from, to } = this.view.state.selection.main;

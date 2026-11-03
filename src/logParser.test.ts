@@ -209,6 +209,12 @@ describe('hints', () => {
     expect(problem.hint).toContain('harmless');
   });
 
+  it('explains a raw TeX font that LuaLaTeX cannot draw (real log, ICCV kit)', () => {
+    const [problem] = parseLog(log('! error:  (file 3_ptmb) (type 3): font 3_ptmb at 660 not found'), files);
+    expect(problem.hint).toContain('old TeX font ptmb');
+    expect(problem.hint).toContain('pdfLaTeX');
+  });
+
   it('gives no hint to ordinary errors', () => {
     const [problem] = parseLog(log('! Undefined control sequence.', 'l.3 Intro \\badmacro'), files);
     expect(problem.hint).toBeUndefined();
@@ -216,6 +222,10 @@ describe('hints', () => {
 });
 
 describe('lastLatexLog', () => {
+  it('reads LuaLaTeX runs too', () => {
+    expect(lastLatexLog([{ cmd: 'luahblatex main.tex', log: 'lua' }, { cmd: 'biber main', log: 'b' }])).toBe('lua');
+  });
+
   it('reads XeLaTeX runs too', () => {
     expect(lastLatexLog([
       { cmd: 'xelatex --no-pdf main.tex', log: 'xe' },

@@ -28,10 +28,14 @@ function loadPicker(): Promise<void> {
 }
 
 // Opens the Picker and resolves with the chosen files (none if cancelled).
-export async function pickDriveFiles(title: string): Promise<PickedFile[]> {
-  return openPicker(title, true, (view) => view
-    .setIncludeFolders(true) // to browse into folders
-    .setSelectFolderEnabled(false)); // picking a folder would not give access to its files
+// With `inFolder`, it opens in that Drive folder.
+export async function pickDriveFiles(title: string, inFolder?: string): Promise<PickedFile[]> {
+  return openPicker(title, true, (view) => {
+    const configured = view
+      .setIncludeFolders(true) // to browse into folders
+      .setSelectFolderEnabled(false); // picking a folder would not give access to its files
+    return inFolder ? configured.setParent(inFolder) : configured;
+  });
 }
 
 // Opens the Picker for choosing one folder, e.g. where the projects live.

@@ -28,7 +28,7 @@ The project owner is not a professional web developer. They will test every chan
 - TikZ and pgfplots
 - BibTeX and natbib, and biblatex with Biber (decided after Milestone 5: the engine ships Biber)
 - SyncTeX: double-click the PDF to jump to the source, and show the cursor's line in the PDF (decided before Milestone 6)
-- XeLaTeX for Unicode text and the OpenType fonts that come with TeX Live, chosen by itself when a project loads `fontspec`, `polyglossia` or `unicode-math`, or by a `% !TEX program = …` line (decided before Milestone 6). Fonts installed on the user's computer cannot be used.
+- XeLaTeX for Unicode text and the OpenType fonts that come with TeX Live, chosen by itself when a project loads `fontspec`, `polyglossia` or `unicode-math`, or by a `% !TEX program = …` line (decided before Milestone 6). LuaLaTeX when a document runs Lua (`luacode`, `\directlua`) or asks for it. Installed fonts are not found by name; font files in the project are, and in Chrome and Edge Tilde can copy an installed font into the project.
 - Clickable error messages that jump to the file and line
 - Autosave to Google Drive, with conflict detection between devices
 - File history through Drive's own version history (no history system of our own). A "safe copy" per file and editing session: Tilde asks Drive to keep the opened version forever and offers it in the file menu. Drive cannot un-keep a version, and Tilde never deletes one (decided before Milestone 6)
@@ -48,7 +48,7 @@ The project owner is not a professional web developer. They will test every chan
 Everything runs in the user's browser. The app is a static site built with Vite and hosted on GitHub Pages.
 
 - **Editor:** CodeMirror 6, with LaTeX syntax highlighting.
-- **TeX engine:** [TeXlyre BusyTeX](https://github.com/TeXlyre/texlyre-busytex) (npm `texlyre-busytex`, AGPL-3.0, TeX Live 2026), used in pdfLaTeX and XeLaTeX modes with bibtex8, and Biber for biblatex. It also contains LuaTeX, which Tilde does not use. Runs in a Web Worker so the editor never freezes. Chosen in Milestone 1 over SwiftLaTeX (no BibTeX, package server gone), the original BusyTeX (no current browser build) and texlive.js (GPL-2.0, unmaintained).
+- **TeX engine:** [TeXlyre BusyTeX](https://github.com/TeXlyre/texlyre-busytex) (npm `texlyre-busytex`, AGPL-3.0, TeX Live 2026), used in pdfLaTeX, XeLaTeX and LuaLaTeX modes with bibtex8, and Biber for biblatex. Runs in a Web Worker so the editor never freezes. Chosen in Milestone 1 over SwiftLaTeX (no BibTeX, package server gone), the original BusyTeX (no current browser build) and texlive.js (GPL-2.0, unmaintained).
 - **PDF viewer:** PDF.js.
 - **Drive sync:** Google Identity Services for sign-in, Google Drive API v3 called with `fetch`, and the Google Picker for importing existing files.
 - **Package files:** TeX Live package files are loaded on demand and cached in the browser (IndexedDB).
@@ -67,7 +67,7 @@ Data flow: the editor sends the project files to the engine, the engine returns 
 - **Kept in the browser between visits (IndexedDB):**
   - Unsaved changes that have not reached Drive yet, so a crashed tab or dropped network loses nothing. They are synced on the next visit.
   - The engine and the downloaded TeX package files, so only the first compile is slow.
-- **Temporary, rebuilt when needed:** the compiled PDF and build files (`.aux`, `.log`, `.toc`, and so on). They are regenerated with one compile when a project is reopened. Never upload them to Drive unless the user explicitly exports the PDF.
+- **Temporary, rebuilt when needed:** the compiled PDF and build files (`.aux`, `.log`, `.toc`, and so on). They are regenerated with one compile when a project is reopened. Never upload them to Drive unless the user explicitly exports the PDF. The last compile's `.aux`, `.bbl` and similar files are kept in memory, so auto-compile can run one quick LaTeX pass (`src/buildFiles.ts`).
 - Google sign-in tokens expire after about an hour. Refresh them without interrupting the user where Google allows it, and never lose edits while signing in again.
 
 ### Performance expectations

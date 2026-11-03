@@ -208,6 +208,17 @@
         </div>
       </form>
     </dialog>
+    <dialog id="font-dialog" class="wide">
+      <form method="dialog">
+        <h2>Add a font from this computer</h2>
+        <p class="restore-note">Tilde copies the font's regular, bold and italic files into <code>fonts/</code> in this project, so XeLaTeX and LuaLaTeX can use it on any computer. Fonts have licences; most allow using them in your own documents.</p>
+        <input id="font-search" type="search" placeholder="Search the fonts" autocomplete="off" spellcheck="false" />
+        <ul id="font-list"></ul>
+        <div class="actions">
+          <button value="cancel">Cancel</button>
+        </div>
+      </form>
+    </dialog>
     <dialog id="conflict-dialog">
       <h2>Changed in two places</h2>
       <p>

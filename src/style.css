@@ -367,6 +367,13 @@ dialog form > p { margin: 0; }
 /* The main button comes first in the page (so Enter chooses it) but is shown last, on the right. */
 dialog .actions { display: flex; flex-direction: row-reverse; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 dialog.wide { width: min(700px, 94vw); max-width: none; padding: 24px 28px; }
+/* "Add a font from this computer": the families, each shown in its own font. */
+#font-search { width: 100%; box-sizing: border-box; padding: 7px 10px; }
+#font-list { list-style: none; margin: 0; padding: 4px; height: min(46vh, 420px); overflow: auto; border: 1px solid var(--rule); border-radius: 6px; background: var(--editor); }
+#font-list button { display: block; width: 100%; text-align: left; border: none; background: none; padding: 6px 10px; border-radius: 4px; font-size: 17px; }
+#font-list button:hover, #font-list button:focus-visible { background: var(--hover); }
+#font-list .count { color: var(--muted); font: 12px var(--ui); margin-left: 8px; }
+
 /* "Go back to the version from …": the two versions side by side. */
 #restore-dialog { width: min(1080px, 94vw); }
 .restore-note { color: var(--muted); }

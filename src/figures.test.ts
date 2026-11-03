@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { figureFor, imageExtension, imageFolder, imagePath } from './figures';
+import { canConvertToPng, figureFor, figurePosition, imageExtension, imageFolder, imagePath } from './figures';
 
 describe('pasted and dropped images', () => {
   it('accepts the image types LaTeX can include', () => {
@@ -8,6 +8,13 @@ describe('pasted and dropped images', () => {
     expect(imageExtension('chart.pdf', 'application/pdf')).toBe('pdf');
     expect(imageExtension('anim.gif', 'image/gif')).toBeNull();
     expect(imageExtension('photo.webp', 'image/webp')).toBeNull();
+  });
+
+  it('turns the images a browser can show, but LaTeX cannot include, into PNG', () => {
+    expect(canConvertToPng('anim.gif', 'image/gif')).toBe(true);
+    expect(canConvertToPng('', 'image/webp')).toBe(true);
+    expect(canConvertToPng('diagram.SVG', '')).toBe(true);
+    expect(canConvertToPng('plot.eps', 'application/postscript')).toBe(false); // needs Ghostscript
   });
 
   it('puts images where the project keeps most of its images', () => {
@@ -23,6 +30,15 @@ describe('pasted and dropped images', () => {
 
   it('names a pasted screenshot after the time', () => {
     expect(imagePath('image.png', 'png', 'figures', new Set(), new Date(2026, 10, 2, 9, 5, 7))).toBe('figures/pasted-20261102-090507.png');
+  });
+
+  it('never puts a new figure inside another figure, or after \\end{document}', () => {
+    const text = ['Text.', '\\begin{figure}[htbp]', '  \\caption{}', '\\end{figure}', 'More.', '\\end{document}', 'After.'].join('\n');
+    const offsetOf = (snippet: string) => text.indexOf(snippet);
+    const lineEnd = (snippet: string) => text.indexOf(snippet) + snippet.length;
+    expect(figurePosition(text, offsetOf('Text.') + 2)).toBe(offsetOf('Text.') + 2); // fine where it is
+    expect(figurePosition(text, offsetOf('\\caption{}') + 9)).toBe(lineEnd('\\end{figure}')); // inside: after its \\end
+    expect(figurePosition(text, offsetOf('After.'))).toBe(lineEnd('More.')); // after the end: just before it
   });
 
   it('writes a figure with the cursor in the caption', () => {

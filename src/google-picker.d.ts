@@ -11,6 +11,7 @@ declare namespace google.picker {
     setSelectFolderEnabled(enabled: boolean): DocsView;
     setMode(mode: string): DocsView;
     setMimeTypes(mimeTypes: string): DocsView;
+    setParent(folderId: string): DocsView;
   }
 
   interface Picker {

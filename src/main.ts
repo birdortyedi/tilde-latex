@@ -3,7 +3,7 @@ import '@fontsource/ibm-plex-sans/500.css';
 import '@fontsource/ibm-plex-sans/600.css';
 import '@fontsource/ibm-plex-mono/400.css';
 import './style.css';
-import { BusyTexRunner, PdfLatex, XeLatex } from 'texlyre-busytex';
+import { BusyTexRunner, LuaLatex, PdfLatex, XeLatex } from 'texlyre-busytex';
 import { findMainFile, groupByProject, pathProblem, type Project, type ProjectFile } from './projects';
 import { buildTree, isTextFile, type TreeNode } from './fileTree';
 import { Editor, type LineMark } from './editor';
@@ -21,7 +21,10 @@ import { unzipProject, zipProject } from './zipImport';
 import { timeAgo, versionTime } from './time';
 import { bibKeysIn, bibliographyTool, loadsPackage, outline, preambleInsertAt, texEngine } from './latex';
 import { SyncTex } from './synctex';
-import { figureFor, imageExtension, imageFolder, imagePath } from './figures';
+import { afterQuickCompile, keptBuildFiles } from './buildFiles';
+import { canConvertToPng, figureFor, figurePosition, imageExtension, imageFolder, imagePath } from './figures';
+import { convertToPng } from './imageConvert';
+import { fontFamilies, fontFormat, fontspecLine, pickFaces, type Faces, type LocalFont } from './localFonts';
 import { fetchBibtex, keyWithDoi, parseDoi, tidyBibtex } from './doi';
 import { showChanges } from './changesView';
 import { isGoogleDoc, pickDriveFiles, pickDriveFolder, type PickedFile } from './picker';
@@ -142,6 +145,11 @@ let project: Project | null = null; // the open project; edits change its files 
 let activePath: string | null = null;
 let runner: Promise<BusyTexRunner> | null = null; // the TeX engine, once it has started loading
 let compiling = false;
+// Build files of the last compile (.aux, .bbl…), for quick compiles; see buildFiles.ts.
+// They belong to one main file compiled by one engine, noted in buildKey.
+let buildFiles: ProjectFile[] = [];
+let buildKey = '';
+const ENGINE_PROJECT_DIR = '/home/web_user/project_dir'; // where the engine compiles
 let syncTex: SyncTex | null = null; // where each part of the PDF came from, from the last compile
 let cursorLine = 1; // in the open file, for "Show in PDF"
 let sync: ProjectSync | null = null; // saves the open project to Drive; null for examples
@@ -308,14 +316,29 @@ async function addImages(files: File[], at: number): Promise<void> {
   let position = at;
   let added = false;
   for (const file of files) {
-    const extension = imageExtension(file.name, file.type);
-    if (!extension) {
+    let extension = imageExtension(file.name, file.type);
+    let bytes: Uint8Array;
+    if (extension) {
+      bytes = new Uint8Array(await file.arrayBuffer());
+    } else if (canConvertToPng(file.name, file.type)) {
+      // GIF, WebP, SVG and the like: LaTeX cannot include them, so Tilde makes a PNG.
+      try {
+        bytes = await convertToPng(file);
+      } catch (error) {
+        showError(error);
+        continue;
+      }
+      extension = 'png';
+      const name = file.name || 'This image';
+      notify(/\.svg$/i.test(file.name) || file.type === 'image/svg+xml'
+        ? `${name} is now a PNG picture. For lines that stay sharp at any size, export it as PDF and add that instead.`
+        : `${name} is now a PNG${/gif/i.test(file.type + file.name) ? ' (its first frame)' : ''}, which LaTeX can include.`);
+    } else {
       notify(`${file.name || 'This image'} cannot go into a LaTeX document. Save it as PNG, JPG or PDF, then add it again.`, 'error');
       continue;
     }
     const taken = new Set(project.files.map((f) => f.path));
     const path = imagePath(file.name, extension, imageFolder([...taken]), taken);
-    const bytes = new Uint8Array(await file.arrayBuffer());
     const projectSync = sync;
     if (projectSync) {
       if (!await runFileAction(`Adding ${path}`, `Added ${path}.`, () => projectSync.addFile(path, bytes))) return;
@@ -325,7 +348,7 @@ async function addImages(files: File[], at: number): Promise<void> {
       notify(`Added ${path}.`);
     }
     if (activePath !== target) return; // another file was opened meanwhile
-    position = editor.insertBlock(position, (indent) => figureFor(path, indent));
+    position = editor.insertBlock(figurePosition(editor.text(), position), (indent) => figureFor(path, indent));
     added = true;
   }
   const mainPath = added ? loadGraphicx() : null;
@@ -366,16 +389,23 @@ function downloadPdf(): void {
   if (pdf && project) downloadFile(`${project.name}.pdf`, pdf);
 }
 
-// Auto-compile: compile by itself a moment after typing stops. A compile
-// that is asked for while one runs starts right after it.
+// Auto-compile: compile by itself a moment after typing stops, quickly (one
+// LaTeX pass with the build files of the last compile). A compile that is
+// asked for while one runs starts right after it.
+type CompileKind = 'full' | 'quick';
 let autoCompileTimer: ReturnType<typeof setTimeout> | undefined;
-let compileAgain = false;
+let compileAgain: CompileKind | null = null;
+let againIsFollowUp = false; // compileAgain was asked for by a quick compile's log, not by typing
 function scheduleAutoCompile(): void {
   if (!autoCompileBox.checked) return;
   clearTimeout(autoCompileTimer);
   autoCompileTimer = setTimeout(() => {
-    if (compiling) compileAgain = true;
-    else void compile();
+    if (compiling) {
+      compileAgain = compileAgain ?? 'quick';
+      againIsFollowUp = false;
+    } else {
+      void compile('quick');
+    }
   }, AUTO_COMPILE_DELAY);
 }
 
@@ -717,9 +747,9 @@ async function readyForPicker(): Promise<boolean> {
     + 'allow cross-site cookies for this site, and reload Tilde.', 'Open the picker anyway');
 }
 
-async function pickUsableFiles(title: string): Promise<PickedFile[]> {
+async function pickUsableFiles(title: string, inFolder?: string): Promise<PickedFile[]> {
   if (!await readyForPicker()) return [];
-  const picked = await pickDriveFiles(title);
+  const picked = await pickDriveFiles(title, inFolder);
   const skipped = picked.filter(isGoogleDoc);
   if (skipped.length > 0) {
     notify(`Left out, because Google Docs and Sheets have no file Tilde can use: ${skipped.map((f) => f.name).join(', ')}`, 'info');
@@ -861,6 +891,8 @@ function showProject(newProject: Project | null): void {
   activePath = null;
   pdfViewer.clear();
   syncTex = null;
+  buildFiles = [];
+  buildKey = '';
   showEmptyPdf('Compile to see the PDF here. Ctrl/Cmd+S saves and compiles.');
   cursorPosition.textContent = '';
   showProblems([]);
@@ -1315,6 +1347,74 @@ async function goBack(path: string): Promise<void> {
   dialog.showModal();
 }
 
+// "Add a font from this computer…" (Chrome and Edge): copies a family's
+// regular, bold and italic files into fonts/, and copies the line that loads
+// them to the clipboard.
+const fontDialog = element<HTMLDialogElement>('#font-dialog');
+const fontSearch = element<HTMLInputElement>('#font-search');
+const fontList = element<HTMLUListElement>('#font-list');
+
+async function addLocalFont(): Promise<void> {
+  const projectSync = sync;
+  if (!projectSync || !window.queryLocalFonts) return;
+  const refused = new Error('This browser did not let Tilde read the fonts on this computer. Upload the font file instead: + → Upload from this computer.');
+  let fonts: LocalFont[];
+  try {
+    fonts = await window.queryLocalFonts();
+  } catch {
+    showError(refused);
+    return;
+  }
+  if (fonts.length === 0) {
+    showError(refused);
+    return;
+  }
+  const families = fontFamilies(fonts);
+  const show = (): void => {
+    const wanted = fontSearch.value.trim().toLowerCase();
+    fontList.replaceChildren(...families.filter(([family]) => family.toLowerCase().includes(wanted)).slice(0, 300).map(([family, faces]) => {
+      const button = document.createElement('button');
+      button.value = family;
+      button.textContent = family;
+      button.style.fontFamily = `"${family}", var(--ui)`;
+      const count = document.createElement('span');
+      count.className = 'count';
+      count.textContent = faces.length === 1 ? '1 style' : `${faces.length} styles`;
+      button.append(count);
+      const item = document.createElement('li');
+      item.append(button);
+      return item;
+    }));
+  };
+  fontSearch.value = '';
+  fontSearch.oninput = show;
+  show();
+  fontDialog.returnValue = '';
+  fontDialog.showModal();
+  await new Promise((resolve) => fontDialog.addEventListener('close', resolve, { once: true }));
+  const chosen = families.find(([family]) => family === fontDialog.returnValue);
+  const faces = chosen && pickFaces(chosen[1]);
+  if (!chosen || !faces) return;
+
+  const names: Partial<Faces<string>> = {};
+  for (const [role, face] of Object.entries(faces) as [keyof Faces<LocalFont>, LocalFont | undefined][]) {
+    if (!face) continue;
+    const bytes = new Uint8Array(await (await face.blob()).arrayBuffer());
+    const format = fontFormat(bytes);
+    if (format !== 'otf' && format !== 'ttf') {
+      showError(new Error(`${chosen[0]} is stored as a font collection (.ttc), which Tilde cannot split. Find its .otf or .ttf files and upload those instead.`));
+      return;
+    }
+    const name = `${face.postscriptName.replace(/[^A-Za-z0-9_-]+/g, '-')}.${format}`;
+    if (!await runFileAction(`Adding fonts/${name}`, `Added fonts/${name}.`, () => projectSync.addFile(`fonts/${name}`, bytes))) return;
+    names[role] = name;
+  }
+  if (!names.upright) return;
+  const line = fontspecLine({ ...names, upright: names.upright });
+  const copied = await navigator.clipboard.writeText(line).then(() => true, () => false);
+  notify(`${chosen[0]} is in fonts/. To use it, put \\usepackage{fontspec} and this line in the preamble${copied ? ' (it is copied)' : ''}: ${line}`);
+}
+
 // The "+" menu above the file tree.
 function showAddMenu(): void {
   openMenu(addFilesButton, [
@@ -1322,6 +1422,7 @@ function showAddMenu(): void {
     { label: 'Upload from this computer…', action: () => chooseUploads() },
     { label: 'Add from Google Drive…', action: () => void addFromDrive() },
     { label: 'Add citation from DOI…', action: () => void citeFromMenu() },
+    ...(window.queryLocalFonts ? [{ label: 'Add a font from this computer…', action: () => void addLocalFont() }] : []),
   ]);
 }
 
@@ -1390,9 +1491,22 @@ async function uploadFiles(files: File[], folder?: string): Promise<void> {
 }
 
 // "Add from Google Drive" in the "+" menu: copies picked files into the open project.
+// The Picker opens in the project's own folder in Drive. Files picked there
+// that Tilde could not see yet (uploaded on the Drive website, say) join the
+// project where they are; picking them is what lets Tilde see them. Files
+// picked anywhere else are copied in.
 async function addFromDrive(folder?: string): Promise<void> {
+  const projectSync = sync;
+  if (!projectSync) return;
   try {
-    const picked = await pickUsableFiles('Pick files to add to this project');
+    let picked = await pickUsableFiles('Pick files to add to this project', projectSync.project.driveId);
+    if (picked.length === 0) return;
+    const before = new Set(projectSync.project.files.map((f) => f.driveId));
+    await projectSync.checkDrive();
+    const inProject = new Set(projectSync.project.files.map((f) => f.driveId));
+    const joined = picked.filter((f) => inProject.has(f.id) && !before.has(f.id));
+    if (joined.length > 0) notify(`Added ${joined.map((f) => f.name).join(', ')} from this project's folder in Drive.`);
+    picked = picked.filter((f) => !inProject.has(f.id));
     await addFiles(picked.map((file) => ({ name: file.name, read: () => googleDrive.download(file.id) })), folder);
   } catch (error) {
     showError(error);
@@ -1533,7 +1647,12 @@ async function startRunner(): Promise<BusyTexRunner> {
   return newRunner;
 }
 
-async function compile(): Promise<void> {
+// A full compile runs LaTeX as often as needed, with BibTeX or Biber, from
+// scratch. A quick one (for auto-compile) runs LaTeX once, with the build
+// files of the last compile; if its log asks for more, another compile
+// follows by itself: a full one for a new citation, one more quick pass for
+// moved references. `followUp` marks that second compile, so it never loops.
+async function compile(kind: CompileKind = 'full', followUp = false): Promise<void> {
   if (compiling || !project) return;
   const mainPath = findMainFile(project);
   const main = project.files.find((f) => f.path === mainPath);
@@ -1551,20 +1670,37 @@ async function compile(): Promise<void> {
     if (pdfContainer.querySelector('.engine')) showEmptyPdf('');
     // XeLaTeX for fontspec and Unicode fonts, pdfLaTeX for everything else.
     const engineName = texEngine(project.files, main.path);
-    const engine = engineName === 'xelatex' ? new XeLatex(currentRunner) : new PdfLatex(currentRunner);
-    const withEngine = engineName === 'xelatex' ? ' with XeLaTeX' : '';
+    const engine = engineName === 'xelatex' ? new XeLatex(currentRunner)
+      : engineName === 'lualatex' ? new LuaLatex(currentRunner) : new PdfLatex(currentRunner);
+    const withEngine = { pdflatex: '', xelatex: ' with XeLaTeX', lualatex: ' with LuaLaTeX' }[engineName];
+    const key = `${main.path}|${engineName}`;
+    const quick = kind === 'quick' && buildFiles.length > 0 && buildKey === key;
     setStatus(`Compiling${withEngine}…`);
     const started = performance.now();
     const result = await engine.compile({
       input: main.content,
       mainTexPath: main.path,
-      additionalFiles: project.files.filter((f) => f !== main),
+      additionalFiles: [...project.files.filter((f) => f !== main), ...(quick ? buildFiles : [])],
       // Biber for biblatex, BibTeX for natbib and \bibliography.
-      bibtex: bibliographyTool(project.files) === 'bibtex',
-      biber: bibliographyTool(project.files) === 'biber',
-      rerun: true, // run LaTeX again so references and citations resolve
+      bibtex: !quick && bibliographyTool(project.files) === 'bibtex',
+      biber: !quick && bibliographyTool(project.files) === 'biber',
+      rerun: !quick, // run LaTeX again so references and citations resolve
       remoteEndpoint: PACKAGE_SERVER,
     });
+    // Keep this compile's build files for the next quick one, if it made a
+    // PDF; after an error they may be cut short, so the next compile is a full one.
+    try {
+      buildFiles = result.pdf ? keptBuildFiles(await currentRunner.readProjectFiles(ENGINE_PROJECT_DIR), new Set(project.files.map((f) => f.path))) : [];
+      buildKey = key;
+    } catch (error) {
+      buildFiles = [];
+      console.warn('Could not keep the build files', error);
+    }
+    const next = quick && result.pdf ? afterQuickCompile(lastLatexLog(result.logs)) : null;
+    if ((next === 'full' || (next === 'quick' && !followUp)) && !compileAgain) {
+      compileAgain = next;
+      againIsFollowUp = true;
+    }
     const seconds = ((performance.now() - started) / 1000).toFixed(1);
     logView.textContent = result.log;
     try {
@@ -1602,8 +1738,11 @@ async function compile(): Promise<void> {
     compileButton.textContent = 'Compile';
     preview.classList.remove('compiling');
     if (compileAgain) {
-      compileAgain = false;
-      void compile();
+      const again = compileAgain;
+      const isFollowUp = againIsFollowUp;
+      compileAgain = null;
+      againIsFollowUp = false;
+      void compile(again, isFollowUp);
     }
   }
 }

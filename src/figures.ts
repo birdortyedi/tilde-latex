@@ -11,6 +11,14 @@ export function imageExtension(name: string, type: string): string | null {
   return fromName ?? EXTENSIONS[type] ?? null;
 }
 
+// Images LaTeX cannot include but the browser can show, which Tilde turns into PNG.
+const CONVERTIBLE = /\.(gif|webp|avif|bmp|svg)$/i;
+const CONVERTIBLE_TYPES = /^image\/(gif|webp|avif|bmp|svg\+xml)$/;
+
+export function canConvertToPng(name: string, type: string): boolean {
+  return CONVERTIBLE.test(name) || CONVERTIBLE_TYPES.test(type);
+}
+
 // The folder for new images: the one that already holds most of the
 // project's images, or "figures" if there are none.
 export function imageFolder(paths: string[]): string {
@@ -41,6 +49,35 @@ export function imagePath(name: string, extension: string, folder: string, taken
   let path = `${folder}/${base}.${extension}`;
   for (let n = 2; taken.has(path); n++) path = `${folder}/${base}-${n}.${extension}`;
   return path;
+}
+
+const FLOATS = /\\(begin|end)\{(figure|table|wrapfigure|wraptable|sidewaysfigure|sidewaystable)\*?\}/g;
+
+// Where a new figure may go, near offset `at` of a .tex file: not inside
+// another figure or table (then after its \end), and not after
+// \end{document} (then just before it). Returns an offset in that line.
+export function figurePosition(text: string, at: number): number {
+  const lines = text.split('\n');
+  const starts: number[] = [];
+  let offset = 0;
+  for (const line of lines) {
+    starts.push(offset);
+    offset += line.length + 1;
+  }
+  let lineIndex = 0;
+  while (lineIndex + 1 < starts.length && starts[lineIndex + 1] <= at) lineIndex++;
+  const endOfLine = (index: number): number => starts[index] + lines[index].length;
+  const code = (index: number): string => lines[index].replace(/(^|[^\\])%.*$/, '$1');
+
+  const endDocument = lines.findIndex((_, index) => /\\end\{document\}/.test(code(index)));
+  if (endDocument >= 0 && lineIndex >= endDocument) return endDocument > 0 ? endOfLine(endDocument - 1) : 0;
+
+  let depth = 0;
+  for (let index = 0; index < lines.length; index++) {
+    for (const match of code(index).matchAll(FLOATS)) depth += match[1] === 'begin' ? 1 : -1;
+    if (index >= lineIndex && depth <= 0) return index === lineIndex ? at : endOfLine(index);
+  }
+  return at;
 }
 
 // The figure for an image, and where the cursor goes in it (inside \caption{}).

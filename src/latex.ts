@@ -120,7 +120,10 @@ export function foldEnd(lineAt: (n: number) => string, number: number, lines: nu
   return last > number ? last : null;
 }
 
-export type TexEngine = 'pdflatex' | 'xelatex';
+export type TexEngine = 'pdflatex' | 'xelatex' | 'lualatex';
+
+// Packages that need LuaLaTeX: they run Lua code.
+const LUATEX_PACKAGES = ['luacode', 'luatexja', 'luatexja-fontspec', 'luamplib', 'lua-visual-debug', 'lua-ul'];
 
 // Packages that only work with XeLaTeX (or LuaLaTeX): Unicode fonts and scripts.
 const XETEX_PACKAGES = ['fontspec', 'polyglossia', 'unicode-math', 'xeCJK', 'mathspec', 'xltxtra', 'xunicode'];
@@ -147,12 +150,16 @@ export function preambleInsertAt(source: string): number | null {
 
 // Which program compiles the project. The main file can say so with a line
 // like "% !TEX program = xelatex" (the convention other editors use too).
-// Otherwise XeLaTeX when a file loads fontspec or another package that needs
-// it, and pdfLaTeX for everything else, since it is faster.
+// Otherwise LuaLaTeX when the document runs Lua code, XeLaTeX when a file
+// loads fontspec or another package that needs it, and pdfLaTeX for
+// everything else, since it is the fastest.
 export function texEngine(files: ProjectFile[], mainPath: string): TexEngine {
   const main = files.find((f) => f.path === mainPath);
-  const asked = /^\s*%\s*!\s*TEX\s+(?:TS-)?program\s*=\s*(pdflatex|xelatex)\b/im.exec(main ? text(main) : '');
+  const asked = /^\s*%\s*!\s*TEX\s+(?:TS-)?program\s*=\s*(pdflatex|xelatex|lualatex)\b/im.exec(main ? text(main) : '');
   if (asked) return asked[1].toLowerCase() as TexEngine;
+  const usesLua = loadsPackage(files, LUATEX_PACKAGES) || files.some((file) => /\.(tex|sty|cls)$/.test(file.path)
+    && text(file).split('\n').some((line) => /\\(directlua|luaexec)\b/.test(withoutComment(line))));
+  if (usesLua) return 'lualatex';
   return loadsPackage(files, XETEX_PACKAGES) ? 'xelatex' : 'pdflatex';
 }
 

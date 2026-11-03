@@ -61,9 +61,15 @@ const HINTS: [RegExp, (match: RegExpExecArray) => string][] = [
     + `${m[1]}.eps to PDF and include that file instead.`],
   [/^LaTeX Error: File `([^']+)' not found/, (m) => `Tilde looked for ${m[1]} in the project and on the TeX Live `
     + 'package server. Check the spelling, or add the file to the project.'],
-  [/The font "([^"]+)" cannot be found/, (m) => `"${m[1]}" is not one of the fonts that come with TeX Live. Tilde runs `
-    + 'in the browser, so it cannot use the fonts installed on your computer. Try TeX Gyre Termes (like Times), '
-    + 'TeX Gyre Heros (like Helvetica), Libertinus Serif or Noto Serif.'],
+  [/The font "([^"]+)" cannot be found/, (m) => `"${m[1]}" is not one of the fonts that come with TeX Live, and Tilde `
+    + 'runs in the browser, so it cannot find the fonts installed on your computer by name. Add the font file (.otf or .ttf) '
+    + 'to the project, for example into fonts/, and load it by file name: \\setmainfont{MyFont.otf}[Path=fonts/]. In Chrome '
+    + 'and Edge, + → "Add a font from this computer" does that for you. Or use one that comes with TeX Live: TeX Gyre Termes '
+    + '(like Times), TeX Gyre Heros (like Helvetica), Libertinus Serif or Noto Serif.'],
+  [/font (?:\d+_)?(\w+) at \d+ not found/, (m) => `The document loads the old TeX font ${m[1]} directly (with \\font), `
+    + 'which LuaLaTeX cannot draw here: it would need a bitmap version made by a program a browser cannot run. '
+    + 'pdfLaTeX and XeLaTeX can. Templates such as CVPR\'s and ICCV\'s do this, so compile them with pdfLaTeX: '
+    + 'remove the "% !TEX program = lualatex" line.'],
   [/^LaTeX Error: Unicode character .* not set up for use with LaTeX/, () => 'pdfLaTeX cannot typeset this character. '
     + 'Add \\usepackage{fontspec} to the preamble: Tilde then compiles with XeLaTeX, which handles any Unicode text.'],
   [/fontspec package requires either XeTeX or LuaTeX/, () => 'Remove the "% !TEX program = pdflatex" line from the main '
@@ -209,8 +215,8 @@ function unique(problems: LogProblem[]): LogProblem[] {
   });
 }
 
-// The log of the last pdfLaTeX or XeLaTeX run: it has the final word on errors
-// and warnings (earlier runs may still miss references that later runs fix).
+// The log of the last pdfLaTeX, XeLaTeX or LuaLaTeX run: it has the final word
+// on errors and warnings (earlier runs may still miss references that later runs fix).
 export function lastLatexLog(logs: { cmd: string; log: string }[]): string {
-  return logs.filter((l) => /^(pdf|xe)latex/.test(l.cmd) && l.log).at(-1)?.log ?? '';
+  return logs.filter((l) => /^(pdf|xe|lua|luahb)latex/.test(l.cmd) && l.log).at(-1)?.log ?? '';
 }
