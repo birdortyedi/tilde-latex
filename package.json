@@ -14,6 +14,7 @@
     "build": "tsc && vite build",
     "test": "vitest run",
     "lint": "eslint .",
+    "licenses": "node scripts/npm-licenses.mjs",
     "download-engine": "texlyre-busytex download-assets public/core && node -e \"const fs = require('fs'); const dir = 'public/core/busytex'; for (const f of fs.readdirSync(dir)) if (/^texlive-(recommended|extra)/.test(f)) fs.rmSync(dir + '/' + f)\""
   },
   "dependencies": {

@@ -566,6 +566,9 @@ button.link:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px;
 #example-list .name { font-weight: 600; }
 #example-list .note { color: var(--muted); font-size: 13.5px; }
 
+.site-links { margin: 40px 0 0; color: var(--muted); font-size: 13px; }
+.site-links a { color: inherit; }
+
 .welcome-facts {
   grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px;
   margin: 0; padding: 28px 0 0; list-style: none; border-top: 1px solid var(--rule);

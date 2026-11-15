@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <title>Privacy · Tilde · LaTeX editor</title>
+    <style>
+      :root { --ink: #1d232b; --muted: #59636e; --rule: #d9dee3; --paper: #fbfbf9; --link: #0e7c7b; }
+      @media (prefers-color-scheme: dark) {
+        :root { --ink: #e6e9ec; --muted: #a3acb5; --rule: #343c45; --paper: #1b2027; --link: #5cc8c4; }
+      }
+      body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+      main { max-width: 42rem; margin: 0 auto; padding: 48px 16px 64px; }
+      h1 { margin: 0 0 4px; font-size: 30px; line-height: 1.25; }
+      h2 { margin: 36px 0 8px; font-size: 19px; }
+      p, li { margin: 0 0 12px; }
+      ul { padding-left: 1.2em; }
+      a { color: var(--link); }
+      code { font-size: 0.92em; }
+      .updated, footer { color: var(--muted); font-size: 14px; }
+      .short { margin: 24px 0; padding: 16px 20px; border: 1px solid var(--rule); border-radius: 8px; }
+      footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--rule); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Privacy</h1>
+      <p class="updated">Tilde · LaTeX editor · last changed 15 November 2026</p>
+
+      <p class="short"><strong>In short:</strong> Tilde has no server and no database. Your documents go
+        from your browser to your own Google Drive and nowhere else. Tilde never receives your files,
+        your Google account details or anything you type, and it uses no analytics, no advertising and
+        no cookies of its own.</p>
+
+      <h2>What Tilde is</h2>
+      <p>Tilde is a free, open-source LaTeX editor. It is a set of static files; everything, including
+        compiling, runs in your own browser. Its source code is public on
+        <a href="https://github.com/birdortyedi/tilde-latex">GitHub</a>, so anyone can check what it does.</p>
+
+      <h2>Google sign-in and Google Drive</h2>
+      <ul>
+        <li>Signing in is only needed to keep projects in Google Drive. The examples work without it.</li>
+        <li>Tilde asks Google for one permission, <code>drive.file</code>: to see, create, change and delete
+          only the files that Tilde creates or that you choose in Google's file picker. It cannot see
+          anything else in your Drive.</li>
+        <li>Tilde uses this only to save and open your projects in your own Drive, and to note small
+          settings on its own folders and files (such as a project's main file).</li>
+        <li>Google gives Tilde an access token that lasts about an hour. It stays in your browser tab
+          and is gone when you close the tab or sign out.</li>
+        <li>Tilde reads one value about your account from Google: an anonymous account number, used only
+          in your browser to keep unsaved edits apart if several people use the same computer. It does
+          not read your name, email address or contacts.</li>
+      </ul>
+
+      <h2>What Tilde keeps in your browser</h2>
+      <ul>
+        <li><strong>Unsaved edits</strong>, until they reach your Drive, so a closed tab or a lost network
+          loses nothing. Signing out deletes them, after offering to download anything not yet saved.</li>
+        <li><strong>The TeX engine and TeX package files</strong>, so later compiles are fast and work offline.
+          These contain nothing of yours.</li>
+        <li><strong>Small settings</strong>: light or dark, pane sizes, PDF zoom, auto-compile, how the project
+          list is sorted, and which project was open last.</li>
+      </ul>
+      <p>All of this stays on your computer. Your browser's "clear site data" removes it.</p>
+
+      <h2>What goes to other services, and when</h2>
+      <ul>
+        <li><strong>Google</strong>, for sign-in, Google Drive and the file picker, under
+          <a href="https://policies.google.com/privacy">Google's privacy policy</a>.</li>
+        <li><strong>TeXlyre's TeX package server</strong> (<code>texlive2026.texlyre.org</code>): the names of
+          TeX package files that a document needs and that are not built in, such as TikZ. Never the
+          document itself.</li>
+        <li><strong>doi.org</strong>, only when you add a paper by its DOI: that DOI. doi.org may pass the
+          request on to the service that holds the citation, such as Crossref or DataCite.</li>
+        <li><strong>The website host</strong>: like any website, the server that delivers Tilde's files sees
+          your IP address. Tilde is hosted on GitHub Pages, under
+          <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub's privacy statement</a>.</li>
+      </ul>
+      <p>Tilde does not sell, share or use your information for anything else.</p>
+
+      <h2>Google API Services User Data Policy</h2>
+      <p>Tilde's use and transfer of information received from Google APIs adheres to the
+        <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>,
+        including the Limited Use requirements.</p>
+
+      <h2>Removing your data</h2>
+      <ul>
+        <li>Your projects are ordinary folders in your Google Drive. Delete them there whenever you like.</li>
+        <li>To take away Tilde's access, open <a href="https://myaccount.google.com/connections">your Google
+          account's third-party connections</a> and remove Tilde.</li>
+        <li>Signing out of Tilde deletes what it keeps for you in the browser.</li>
+      </ul>
+
+      <h2>Changes and contact</h2>
+      <p>If this page changes, the date at the top changes too, and every earlier version stays in the
+        project's history on GitHub. Questions: open an issue on
+        <a href="https://github.com/birdortyedi/tilde-latex/issues">GitHub</a>.</p>
+
+      <footer><a href="./">Back to Tilde</a> · <a href="https://github.com/birdortyedi/tilde-latex">Source code</a> · <a href="licenses/NOTICE.txt">Licenses</a></footer>
+    </main>
+  </body>
+</html>

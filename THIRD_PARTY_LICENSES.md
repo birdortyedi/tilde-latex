@@ -48,6 +48,10 @@ compatible with AGPL-3.0.
 | Google Identity Services (`https://accounts.google.com/gsi/client`) | Google's own terms (Google APIs Terms of Service); loaded from Google at runtime, not bundled or redistributed by Tilde | https://developers.google.com/identity/oauth2/web | "Sign in with Google" and access tokens for Drive |
 | Google Picker (`https://apis.google.com/js/api.js`) | Google APIs Terms of Service; loaded from Google at runtime, not bundled or redistributed by Tilde | https://developers.google.com/workspace/drive/picker | Choosing files in Drive to import |
 | Google Drive API v3 | Google APIs Terms of Service; called with `fetch`, no Google code bundled | https://developers.google.com/drive/api | Storing projects in the user's own Drive |
+| doi.org, and the citation services it forwards to (`api.crossref.org`, `data.crosscite.org`, `data.medra.org`) | Public metadata services; only the DOI the user enters is sent | https://www.doi.org | "Add a paper from its DOI" |
+
+The Content-Security-Policy in `index.html` lists exactly these services; change both together.
+The license texts that are served with the site are in `public/licenses/`.
 
 ## Development tools only (never shipped)
 

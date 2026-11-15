@@ -98,7 +98,9 @@ Before adding any dependency (npm package, WASM build, font, data file):
 5. Record every dependency in `THIRD_PARTY_LICENSES.md`: name, version, license, link, and what it is used for.
 6. TeX Live package files and fonts carry their own licenses (LPPL, GPL, OFL and others). Serve them unmodified and keep their license files next to them.
 
-Run `npx license-checker --summary` after installing packages and report anything new.
+Run `npx license-checker --summary` after installing packages and report anything new. Then run `npm run licenses`, which rewrites `public/licenses/npm-packages.txt` (the license file of every npm package in the page), and commit it.
+
+The license texts of the TeX engine, Biber and the libraries inside them are in `public/licenses/` with `NOTICE.txt`, which says where each one's source code is. Update it when the engine changes.
 
 ## Saving and conflicts
 
@@ -144,6 +146,7 @@ Then stop and wait. Do not start the next milestone without being asked.
 - `npm run build` — build the static site into `dist/`
 - `npm test` — run the automated tests
 - `npm run lint` — check code style
+- `npm run licenses` — rewrite `public/licenses/npm-packages.txt` after changing dependencies
 
 Known issue for Milestone 6, phase 2: the Google Picker API key (in `.env.local`, never committed; a deploy workflow must get it from a GitHub Actions secret) has an API restriction but no website restriction, because the Picker rejected the key with `http://localhost:5173/*` set. Make a separate key for the public site, restricted to its address.
 
@@ -180,7 +183,9 @@ Mark the current milestone with **← current**. Update this list as work is com
 6. **Release** ← current
    Decided before Milestone 6: no custom domain for now (cost); a free site on GitHub Pages later.
    - **Phase 1, open-source release that people run on their own computer.** Easy install (`npm run download-engine` keeps only what Tilde uses, Node 22 in `.nvmrc` and `engines`, `npm run dev` always on port 5173). Sign-in for anyone with Tilde's own Google app, switched to "In production" (`drive.file` only, a non-sensitive scope); own IDs through `.env.local`. "Add from Google Drive" explains what is missing when there is no Picker key. README with "Run it yourself" first and a clear "what works / what doesn't" section. Version 1.0.0 with a Git tag and a GitHub Release.
-   - **Phase 2, a free public site at `birdortyedi.github.io/tilde-latex`.** GitHub Actions workflow that deploys to GitHub Pages (engine cached, tests run, built for the `/tilde-latex/` folder). Privacy policy page. A "Source code" link in the app (AGPL section 13). The engine's license files published next to it. A Content-Security-Policy in `index.html`. A Picker key restricted to the site. Google consent screen: app name "Tilde · LaTeX editor" (fall back to "Tilde LaTeX Editor" if the middle dot causes trouble), home page, privacy policy, and `birdortyedi.github.io` verified in Search Console (check that Google accepts a github.io domain). Tell TeXlyre before announcing it.
+   - **Phase 2, a public site on GitHub Pages**, probably on a custom domain the owner buys (otherwise `birdortyedi.github.io/tilde-latex`). Tilde moved to its own Google Cloud project "Tilde", with no billing linked (decided before phase 2).
+     - Done, waiting for the domain: privacy policy (`public/privacy.html`); "Privacy · Source code · Licenses" links on the projects page (AGPL section 13); license texts and `NOTICE.txt` in `public/licenses/`; a Content-Security-Policy in `index.html` (tested: sign-in session, Drive, compiling, the package server, DOI lookups through Crossref, DataCite and mEDRA, the Picker; other sites blocked); the workflow `.github/workflows/deploy.yml`, started by hand for now, with the base path in the repository variable `BASE_PATH`.
+     - To do with the domain: DNS records and the custom domain in GitHub Pages, the secret `VITE_GOOGLE_API_KEY` with a Picker key restricted to the site, Google sign-in origin and consent screen (home page, privacy policy, authorized domain verified in Search Console), publishing the Google app, the push trigger in the workflow, a test of signing in again under the CSP. Tell TeXlyre before announcing it.
 
 ## Known limitations (state these in the README)
 

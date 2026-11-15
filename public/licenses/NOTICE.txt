@@ -1,0 +1,57 @@
+Tilde · LaTeX editor — licenses
+================================
+
+Tilde is free software under the GNU Affero General Public License,
+version 3 or later (AGPL-3.0.txt). Its source code:
+https://github.com/birdortyedi/tilde-latex
+
+This site also serves software and files written by others, unmodified.
+Each is listed below with its license and where to get its source code.
+The full list of everything Tilde uses, with versions, is in
+THIRD_PARTY_LICENSES.md in Tilde's source code.
+
+
+The TeX engine (core/busytex/busytex.wasm and the files next to it)
+-------------------------------------------------------------------
+TeXlyre BusyTeX: TeX Live programs compiled to WebAssembly.
+  License: AGPL-3.0 (AGPL-3.0.txt)
+  Source:  https://github.com/TeXlyre/texlyre-busytex-build
+           https://github.com/TeXlyre/texlyre-busytex
+
+Programs and libraries inside it:
+  pdfTeX, bibtex8 ........ GPL-2.0-or-later (GPL-2.0.txt)
+  kpathsea ............... LGPL-2.1-or-later (LGPL-2.1.txt)
+  XeTeX .................. MIT-style (xetex.txt)
+  expat 2.5.0 ............ MIT (expat.txt)
+  fontconfig 2.13.96 ..... MIT-style (fontconfig.txt)
+  Emscripten 5.0.4 runtime MIT / University of Illinois NCSA (emscripten.txt)
+  Source of the TeX Live 2026 programs:
+           https://github.com/TeX-Live/texlive-source/tree/tags/texlive-2026.0
+
+
+Biber (core/busytex/biber.*, busytex_biber.js)
+----------------------------------------------
+Biber, the bibliography processor for biblatex, running on WebPerl.
+  Biber:   Artistic License 2.0 (Artistic-2.0.txt)
+           https://github.com/plk/biber
+  Perl:    used under the GNU General Public License (GPL-2.0.txt)
+           https://www.perl.org
+
+
+TeX Live 2026 package files (core/busytex/texlive-basic.*)
+---------------------------------------------------------
+LaTeX classes, packages and fonts from TeX Live 2026, served unmodified.
+Each package has its own license (mostly the LaTeX Project Public License,
+also GPL, OFL, public domain and others). TeX Live's own license notes
+(LICENSE.TL, LICENSE.CTAN) are inside the bundle.
+  Source:  https://tug.org/texlive/   https://ctan.org/
+TeX package files that are not in this bundle are fetched one at a time
+from TeXlyre's public package server, https://texlive2026.texlyre.org.
+
+
+Everything else in the page
+---------------------------
+CodeMirror, fflate (MIT), PDF.js (Apache-2.0, Apache-2.0.txt), IBM Plex
+fonts (SIL Open Font License 1.1). The license file of every npm package
+in the page is in npm-packages.txt. When Tilde's dependencies change,
+make that file again (see "Licensing policy" in CLAUDE.md).

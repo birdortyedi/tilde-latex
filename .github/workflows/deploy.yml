@@ -1,0 +1,72 @@
+# Builds Tilde and publishes it on GitHub Pages.
+#
+# For now it runs only when started by hand (Actions → Deploy → Run workflow),
+# so nothing goes online by accident. Once the site is set up (Settings → Pages →
+# Source: GitHub Actions), add `push: branches: [main]` under `on:` to publish
+# every change on main. It never runs for pull requests, so strangers' code never
+# sees the secret below.
+#
+# Settings it reads (Settings → Secrets and variables → Actions):
+# - secret VITE_GOOGLE_API_KEY: the Picker key for the public site (restricted to its address)
+# - variable BASE_PATH: "/" on a custom domain (the default), "/tilde-latex/" on birdortyedi.github.io
+name: Deploy
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # The TeX engine is a 500 MB download; keep it between runs until texlyre-busytex changes.
+      - name: Cache the TeX engine
+        id: engine
+        uses: actions/cache@v6
+        with:
+          path: public/core
+          key: tex-engine-${{ hashFiles('package-lock.json') }}
+
+      - name: Download the TeX engine
+        if: steps.engine.outputs.cache-hit != 'true'
+        run: npm run download-engine
+
+      - run: npm test
+      - run: npm run lint
+
+      - name: Build
+        run: npm run build -- --base="${{ vars.BASE_PATH || '/' }}"
+        env:
+          VITE_GOOGLE_API_KEY: ${{ secrets.VITE_GOOGLE_API_KEY }}
+
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

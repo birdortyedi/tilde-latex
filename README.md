@@ -124,6 +124,7 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - Your sign-in stays in the browser tab. Unsaved edits are kept in your browser until they reach Drive, and **signing out deletes them** (after offering to download anything unsaved).
 - TeX packages are downloaded from TeXlyre's public package server, without any of your data.
 - "Add a paper from its DOI" sends only that DOI to doi.org, which answers with the paper's citation.
+- The full [privacy policy](public/privacy.html) is also shown in the app ("Privacy" at the bottom of the projects page). Licenses of everything Tilde serves: [public/licenses/NOTICE.txt](public/licenses/NOTICE.txt).
 
 ## Run it yourself
 
