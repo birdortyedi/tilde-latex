@@ -58,21 +58,33 @@ const API = 'https://www.googleapis.com/drive/v3/files';
 const UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3/files';
 const FIELDS = 'id,name,mimeType,headRevisionId,appProperties,modifiedTime,trashed,parents';
 
+export const RETRIES = 5; // tries again up to this often, waiting 1, 2, 4, 8 and 16 seconds
+
 async function request(url: string, init: { method?: string; headers?: Record<string, string>; body?: BodyInit } = {}): Promise<Response> {
-  if (!navigator.onLine) throw new OfflineError();
-  const token = await getAccessToken();
-  let response: Response;
-  try {
-    response = await fetch(url, { ...init, headers: { ...init.headers, Authorization: `Bearer ${token}` } });
-  } catch {
-    throw new OfflineError(); // fetch only fails like this when the network is unreachable
+  for (let attempt = 0; ; attempt++) {
+    if (!navigator.onLine) throw new OfflineError();
+    const token = await getAccessToken();
+    let response: Response;
+    try {
+      response = await fetch(url, { ...init, headers: { ...init.headers, Authorization: `Bearer ${token}` } });
+    } catch {
+      throw new OfflineError(); // fetch only fails like this when the network is unreachable
+    }
+    if (response.status === 401) {
+      forgetToken();
+      throw new SignInNeededError();
+    }
+    if (response.ok) return response;
+    const text = await response.text();
+    // Drive asks to slow down with 429, or 403 "rateLimitExceeded" (also
+    // "userRateLimitExceeded"): the request was not carried out, so it can
+    // be sent again. A 5xx is trouble on Google's side; only reading is
+    // tried again then, since a change may have gone through after all.
+    const slowDown = response.status === 429 || (response.status === 403 && /rateLimitExceeded/i.test(text));
+    const readFailed = response.status >= 500 && (init.method ?? 'GET') === 'GET';
+    if (!(slowDown || readFailed) || attempt >= RETRIES) throw new Error(`Google Drive answered ${response.status}: ${text}`);
+    await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** attempt + Math.random() * 1000));
   }
-  if (response.status === 401) {
-    forgetToken();
-    throw new SignInNeededError();
-  }
-  if (!response.ok) throw new Error(`Google Drive answered ${response.status}: ${await response.text()}`);
-  return response;
 }
 
 export const googleDrive: Drive = {

@@ -103,21 +103,41 @@ export async function createProject(
   return project;
 }
 
-// Downloads all files of a project folder, including its subfolders.
-export async function openProject(drive: Drive, folder: DriveFile): Promise<Project> {
-  const files: ProjectFile[] = [];
-  const walk = async (folderId: string, prefix: string): Promise<void> => {
-    await Promise.all((await drive.list(folderId)).map(async (item) => {
+// How many files are downloaded at once when a project opens. More at once
+// makes Drive answer "slow down" for projects with hundreds of figures.
+export const PARALLEL_DOWNLOADS = 6;
+
+// Every file in a project folder and its subfolders, with its path in the
+// project. Costs one request per folder, not one per file.
+async function filesIn(drive: Drive, folderId: string): Promise<{ item: DriveFile; path: string }[]> {
+  const files: { item: DriveFile; path: string }[] = [];
+  const walk = async (id: string, prefix: string): Promise<void> => {
+    await Promise.all((await drive.list(id)).map(async (item) => {
       const path = prefix + item.name;
       if (isFolder(item)) return walk(item.id, `${path}/`);
+      files.push({ item, path });
+    }));
+  };
+  await walk(folderId, '');
+  return files;
+}
+
+// Downloads all files of a project folder, including its subfolders.
+export async function openProject(drive: Drive, folder: DriveFile): Promise<Project> {
+  const listed = await filesIn(drive, folder.id);
+  const files: ProjectFile[] = [];
+  let next = 0;
+  const download = async (): Promise<void> => {
+    while (next < listed.length) {
+      const { item, path } = listed[next++];
       const bytes = await drive.download(item.id);
       const content = isTextFile(path) ? new TextDecoder().decode(bytes) : bytes;
       const kept = item.appProperties?.[SAFE_COPY];
       const keptTime = item.appProperties?.[SAFE_COPY_TIME];
       files.push({ path, content, driveId: item.id, revision: item.headRevisionId, ...(kept && keptTime ? { safeCopy: { revision: kept, time: keptTime } } : {}) });
-    }));
+    }
   };
-  await walk(folder.id, '');
+  await Promise.all(Array.from({ length: PARALLEL_DOWNLOADS }, download));
   return { name: folder.name, driveId: folder.id, files, mainFile: folder.appProperties?.mainFile };
 }
 
@@ -206,16 +226,8 @@ export async function setMainFile(drive: Drive, project: Project, path: string):
 // the project and its current revision. Costs one request per folder, not
 // one per file.
 export async function filesOnDrive(drive: Drive, project: Project): Promise<Map<string, { path: string; revision?: string }>> {
-  const files = new Map<string, { path: string; revision?: string }>();
-  const walk = async (folderId: string, prefix: string): Promise<void> => {
-    await Promise.all((await drive.list(folderId)).map(async (item) => {
-      const path = prefix + item.name;
-      if (isFolder(item)) return walk(item.id, `${path}/`);
-      files.set(item.id, { path, revision: item.headRevisionId });
-    }));
-  };
-  if (project.driveId) await walk(project.driveId, '');
-  return files;
+  if (!project.driveId) return new Map();
+  return new Map((await filesIn(drive, project.driveId)).map(({ item, path }) => [item.id, { path, revision: item.headRevisionId }]));
 }
 
 // Saves every changed file to Drive and returns the paths of files it did

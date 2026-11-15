@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { FakeDrive } from './testing/fakeDrive';
-import { createProject, findOrCreateRootFolder, listProjects, moveProjectsFolder, openProject, projectsFolder, saveProject } from './driveProjects';
+import { createProject, findOrCreateRootFolder, listProjects, moveProjectsFolder, openProject, PARALLEL_DOWNLOADS, projectsFolder, saveProject } from './driveProjects';
 
 const text = (s: string) => new TextEncoder().encode(s);
 
@@ -70,6 +70,25 @@ describe('Drive projects', () => {
       'chapters/intro.tex': 'Intro',
       'chapters/figures/plot.png': image,
     });
+  });
+
+  it('opens a large project downloading only a few files at once', async () => {
+    const figures = Array.from({ length: 40 }, (_, i) => ({ path: `figures/plot${i}.png`, content: new Uint8Array([i]) }));
+    const created = await createProject(drive, rootId, 'big', [{ path: 'main.tex', content: 'x' }, ...figures]);
+    let downloading = 0;
+    let most = 0;
+    const download = drive.download.bind(drive);
+    drive.download = async (id) => {
+      most = Math.max(most, ++downloading);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      downloading--;
+      return download(id);
+    };
+    const folder = (await listProjects(drive, rootId)).find((p) => p.id === created.driveId);
+    if (!folder) throw new Error('no project folder');
+    const opened = await openProject(drive, folder);
+    expect(opened.files).toHaveLength(41);
+    expect(most).toBe(PARALLEL_DOWNLOADS);
   });
 
   it('refuses to create a project whose name is taken', async () => {
