@@ -13,6 +13,13 @@ export function withoutComment(line: string): string {
   return match ? line.slice(0, match.index + match[1].length) : line;
 }
 
+// A file's text without its comments, as one string, so that a command
+// written over several lines is found too.
+const code = (file: ProjectFile): string => text(file).split('\n').map(withoutComment).join('\n');
+
+// \usepackage[options]{names} or \RequirePackage[options]{names}; options and names may span lines.
+const PACKAGE_LOAD = /\\(?:usepackage|RequirePackage)\s*(?:\[([^\]]*)\])?\s*\{([^}]*)\}/g;
+
 // Every \label{...} in the project's .tex files.
 export function labelsIn(files: ProjectFile[]): string[] {
   const labels = new Set<string>();
@@ -76,10 +83,11 @@ export function outline(files: ProjectFile[], mainPath: string): OutlineEntry[] 
 export function bibliographyTool(files: ProjectFile[]): 'biber' | 'bibtex' | null {
   if (!files.some((f) => f.path.endsWith('.bib'))) return null;
   for (const file of files) {
-    if (!file.path.endsWith('.tex')) continue;
-    for (const raw of text(file).split('\n')) {
-      const match = /\\usepackage(?:\[([^\]]*)\])?\{[^}]*\bbiblatex\b[^}]*\}/.exec(withoutComment(raw));
-      if (match) return /backend\s*=\s*bibtex/.test(match[1] ?? '') ? 'bibtex' : 'biber';
+    if (!/\.(tex|sty|cls)$/.test(file.path)) continue; // a thesis class may load biblatex itself
+    for (const [, options, names] of code(file).matchAll(PACKAGE_LOAD)) {
+      if (names.split(',').some((name) => name.trim() === 'biblatex')) {
+        return /backend\s*=\s*bibtex/.test(options ?? '') ? 'bibtex' : 'biber';
+      }
     }
   }
   return 'bibtex';
@@ -132,10 +140,8 @@ const XETEX_PACKAGES = ['fontspec', 'polyglossia', 'unicode-math', 'xeCJK', 'mat
 export function loadsPackage(files: ProjectFile[], names: string[]): boolean {
   for (const file of files) {
     if (!/\.(tex|sty|cls)$/.test(file.path)) continue;
-    for (const raw of text(file).split('\n')) {
-      for (const match of withoutComment(raw).matchAll(/\\(?:usepackage|RequirePackage)(?:\[[^\]]*\])?\{([^}]*)\}/g)) {
-        if (match[1].split(',').some((name) => names.includes(name.trim()))) return true;
-      }
+    for (const [, , loaded] of code(file).matchAll(PACKAGE_LOAD)) {
+      if (loaded.split(',').some((name) => names.includes(name.trim()))) return true;
     }
   }
   return false;

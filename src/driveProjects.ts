@@ -1,4 +1,5 @@
-import { FOLDER_TYPE, type Drive, type DriveFile } from './drive';
+import { SignInNeededError } from './auth';
+import { FOLDER_TYPE, OfflineError, type Drive, type DriveFile } from './drive';
 import { isTextFile } from './fileTree';
 import type { Project, ProjectFile } from './projects';
 
@@ -39,11 +40,33 @@ export async function findOrCreateRootFolder(drive: Drive): Promise<string> {
 // Makes another folder (one the user picked) the projects folder, and moves
 // every project into it. Returns how many projects moved.
 export async function moveProjectsFolder(drive: Drive, fromId: string, to: DriveFile): Promise<number> {
+  if (await isInside(drive, to.id, fromId)) {
+    throw new Error(`"${to.name}" is inside your projects folder. Choose a folder that is not a project or part of one.`);
+  }
   const projects = await listProjects(drive, fromId);
   for (const project of projects) await drive.updateMetadata(project.id, {}, { from: fromId, to: to.id });
   await drive.updateMetadata(to.id, { appProperties: { [PROJECTS_TAG]: 'true' } });
   await drive.updateMetadata(fromId, { appProperties: { [PROJECTS_TAG]: null } });
   return projects.length;
+}
+
+// Whether the file or folder `id` is somewhere inside the folder `ancestorId`,
+// found by walking up its parent folders.
+async function isInside(drive: Drive, id: string, ancestorId: string): Promise<boolean> {
+  for (let current = id; ;) {
+    let parent: string | undefined;
+    try {
+      parent = (await drive.get(current)).parents?.[0];
+    } catch (error) {
+      if (error instanceof OfflineError || error instanceof SignInNeededError) throw error;
+      // drive.file: Drive hides folders Tilde did not create, such as the
+      // ones above the projects folder. Every folder inside it is Tilde's.
+      return false;
+    }
+    if (!parent) return false;
+    if (parent === ancestorId) return true;
+    current = parent;
+  }
 }
 
 // The project folders, sorted by name.
@@ -210,15 +233,22 @@ export async function saveProject(
     onProgress?.(index, changed.length);
     const content = file.content;
     const bytes = typeof content === 'string' ? new TextEncoder().encode(content) : content;
-    let saved: DriveFile;
+    let saved: DriveFile | undefined;
     if (file.driveId) {
       const current = await drive.get(file.driveId);
-      if (current.headRevisionId !== file.revision) {
+      if (current.trashed) {
+        // Deleted elsewhere (it is in Drive's trash) but edited here: saving
+        // into the trash would lose the edits, so the file is made again.
+        file.driveId = undefined;
+        file.revision = undefined;
+      } else if (current.headRevisionId !== file.revision) {
         conflicts.push(file.path);
         continue;
+      } else {
+        saved = await drive.updateFile(file.driveId, bytes);
       }
-      saved = await drive.updateFile(file.driveId, bytes);
-    } else {
+    }
+    if (!saved) {
       const [dir, name] = splitPath(file.path);
       saved = await drive.createFile(name, await folderFor(drive, folders, dir), bytes);
     }

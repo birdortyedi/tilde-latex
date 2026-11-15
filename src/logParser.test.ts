@@ -215,6 +215,38 @@ describe('hints', () => {
     expect(problem.hint).toContain('pdfLaTeX');
   });
 
+  it('ignores brackets in the text of a bad box', () => {
+    const problems = parseLog(log(
+      '(./chapters/intro.tex',
+      'Overfull \\hbox (12.0pt too wide) in paragraph at lines 3--3',
+      '[]\\OT1/cmr/m/n/10 Intro (see the',
+      '',
+      ')',
+      'LaTeX Warning: Reference `nolabel\' on page 1 undefined on input line 5.',
+      ')',
+    ), files);
+    expect(problems.map((p) => [p.file, p.line])).toEqual([['chapters/intro.tex', 3], ['main.tex', 5]]);
+  });
+
+  it('follows a file whose name has spaces (TeX puts it in quotes)', () => {
+    const spaced = [...files, { path: 'my chapter.tex', content: 'x\n' }];
+    const [problem] = parseLog(log(
+      '("./my chapter.tex"',
+      'LaTeX Warning: Reference `x\' on page 1 undefined on input line 1.',
+      ')',
+    ), spaced);
+    expect(problem.file).toBe('my chapter.tex');
+  });
+
+  it('reads LaTeX font warnings, which go on over "(Font)" lines', () => {
+    const [problem] = parseLog(log(
+      'LaTeX Font Warning: Font shape `OT1/cmr/bx/sc\' undefined',
+      '(Font)              using `OT1/cmr/bx/n\' instead on input line 5.',
+    ), files);
+    expect(problem).toMatchObject({ level: 'warning', file: 'main.tex', line: 5 });
+    expect(problem.message).toBe("Font shape `OT1/cmr/bx/sc' undefined using `OT1/cmr/bx/n' instead on input line 5.");
+  });
+
   it('gives no hint to ordinary errors', () => {
     const [problem] = parseLog(log('! Undefined control sequence.', 'l.3 Intro \\badmacro'), files);
     expect(problem.hint).toBeUndefined();

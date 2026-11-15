@@ -39,6 +39,11 @@ describe('bibliographyTool', () => {
     expect(bibliographyTool([tex('% \\usepackage{biblatex}'), bib])).toBe('bibtex');
     expect(bibliographyTool([tex('\\usepackage{biblatex}')])).toBeNull(); // no .bib file
   });
+  it('finds biblatex loaded over several lines, or by a class file', () => {
+    expect(bibliographyTool([tex('\\usepackage[\n  backend=biber,\n  style=authoryear % comment\n]{biblatex}'), bib])).toBe('biber');
+    expect(bibliographyTool([tex('\\usepackage[\n  backend=bibtex\n]{biblatex}'), bib])).toBe('bibtex');
+    expect(bibliographyTool([tex('\\documentclass{mythesis}'), { path: 'mythesis.cls', content: '\\RequirePackage[backend=biber]{biblatex}' }, bib])).toBe('biber');
+  });
 });
 
 describe('texEngine', () => {
@@ -49,6 +54,9 @@ describe('texEngine', () => {
     expect(texEngine([tex('\\usepackage[english]{babel}\n\\usepackage{amsmath,unicode-math}')], 'main.tex')).toBe('xelatex');
     expect(texEngine([tex('x'), tex('\\RequirePackage{polyglossia}', 'mystyle.sty')], 'main.tex')).toBe('xelatex');
     expect(texEngine([tex('% \\usepackage{fontspec}')], 'main.tex')).toBe('pdflatex');
+    // Written over several lines
+    expect(texEngine([tex('\\usepackage[\n  Ligatures=TeX\n]{fontspec}')], 'main.tex')).toBe('xelatex');
+    expect(texEngine([tex('\\usepackage{amsmath,\n  fontspec}')], 'main.tex')).toBe('xelatex');
   });
 
   it('uses LuaLaTeX for documents that run Lua code', () => {

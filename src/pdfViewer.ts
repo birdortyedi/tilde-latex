@@ -75,6 +75,7 @@ export class PdfViewer {
 
   // Forget the PDF, for example when another project is opened.
   clear(): void {
+    this.drawing++; // a draw still running must not swap its pages in
     this.last = null;
     this.firstPage = null;
     this.words = 0;

@@ -43,6 +43,16 @@ describe('Drive projects', () => {
     expect(await listProjects(drive, rootId)).toEqual([]);
   });
 
+  it('refuses to move the projects into a folder inside a project, and moves nothing', async () => {
+    await createProject(drive, rootId, 'paper', [{ path: 'main.tex', content: 'x' }]);
+    await createProject(drive, rootId, 'thesis', [{ path: 'figures/plot.png', content: 'y' }]);
+    const thesis = (await listProjects(drive, rootId)).find((p) => p.name === 'thesis');
+    const picked = (await drive.list(thesis?.id ?? '')).find((f) => f.name === 'figures');
+    if (!picked) throw new Error('no figures folder');
+    await expect(moveProjectsFolder(drive, rootId, picked)).rejects.toThrow('inside your projects folder');
+    expect((await listProjects(drive, rootId)).map((p) => p.name)).toEqual(['paper', 'thesis']);
+  });
+
   it('creates a project with subfolders and opens it again', async () => {
     const image = new Uint8Array([1, 2, 3]);
     await createProject(drive, rootId, 'paper', [

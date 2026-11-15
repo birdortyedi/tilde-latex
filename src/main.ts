@@ -702,6 +702,8 @@ async function renameProject(id: string, name: string): Promise<void> {
 async function deleteProject(id: string, name: string): Promise<void> {
   if (!await askConfirm(`Delete the project "${name}"? Its folder goes to the trash in your Google Drive, where you can restore it for 30 days.`, 'Delete')) return;
   try {
+    // Save the last edits first, so restoring it from the trash brings them back.
+    if (project?.driveId === id) await sync?.saveNow();
     await googleDrive.updateMetadata(id, { trashed: true });
     if (project?.driveId === id) showProject(null);
     for (const draft of await browserDrafts.list()) {
@@ -1653,9 +1655,21 @@ async function startRunner(): Promise<BusyTexRunner> {
 // follows by itself: a full one for a new citation, one more quick pass for
 // moved references. `followUp` marks that second compile, so it never loops.
 async function compile(kind: CompileKind = 'full', followUp = false): Promise<void> {
-  if (compiling || !project) return;
-  const mainPath = findMainFile(project);
-  const main = project.files.find((f) => f.path === mainPath);
+  if (compiling) {
+    // Compile button or Ctrl/Cmd+S during a compile: a full one follows.
+    if (kind === 'full') {
+      compileAgain = 'full';
+      againIsFollowUp = false;
+    }
+    return;
+  }
+  if (!project) return;
+  // The project being compiled. If another one is opened meanwhile, this
+  // compile's PDF, log and build files are thrown away.
+  const compiled = project;
+  const stale = (): boolean => project !== compiled;
+  const mainPath = findMainFile(compiled);
+  const main = compiled.files.find((f) => f.path === mainPath);
   if (!main || typeof main.content !== 'string') {
     notify('This project has no .tex file with \\documentclass to compile.', 'error');
     return;
@@ -1669,7 +1683,7 @@ async function compile(kind: CompileKind = 'full', followUp = false): Promise<vo
     const currentRunner = await getRunner();
     if (pdfContainer.querySelector('.engine')) showEmptyPdf('');
     // XeLaTeX for fontspec and Unicode fonts, pdfLaTeX for everything else.
-    const engineName = texEngine(project.files, main.path);
+    const engineName = texEngine(compiled.files, main.path);
     const engine = engineName === 'xelatex' ? new XeLatex(currentRunner)
       : engineName === 'lualatex' ? new LuaLatex(currentRunner) : new PdfLatex(currentRunner);
     const withEngine = { pdflatex: '', xelatex: ' with XeLaTeX', lualatex: ' with LuaLaTeX' }[engineName];
@@ -1680,17 +1694,19 @@ async function compile(kind: CompileKind = 'full', followUp = false): Promise<vo
     const result = await engine.compile({
       input: main.content,
       mainTexPath: main.path,
-      additionalFiles: [...project.files.filter((f) => f !== main), ...(quick ? buildFiles : [])],
+      additionalFiles: [...compiled.files.filter((f) => f !== main), ...(quick ? buildFiles : [])],
       // Biber for biblatex, BibTeX for natbib and \bibliography.
-      bibtex: !quick && bibliographyTool(project.files) === 'bibtex',
-      biber: !quick && bibliographyTool(project.files) === 'biber',
+      bibtex: !quick && bibliographyTool(compiled.files) === 'bibtex',
+      biber: !quick && bibliographyTool(compiled.files) === 'biber',
       rerun: !quick, // run LaTeX again so references and citations resolve
       remoteEndpoint: PACKAGE_SERVER,
     });
     // Keep this compile's build files for the next quick one, if it made a
     // PDF; after an error they may be cut short, so the next compile is a full one.
     try {
-      buildFiles = result.pdf ? keptBuildFiles(await currentRunner.readProjectFiles(ENGINE_PROJECT_DIR), new Set(project.files.map((f) => f.path))) : [];
+      const kept = result.pdf ? keptBuildFiles(await currentRunner.readProjectFiles(ENGINE_PROJECT_DIR), new Set(compiled.files.map((f) => f.path))) : [];
+      if (stale()) return;
+      buildFiles = kept;
       buildKey = key;
     } catch (error) {
       buildFiles = [];
@@ -1710,7 +1726,8 @@ async function compile(kind: CompileKind = 'full', followUp = false): Promise<vo
       console.warn('Could not cache the downloaded TeX packages', error);
     }
 
-    const problems = parseLog(lastLatexLog(result.logs), project.files);
+    if (stale()) return;
+    const problems = parseLog(lastLatexLog(result.logs), compiled.files);
     showProblems(problems);
     const warnings = problems.filter((p) => p.level === 'warning').length;
     if (result.success && result.pdf) {
@@ -1721,6 +1738,7 @@ async function compile(kind: CompileKind = 'full', followUp = false): Promise<vo
         console.warn('Could not read the SyncTeX file', error);
       }
       await pdfViewer.show(result.pdf);
+      if (stale()) return;
       setStatus(`Compiled${withEngine} in ${seconds} s` + (warnings > 0 ? `, ${warnings} warning${warnings > 1 ? 's' : ''}` : ''));
     } else if (problems.some((p) => p.level === 'error')) {
       setStatus(`Compile stopped at an error after ${seconds} s`);
@@ -1730,8 +1748,10 @@ async function compile(kind: CompileKind = 'full', followUp = false): Promise<vo
       setStatus(`Compile failed after ${seconds} s. The log has the details.`);
     }
   } catch (error) {
-    setStatus('');
-    showError(error);
+    if (!stale()) {
+      setStatus('');
+      showError(error);
+    }
   } finally {
     compiling = false;
     compileButton.removeAttribute('aria-busy');
@@ -1996,9 +2016,9 @@ downloadBothButton.addEventListener('click', () => void downloadBoth());
 signOutDialog.addEventListener('close', () => {
   const choice = signOutDialog.returnValue;
   if (choice === 'download') {
-    for (const draft of unsavedAtSignOut) {
-      downloadFile(`${draft.projectName} - ${draft.path.replaceAll('/', ' - ')}`, draft.content);
-    }
+    // One .zip: browsers often block a page's second and later downloads.
+    const files = unsavedAtSignOut.map((draft) => ({ path: `${draft.projectName}/${draft.path}`, content: draft.content }));
+    downloadFile('Unsaved edits.zip', zipProject('Unsaved edits', files));
   }
   if (choice === 'download' || choice === 'delete') void finishSignOut();
 });

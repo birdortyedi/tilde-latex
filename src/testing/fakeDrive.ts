@@ -32,8 +32,8 @@ export class FakeDrive implements Drive {
   }
 
   private info(id: string): DriveFile {
-    const { name, mimeType, headRevisionId, appProperties } = this.item(id);
-    return { id, name, mimeType, headRevisionId, ...(appProperties ? { appProperties } : {}) };
+    const { name, mimeType, headRevisionId, appProperties, trashed, parentId } = this.item(id);
+    return { id, name, mimeType, headRevisionId, parents: [parentId], ...(appProperties ? { appProperties } : {}), ...(trashed ? { trashed } : {}) };
   }
 
   // A path like "LaTeX Projects/paper/figures/plot.png" → that file's text.

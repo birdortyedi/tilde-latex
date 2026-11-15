@@ -184,6 +184,33 @@ describe('ProjectSync', () => {
     expect(drafts.all.size).toBe(0);
   });
 
+  it('brings back a file made here that never reached Drive, and saves it', async () => {
+    const id = project.driveId ?? '';
+    await drafts.put({ accountId: 'me', projectId: id, projectName: 'paper', path: 'offline.tex', content: 'made offline' });
+    await sync.restoreDrafts();
+    expect(file('offline.tex').content).toBe('made offline');
+    expect(changes[0].added).toEqual(['offline.tex']);
+    expect(onDrive('offline.tex')).toBe('made offline');
+  });
+
+  it('keeps, but does not bring back, the draft of a file deleted in Drive', async () => {
+    await drafts.put({ ...draftOf('refs.bib', 'my edits'), path: 'gone.bib' });
+    await sync.restoreDrafts();
+    expect(project.files.map((f) => f.path)).not.toContain('gone.bib');
+    expect(drafts.get('gone.bib')?.content).toBe('my edits');
+  });
+
+  it('does not touch the editor once closed, even if a check of Drive was already running', async () => {
+    await otherComputerSaves('main.tex', 'theirs');
+    const download = drive.download.bind(drive);
+    drive.download = async (id) => {
+      sync.close(); // another project opens while the check downloads
+      return download(id);
+    };
+    await sync.checkDrive();
+    expect(replaced).toEqual({});
+  });
+
   it('never restores edits made by another Google account', async () => {
     await drafts.put(draftOf('main.tex', 'not yours', 'someone else'));
     await sync.restoreDrafts();
@@ -260,6 +287,16 @@ describe('ProjectSync', () => {
       expect(sync.state).toBe('conflict');
       expect(onDrive('notes.tex')).toBe('theirs');
       expect(file('notes.tex').content).toBe('mine');
+    });
+
+    it('saves edits to a file deleted elsewhere as a new file, not into the trash', async () => {
+      const oldId = file('refs.bib').driveId ?? '';
+      await drive.updateMetadata(oldId, { trashed: true });
+      type('refs.bib', 'my edits'); // no check of Drive in between
+      await sync.saveNow();
+      expect(onDrive('refs.bib')).toBe('my edits');
+      expect(file('refs.bib').driveId).not.toBe(oldId);
+      expect(sync.state).toBe('saved');
     });
 
     it('tells the editor nothing when nothing changed', async () => {

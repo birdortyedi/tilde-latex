@@ -56,16 +56,24 @@ export class ProjectSync {
   private saveQueued = false;
   private closed = false;
   private keptThisSession = new Set<ProjectFile>(); // files whose safe copy was made since the project was opened
+  private listener: SyncListener;
 
   constructor(
     private drive: Drive,
     private drafts: DraftStore,
     private accountId: string, // the signed-in Google account, to tag drafts with
     readonly project: Project,
-    private listener: SyncListener,
+    listener: SyncListener,
   ) {
     if (!project.driveId) throw new Error(`${project.name} is not in Google Drive.`);
     this.projectId = project.driveId;
+    // Once closed, this sync must not touch the editor any more: a check of
+    // Drive that was already running may end after another project opened.
+    this.listener = {
+      stateChanged: () => { if (!this.closed) listener.stateChanged(); },
+      fileReplaced: (path, content) => { if (!this.closed) listener.fileReplaced(path, content); },
+      filesChanged: (changes) => { if (!this.closed) listener.filesChanged(changes); },
+    };
   }
 
   // The editor calls this after every change to a file's text.
@@ -96,15 +104,25 @@ export class ProjectSync {
   // in Drive meanwhile, saving reports a conflict instead of overwriting.
   restoreDrafts(): Promise<void> {
     this.enqueue(async () => {
+      const added: string[] = [];
       for (const draft of await this.drafts.list()) {
         if (draft.accountId !== this.accountId || draft.projectId !== this.projectId) continue;
         const file = this.file(draft.path);
-        if (!file) continue; // the file is no longer in Drive; keep the draft
+        if (!file) {
+          // A file made here that never reached Drive (for example while
+          // offline) comes back. One that was in Drive (it has a revision)
+          // and is gone now was deleted elsewhere; its draft is kept.
+          if (draft.revision !== undefined) continue;
+          this.project.files.push({ path: draft.path, content: draft.content, changed: true });
+          added.push(draft.path);
+          continue;
+        }
         file.content = draft.content;
         file.revision = draft.revision;
         file.changed = true;
         this.listener.fileReplaced(file.path, draft.content);
       }
+      if (added.length > 0) this.listener.filesChanged({ added, moved: [], removed: [], kept: [] });
     });
     return this.saveNow();
   }

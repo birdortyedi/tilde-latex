@@ -41,7 +41,7 @@ const looksLikeFile = (name: string): boolean => /^\.{0,2}\//.test(name) || /\.[
 
 const ERROR = /^! (.*)$/;
 const ERROR_LINE = /^l\.(\d+) (.*)$/;
-const WARNING = /^(?:LaTeX|Package (\S+)|Class (\S+)) Warning: (.*)$/;
+const WARNING = /^(?:LaTeX( Font)?|Package (\S+)|Class (\S+)) Warning: (.*)$/;
 const BADBOX = /^(Overfull|Underfull) \\[hv]box .*?lines? (\d+)/;
 const PACKAGE_ERROR = /^(?:Fatal )?Package (\S+) Error:/;
 // XeLaTeX: a character the font does not have, so it is left out of the PDF.
@@ -146,12 +146,13 @@ export function parseLog(log: string, files: ProjectFile[]): LogProblem[] {
 
     const warning = WARNING.exec(line);
     if (warning) {
-      let message = warning[3];
-      // Package warnings continue on lines that start with "(package name)".
-      const name = warning[1] ?? warning[2];
-      while (name && lines[i + 1]?.startsWith(`(${name})`)) {
+      let message = warning[4];
+      const name = warning[2] ?? warning[3]; // the package or class, shown before the message
+      // The warning continues on lines that start with "(package name)", or "(Font)".
+      const continued = name ?? (warning[1] ? 'Font' : undefined);
+      while (continued && lines[i + 1]?.startsWith(`(${continued})`)) {
         i++;
-        message += ` ${lines[i].slice(name.length + 2).trim()}`;
+        message += ` ${lines[i].slice(continued.length + 2).trim()}`;
       }
       const at = /on input line (\d+)\.?$/.exec(message);
       if (IGNORED_WARNINGS.some((pattern) => pattern.test(name ? `${name}: ${message}` : message))) continue;
@@ -174,12 +175,19 @@ export function parseLog(log: string, files: ProjectFile[]): LogProblem[] {
     const badbox = BADBOX.exec(line);
     if (badbox) {
       problems.push({ level: 'badbox', message: line, file: currentFile(), line: Number(badbox[2]) });
+      // Skip the box's text, up to the empty line that ends it: a "(" or ")"
+      // in the document's words must not count as a file opening or closing.
+      while (i + 1 < lines.length && lines[i + 1].trim() !== '') i++;
       continue;
     }
 
-    for (const match of line.matchAll(/\(([^\s()]*)|\)/g)) {
+    // A file name with spaces is in quotes: ("./my chapter.tex"
+    for (const match of line.matchAll(/\(("[^"]*"|[^\s()]*)|\)/g)) {
       if (match[0] === ')') stack.pop();
-      else stack.push(looksLikeFile(match[1]) ? match[1] : null);
+      else {
+        const name = match[1].replace(/^"(.*)"$/, '$1');
+        stack.push(looksLikeFile(name) ? name : null);
+      }
     }
   }
   for (const [font, characters] of missing) {

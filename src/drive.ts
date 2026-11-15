@@ -15,6 +15,8 @@ export interface DriveFile {
   // Small private notes Tilde keeps on a file, e.g. a project's main file.
   appProperties?: Record<string, string>;
   modifiedTime?: string; // e.g. "2026-11-02T13:01:14.810Z"
+  trashed?: boolean; // in Drive's trash (deleted, restorable for 30 days)
+  parents?: string[]; // the folder it is in
 }
 
 // Changes to a file's details (not its content).
@@ -54,7 +56,7 @@ export class OfflineError extends Error {
 
 const API = 'https://www.googleapis.com/drive/v3/files';
 const UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3/files';
-const FIELDS = 'id,name,mimeType,headRevisionId,appProperties,modifiedTime';
+const FIELDS = 'id,name,mimeType,headRevisionId,appProperties,modifiedTime,trashed,parents';
 
 async function request(url: string, init: { method?: string; headers?: Record<string, string>; body?: BodyInit } = {}): Promise<Response> {
   if (!navigator.onLine) throw new OfflineError();
