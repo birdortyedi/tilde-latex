@@ -24,6 +24,7 @@ export function notify(text: string, kind: NoticeKind = 'success'): void {
   close.className = 'quiet';
   close.textContent = '×';
   close.title = 'Close';
+  close.setAttribute('aria-label', 'Close');
   close.addEventListener('click', () => toast.remove());
   toast.append(message, close);
   toasts.append(toast);

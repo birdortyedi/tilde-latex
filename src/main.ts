@@ -610,6 +610,7 @@ function renderProjectList(): void {
     more.className = 'project-more';
     more.textContent = '⋯';
     more.title = `Actions for ${row.name}`;
+    more.setAttribute('aria-label', more.title); // screen readers would read only "⋯"
     more.setAttribute('aria-haspopup', 'menu');
     more.addEventListener('click', () => openMenu(more, [
       { label: 'Open', action: () => void openProjectById(row.id) },
@@ -1251,6 +1252,7 @@ function moreButton(name: string, onClick: () => void): HTMLButtonElement {
   more.className = 'file-menu';
   more.textContent = '⋯';
   more.title = `Actions for ${name}`;
+  more.setAttribute('aria-label', more.title); // screen readers would read only "⋯"
   more.setAttribute('aria-haspopup', 'menu');
   more.addEventListener('click', onClick);
   return more;

@@ -21,7 +21,7 @@
   </picture>
 </p>
 
-> **Status:** in development. Everything below works when you run Tilde on your own computer; a public site comes with the first release.
+> **Status:** version 1.0. Tilde runs on your own computer: see [Run it yourself](#run-it-yourself). There is no public website yet.
 
 ## Why Tilde
 
@@ -127,17 +127,25 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 
 ## Run it yourself
 
-You need Node.js 20.19 or newer (or 22.12+), and about 700 MB of disk space for the TeX engine.
+You need [Node.js](https://nodejs.org) 22.12 or newer and Git. The TeX engine is a download of about 500 MB, of which Tilde keeps about 150 MB.
 
 ```bash
 git clone https://github.com/birdortyedi/tilde-latex.git
 cd tilde-latex
 npm install
-npm run download-engine   # the TeX engine and TeX Live bundles, once per computer
+npm run download-engine   # the TeX engine, once per computer
 npm run dev               # then open http://localhost:5173
 ```
 
-The examples work right away. To use Google Drive, follow [docs/google-setup.md](docs/google-setup.md) (sign-in) and [docs/google-picker-setup.md](docs/google-picker-setup.md) (importing from Drive). The Picker key goes into a file `.env.local`, which is never committed.
+Next time, `npm run dev` is all you need. Keep the address exactly `http://localhost:5173`: Google sign-in only works there. If something else already uses that port, `npm run dev` stops and says so; close the other program (or the other copy of Tilde) first.
+
+- **The examples** work right away, without signing in.
+- **Sign in with Google** works with Tilde's own Google app, so your projects go to your own Drive with no setup. To use a Google app of your own instead, follow [docs/google-setup.md](docs/google-setup.md).
+- **"Add from Google Drive"** (Google's file picker) needs a Google Cloud setup of your own: your own sign-in client ID ([docs/google-setup.md](docs/google-setup.md)) and an API key in the same project ([docs/google-picker-setup.md](docs/google-picker-setup.md)). It is free and takes about 20 minutes. Everything else works without it.
+
+Your own IDs go into a file `.env.local` next to `package.json`, which Git never commits.
+
+To update Tilde later: `git pull`, then `npm install`.
 
 ```bash
 npm test        # automated tests (Vitest)

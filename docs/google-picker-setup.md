@@ -19,7 +19,7 @@ client ID (see `docs/google-setup.md`).
 3. **Application restrictions:** leave at **None** for now. With
    **Websites** set to `http://localhost:5173/*`, the Picker refused the key
    ("The API developer key is invalid"), because Google checks it from its own
-   Picker window, not from Tilde's page. To be revisited in Milestone 6.
+   Picker window, not from Tilde's page. To be revisited for a public website.
 4. **API restrictions:** choose **Restrict key** and tick only
    **Google Picker API**.
 5. Save, and copy the key (it starts with `AIza`).
@@ -39,11 +39,13 @@ VITE_GOOGLE_API_KEY=AIza...
 
 Git ignores `.env.local`, so the key never goes to GitHub. Do **not** put
 the key into `src/config.ts`: once it is on GitHub, scanners flag it and
-anyone can copy it. (When Tilde is deployed in Milestone 6, the key comes
+anyone can copy it. (On a public website, the key would come
 from a GitHub Actions secret instead.)
 
-`GOOGLE_PROJECT_NUMBER` is already filled in: it is the number your client
-ID starts with. (You can check it on the Google Cloud **Dashboard**.)
+The key must come from the same Google Cloud project as the sign-in client ID:
+Tilde tells the Picker that project's number, which it reads from the client
+ID (it starts with that number). So in your own copy of Tilde, first make your
+own client ID (`docs/google-setup.md`), then the key in that project.
 
 Changes can take a few minutes to work at Google. If the Picker says
 "The API developer key is invalid", wait five minutes and try again.

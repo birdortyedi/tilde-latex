@@ -139,15 +139,15 @@ Then stop and wait. Do not start the next milestone without being asked.
 
 ## Commands
 
-- `npm run download-engine` — download the engine and TeX Live bundles into `public/core/` (about 500 MB, once per computer; Git ignores this folder)
-- `npm run dev` — start the app locally
+- `npm run download-engine` — download the engine into `public/core/` (about 500 MB, once per computer; Git ignores this folder). It keeps only what Tilde uses (engine, Biber, `texlive-basic`: about 150 MB) and deletes the unused `recommended` and `extra` bundles
+- `npm run dev` — start the app at `http://localhost:5173`, always that port (`--strictPort`), because Google sign-in only allows that origin
 - `npm run build` — build the static site into `dist/`
 - `npm test` — run the automated tests
 - `npm run lint` — check code style
 
-Known issue for Milestone 6: the Google Picker API key (in `.env.local`, never committed; the deploy workflow must get it from a GitHub Actions secret) has an API restriction but no website restriction, because the Picker rejected the key with `http://localhost:5173/*` set. Find a website restriction that works before the public release.
+Known issue for Milestone 6, phase 2: the Google Picker API key (in `.env.local`, never committed; a deploy workflow must get it from a GitHub Actions secret) has an API restriction but no website restriction, because the Picker rejected the key with `http://localhost:5173/*` set. Make a separate key for the public site, restricted to its address.
 
-Known issue for Milestone 6: `npm run build` copies everything in `public/core/` (about 700 MB, including the unused `recommended` and `extra` bundles) into `dist/`. Only the engine files, Biber (`biber.*`, `busytex_biber.js`) and `texlive-basic` should be deployed.
+The Google IDs: Tilde's own OAuth client ID is the default in `src/config.ts`; `VITE_GOOGLE_CLIENT_ID` and `VITE_GOOGLE_API_KEY` in `.env.local` override it for someone's own copy. The Picker's project number is read from the client ID, so the API key must come from the same Google Cloud project.
 
 ## Test documents
 
@@ -177,8 +177,10 @@ Mark the current milestone with **← current**. Update this list as work is com
    Everything in "Saving and conflicts" above, with tests.
 5. **Quality of life** ✓ done, tested by the owner. Also added: a full project page, file actions (new, upload, rename/move, duplicate, delete, set main), error icons next to line numbers.
    Clickable error messages that jump to the right file and line. Project list. Import an existing project from a zip or via the Picker. Package caching so repeat compiles are fast.
-6. **Public release**
-   README with screenshots and a clear "what works / what doesn't" section. Privacy policy page (needed for Google verification). GitHub Actions workflow that deploys to GitHub Pages. Google OAuth verification, with the app name "Tilde · LaTeX editor" (fall back to "Tilde LaTeX Editor" if the middle dot causes trouble).
+6. **Release** ← current
+   Decided before Milestone 6: no custom domain for now (cost); a free site on GitHub Pages later.
+   - **Phase 1, open-source release that people run on their own computer.** Easy install (`npm run download-engine` keeps only what Tilde uses, Node 22 in `.nvmrc` and `engines`, `npm run dev` always on port 5173). Sign-in for anyone with Tilde's own Google app, switched to "In production" (`drive.file` only, a non-sensitive scope); own IDs through `.env.local`. "Add from Google Drive" explains what is missing when there is no Picker key. README with "Run it yourself" first and a clear "what works / what doesn't" section. Version 1.0.0 with a Git tag and a GitHub Release.
+   - **Phase 2, a free public site at `birdortyedi.github.io/tilde-latex`.** GitHub Actions workflow that deploys to GitHub Pages (engine cached, tests run, built for the `/tilde-latex/` folder). Privacy policy page. A "Source code" link in the app (AGPL section 13). The engine's license files published next to it. A Content-Security-Policy in `index.html`. A Picker key restricted to the site. Google consent screen: app name "Tilde · LaTeX editor" (fall back to "Tilde LaTeX Editor" if the middle dot causes trouble), home page, privacy policy, and `birdortyedi.github.io` verified in Search Console (check that Google accepts a github.io domain). Tell TeXlyre before announcing it.
 
 ## Known limitations (state these in the README)
 

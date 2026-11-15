@@ -1,16 +1,20 @@
 {
   "name": "tilde-latex",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Tilde · LaTeX editor. Keeps your work together, like Fig.~3.",
   "license": "AGPL-3.0-or-later",
+  "engines": {
+    "node": ">=22.12"
+  },
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "predev": "node -e \"if (+process.versions.node.split('.')[0] < 22) { console.error('Tilde needs Node.js 22.12 or newer; this is ' + process.version + '. With nvm: nvm use'); process.exit(1) }\"",
+    "dev": "vite --port 5173 --strictPort",
     "build": "tsc && vite build",
     "test": "vitest run",
     "lint": "eslint .",
-    "download-engine": "texlyre-busytex download-assets public/core"
+    "download-engine": "texlyre-busytex download-assets public/core && node -e \"const fs = require('fs'); const dir = 'public/core/busytex'; for (const f of fs.readdirSync(dir)) if (/^texlive-(recommended|extra)/.test(f)) fs.rmSync(dir + '/' + f)\""
   },
   "dependencies": {
     "@codemirror/language": "6.13.1",
