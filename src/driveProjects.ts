@@ -103,9 +103,27 @@ export async function createProject(
   return project;
 }
 
-// How many files are downloaded at once when a project opens. More at once
-// makes Drive answer "slow down" for projects with hundreds of figures.
-export const PARALLEL_DOWNLOADS = 6;
+// How many files are downloaded or uploaded at once. More at once makes
+// Drive answer "slow down" for projects with hundreds of figures.
+export const PARALLEL_TRANSFERS = 6;
+
+// Runs `work` on every item, PARALLEL_TRANSFERS at a time. After a failure no
+// new item starts; it waits for the ones running, then throws the first error.
+async function inParallel<T>(items: T[], work: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  const errors: unknown[] = [];
+  const worker = async (): Promise<void> => {
+    while (errors.length === 0 && next < items.length) {
+      try {
+        await work(items[next++]);
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: PARALLEL_TRANSFERS }, worker));
+  if (errors.length > 0) throw errors[0];
+}
 
 // Every file in a project folder and its subfolders, with its path in the
 // project. Costs one request per folder, not one per file.
@@ -124,20 +142,14 @@ async function filesIn(drive: Drive, folderId: string): Promise<{ item: DriveFil
 
 // Downloads all files of a project folder, including its subfolders.
 export async function openProject(drive: Drive, folder: DriveFile): Promise<Project> {
-  const listed = await filesIn(drive, folder.id);
   const files: ProjectFile[] = [];
-  let next = 0;
-  const download = async (): Promise<void> => {
-    while (next < listed.length) {
-      const { item, path } = listed[next++];
-      const bytes = await drive.download(item.id);
-      const content = isTextFile(path) ? new TextDecoder().decode(bytes) : bytes;
-      const kept = item.appProperties?.[SAFE_COPY];
-      const keptTime = item.appProperties?.[SAFE_COPY_TIME];
-      files.push({ path, content, driveId: item.id, revision: item.headRevisionId, ...(kept && keptTime ? { safeCopy: { revision: kept, time: keptTime } } : {}) });
-    }
-  };
-  await Promise.all(Array.from({ length: PARALLEL_DOWNLOADS }, download));
+  await inParallel(await filesIn(drive, folder.id), async ({ item, path }) => {
+    const bytes = await drive.download(item.id);
+    const content = isTextFile(path) ? new TextDecoder().decode(bytes) : bytes;
+    const kept = item.appProperties?.[SAFE_COPY];
+    const keptTime = item.appProperties?.[SAFE_COPY_TIME];
+    files.push({ path, content, driveId: item.id, revision: item.headRevisionId, ...(kept && keptTime ? { safeCopy: { revision: kept, time: keptTime } } : {}) });
+  });
   return { name: folder.name, driveId: folder.id, files, mainFile: folder.appProperties?.mainFile };
 }
 
@@ -146,7 +158,7 @@ export async function openProject(drive: Drive, folder: DriveFile): Promise<Proj
 export async function moveFile(drive: Drive, project: Project, file: ProjectFile, newPath: string): Promise<void> {
   if (!project.driveId) throw new Error(`${project.name} is not in Google Drive.`);
   if (file.driveId) {
-    const folders = new Map<string, string>([['', project.driveId]]);
+    const folders: Folders = new Map([['', Promise.resolve(project.driveId)]]);
     const [oldDir] = splitPath(file.path);
     const [newDir, newName] = splitPath(newPath);
     const from = await folderFor(drive, folders, oldDir);
@@ -238,11 +250,12 @@ export async function saveProject(
 ): Promise<string[]> {
   if (!project.driveId) throw new Error(`${project.name} is not in Google Drive.`);
   const conflicts: string[] = [];
-  const folders = new Map<string, string>([['', project.driveId]]);
+  const folders: Folders = new Map([['', Promise.resolve(project.driveId)]]);
 
   const changed = project.files.filter((f) => f.changed);
-  for (const [index, file] of changed.entries()) {
-    onProgress?.(index, changed.length);
+  let done = 0;
+  onProgress?.(0, changed.length);
+  await inParallel(changed, async (file) => {
     const content = file.content;
     const bytes = typeof content === 'string' ? new TextEncoder().encode(content) : content;
     let saved: DriveFile | undefined;
@@ -255,7 +268,7 @@ export async function saveProject(
         file.revision = undefined;
       } else if (current.headRevisionId !== file.revision) {
         conflicts.push(file.path);
-        continue;
+        return;
       } else {
         saved = await drive.updateFile(file.driveId, bytes);
       }
@@ -268,19 +281,27 @@ export async function saveProject(
     file.revision = saved.headRevisionId;
     // If the user typed more while we were uploading, the file still needs saving.
     if (file.content === content) file.changed = false;
-  }
+    onProgress?.(++done, changed.length);
+  });
   return conflicts;
 }
 
 // Returns the Drive folder for a path like "chapters/appendix" inside the
 // project, creating missing folders on the way. `folders` remembers the ones found.
-async function folderFor(drive: Drive, folders: Map<string, string>, dir: string): Promise<string> {
-  const known = folders.get(dir);
-  if (known) return known;
-  const [parent, name] = splitPath(dir);
-  const parentId = await folderFor(drive, folders, parent);
-  const existing = (await drive.list(parentId)).find((f) => isFolder(f) && f.name === name);
-  const id = existing?.id ?? (await drive.createFolder(name, parentId)).id;
-  folders.set(dir, id);
+// The folders found or made so far, by path. It keeps the promise, so files
+// uploaded at the same time into a new folder wait for one folder to be made.
+type Folders = Map<string, Promise<string>>;
+
+function folderFor(drive: Drive, folders: Folders, dir: string): Promise<string> {
+  let id = folders.get(dir);
+  if (!id) {
+    id = (async () => {
+      const [parent, name] = splitPath(dir);
+      const parentId = await folderFor(drive, folders, parent);
+      const existing = (await drive.list(parentId)).find((f) => isFolder(f) && f.name === name);
+      return existing?.id ?? (await drive.createFolder(name, parentId)).id;
+    })();
+    folders.set(dir, id);
+  }
   return id;
 }

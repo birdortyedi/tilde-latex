@@ -1691,7 +1691,7 @@ async function compile(kind: CompileKind = 'full', followUp = false): Promise<vo
     const quick = kind === 'quick' && buildFiles.length > 0 && buildKey === key;
     setStatus(`Compiling${withEngine}…`);
     const started = performance.now();
-    const result = await engine.compile({
+    const options = {
       input: main.content,
       mainTexPath: main.path,
       additionalFiles: [...compiled.files.filter((f) => f !== main), ...(quick ? buildFiles : [])],
@@ -1700,11 +1700,21 @@ async function compile(kind: CompileKind = 'full', followUp = false): Promise<vo
       biber: !quick && bibliographyTool(compiled.files) === 'biber',
       rerun: !quick, // run LaTeX again so references and citations resolve
       remoteEndpoint: PACKAGE_SERVER,
-    });
+    };
+    let result = await engine.compile(options);
+    // When LaTeX stops at an error, Biber fails after it, and the engine
+    // then keeps only Biber's log (it counts Biber as a LaTeX run), so the
+    // error is lost. One LaTeX run without Biber shows it again.
+    if (!result.success && options.biber && !lastLatexLog(result.logs)) {
+      result = await engine.compile({ ...options, biber: false, rerun: false });
+    }
+    // After an error, a single LaTeX run (a quick compile) can still report
+    // success, with an empty PDF.
+    const pdf = result.success && result.pdf && result.pdf.length > 0 ? result.pdf : null;
     // Keep this compile's build files for the next quick one, if it made a
     // PDF; after an error they may be cut short, so the next compile is a full one.
     try {
-      const kept = result.pdf ? keptBuildFiles(await currentRunner.readProjectFiles(ENGINE_PROJECT_DIR), new Set(compiled.files.map((f) => f.path))) : [];
+      const kept = pdf ? keptBuildFiles(await currentRunner.readProjectFiles(ENGINE_PROJECT_DIR), new Set(compiled.files.map((f) => f.path))) : [];
       if (stale()) return;
       buildFiles = kept;
       buildKey = key;
@@ -1712,7 +1722,7 @@ async function compile(kind: CompileKind = 'full', followUp = false): Promise<vo
       buildFiles = [];
       console.warn('Could not keep the build files', error);
     }
-    const next = quick && result.pdf ? afterQuickCompile(lastLatexLog(result.logs)) : null;
+    const next = quick && pdf ? afterQuickCompile(lastLatexLog(result.logs)) : null;
     if ((next === 'full' || (next === 'quick' && !followUp)) && !compileAgain) {
       compileAgain = next;
       againIsFollowUp = true;
@@ -1730,14 +1740,14 @@ async function compile(kind: CompileKind = 'full', followUp = false): Promise<vo
     const problems = parseLog(lastLatexLog(result.logs), compiled.files);
     showProblems(problems);
     const warnings = problems.filter((p) => p.level === 'warning').length;
-    if (result.success && result.pdf) {
+    if (pdf) {
       try {
         syncTex = result.synctex ? SyncTex.read(result.synctex) : null;
       } catch (error) {
         syncTex = null;
         console.warn('Could not read the SyncTeX file', error);
       }
-      await pdfViewer.show(result.pdf);
+      await pdfViewer.show(pdf);
       if (stale()) return;
       setStatus(`Compiled${withEngine} in ${seconds} s` + (warnings > 0 ? `, ${warnings} warning${warnings > 1 ? 's' : ''}` : ''));
     } else if (problems.some((p) => p.level === 'error')) {
