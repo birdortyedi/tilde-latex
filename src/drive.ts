@@ -27,9 +27,16 @@ export interface Permission {
   emailAddress?: string;
   displayName?: string;
   domain?: string;
+  photoLink?: string;
 }
 
 export type Role = 'writer' | 'reader';
+
+// A Google account as others see it: its name, and the address of its profile photo, if it has one.
+export interface Profile {
+  name: string;
+  photo?: string;
+}
 
 // Changes to a file's details (not its content).
 export interface MetadataChanges {
@@ -44,8 +51,8 @@ export interface Drive {
   findByProperty(key: string, value: string): Promise<DriveFile[]>;
   // A stable id of the signed-in Google account (not the email address).
   whoAmI(): Promise<string>;
-  // The signed-in account's name, as Google shows it, for "who is here".
-  myName(): Promise<string>;
+  // The signed-in account's name and profile photo, as Google shows them, for "who is here".
+  myProfile(): Promise<Profile>;
   list(folderId: string): Promise<DriveFile[]>;
   get(fileId: string): Promise<DriveFile>;
   download(fileId: string): Promise<Uint8Array>;
@@ -140,10 +147,10 @@ export const googleDrive: Drive = {
     return about.user.permissionId;
   },
 
-  async myName() {
-    const about = (await (await request('https://www.googleapis.com/drive/v3/about?fields=user(displayName)')).json()) as
-      { user: { displayName?: string } };
-    return about.user.displayName ?? 'Someone';
+  async myProfile() {
+    const about = (await (await request('https://www.googleapis.com/drive/v3/about?fields=user(displayName,photoLink)')).json()) as
+      { user: { displayName?: string; photoLink?: string } };
+    return { name: about.user.displayName ?? 'Someone', ...(about.user.photoLink ? { photo: about.user.photoLink } : {}) };
   },
 
   // Lists a folder's files and subfolders (not the ones in the trash).
@@ -232,7 +239,7 @@ export const googleDrive: Drive = {
   },
 
   async permissions(fileId) {
-    const fields = 'permissions(id,type,role,emailAddress,displayName,domain)';
+    const fields = 'permissions(id,type,role,emailAddress,displayName,domain,photoLink)';
     return ((await (await request(`${API}/${fileId}/permissions?fields=${fields}`)).json()) as { permissions: Permission[] }).permissions;
   },
 

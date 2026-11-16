@@ -1,3 +1,4 @@
+import * as Y from 'yjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openProject } from './driveProjects';
 import { sharedFileAt } from './sharedDoc';
@@ -32,7 +33,7 @@ async function sharedPaper(makeLink?: MakeLink) {
   for (const item of drive.items.values()) if (item.parentId === folder.id || item.id === png.id) drive.grant(item.id, 'B');
   const picked = [...drive.items.values()].filter((i) => i.grants.has('B')).map((i) => i.id);
   const joined = await joinFromPicked(b, picked);
-  const syncB = new SharedSync(b, store, 'B', 'Bora', joined.loaded, quiet(), undefined, makeLink);
+  const syncB = new SharedSync(b, store, 'B', { name: 'Bora', photo: 'https://lh3.googleusercontent.com/bora' }, joined.loaded, quiet(), undefined, makeLink);
   return { drive, a, b, folder, syncA, syncB, store, joined };
 }
 
@@ -486,6 +487,19 @@ describe('a shared project with direct connections', () => {
     const { syncA, syncB } = await connected();
     expect(syncA.livePeople).toEqual(['Bora']);
     expect(syncB.livePeople).toEqual(['Furkan']);
+  });
+
+  it("shows each other's faces, and finds a connected person's cursor", async () => {
+    const { syncA, syncB } = await connected();
+    expect(syncA.faces).toEqual([{ account: 'B', name: 'Bora', photo: 'https://lh3.googleusercontent.com/bora', live: true }]);
+    expect(syncB.faces).toEqual([{ account: 'A', name: 'Furkan', live: true }]); // Furkan has no photo
+    expect(syncA.cursorOf('B')).toBeNull(); // Bora has no cursor in a file yet
+    const text = syncB.textFor('main.tex')?.text;
+    if (!text) throw new Error('no text');
+    const at = Y.relativePositionToJSON(Y.createRelativePositionFromTypeIndex(text, 5));
+    syncB.awareness?.setLocalStateField('cursor', { anchor: at, head: at });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(syncA.cursorOf('B')).toEqual({ path: 'main.tex', offset: 5 });
   });
 
   it('sends typing at once, without waiting for Drive', async () => {

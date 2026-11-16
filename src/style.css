@@ -149,6 +149,21 @@ input {
 #topbar .right { grid-column: 3; justify-content: flex-end; }
 #topbar button { height: 28px; white-space: nowrap; flex-shrink: 0; }
 #topbar #show-projects { flex-shrink: 1; }
+/* Faces: a person's photo, or their initial on their colour. */
+.avatar { display: inline-grid; place-items: center; flex: none; width: 26px; height: 26px; border-radius: 50%; overflow: hidden; color: #fff; font-weight: 600; font-size: 12px; line-height: 1; }
+.avatar img { display: block; width: 100%; height: 100%; object-fit: cover; }
+/* Who else is here, in the top bar: ringed in their cursor's colour, a green dot while connected directly. */
+#faces { display: flex; align-items: center; gap: 6px; margin-right: 4px; }
+/* With its ring, a face is as big as the account's own photo (28px). */
+#faces .face { position: relative; height: 28px; width: 28px; padding: 0; border: none; border-radius: 50%; background: none; cursor: pointer; }
+#faces .face .avatar { width: 22px; height: 22px; font-size: 11px; box-shadow: 0 0 0 1.5px var(--chrome), 0 0 0 3px var(--ring); }
+#faces .face.live::after { content: ''; position: absolute; right: 0; bottom: 0; width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 2px var(--chrome); }
+#faces .face:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+body.on-projects #faces { display: none; }
+#theme-toggle { display: grid; place-items: center; width: 28px; padding: 0; }
+/* The signed-in account: its face, with "Sign out" in its menu. */
+#account { display: grid; place-items: center; width: 32px; padding: 0; border-radius: 50%; }
+#account .avatar { width: 28px; height: 28px; }
 #sign-in .short { display: none; }
 
 .brand-mark { width: 30px; height: 12px; overflow: visible; }
@@ -182,7 +197,10 @@ body.resizing iframe, body.resizing canvas { pointer-events: none; }
 #side { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .side-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 8px 4px 14px; color: var(--muted); }
 .side-head button { padding: 0 7px; font-size: 16px; line-height: 22px; }
-.side-actions { display: flex; gap: 2px; }
+.side-actions { display: flex; align-items: center; gap: 2px; }
+/* Three icons of one size, centred the same way, so they sit on one line. */
+.side-actions button { display: grid; place-items: center; width: 26px; height: 24px; padding: 0; }
+.side-actions button svg { display: block; }
 
 #tree { flex: 1; overflow: auto; padding: 2px 6px 12px; font-size: 13.5px; }
 #tree ul { list-style: none; margin: 0; padding-left: 12px; }
@@ -344,7 +362,6 @@ body.resizing iframe, body.resizing canvas { pointer-events: none; }
 #sync.saved::before { background: var(--green); }
 #sync.offline, #sync.signin, #sync.error { color: var(--amber); }
 #sync.offline::before, #sync.signin::before, #sync.error::before { background: var(--amber); }
-#people { color: var(--teal); }
 #sync.conflict { color: var(--red); font-weight: 600; }
 #sync.conflict::before { background: var(--red); }
 #sync.viewonly { color: var(--teal); }
@@ -366,7 +383,7 @@ body.resizing iframe, body.resizing canvas { pointer-events: none; }
   color: var(--ink);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
 }
-.menu button { display: block; width: 100%; text-align: left; border: none; background: none; padding: 5px 10px; border-radius: 3px; }
+.menu button { display: block; width: 100%; text-align: left; border: none; background: none; padding: 5px 10px; border-radius: 3px; white-space: nowrap; }
 .menu button:hover:enabled, .menu button:focus-visible { background: var(--hover); outline: none; }
 
 /* Dialogs */
@@ -416,7 +433,7 @@ dialog.wide { width: min(700px, 94vw); max-width: none; padding: 24px 28px; }
 #people-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 7px 4px; border-bottom: 1px solid var(--rule); }
 #people-list li > .select-box, #people-list li > .role { margin-left: auto; }
 #people-list li:last-child { border-bottom: none; }
-#people-list .avatar { flex: none; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; color: #fff; font-weight: 600; font-size: 13px; }
+#people-list .avatar { width: 30px; height: 30px; font-size: 13px; }
 #people-list .who { flex: 1 1 150px; min-width: 0; display: flex; flex-direction: column; }
 #people-list .name, #people-list .email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #people-list .email { color: var(--muted); font-size: 12.5px; }
@@ -441,7 +458,7 @@ dialog.wide { width: min(700px, 94vw); max-width: none; padding: 24px 28px; }
 .cm-editor .cm-tooltip.comment-card { width: min(340px, 80vw); padding: 10px 12px; font: 13px/1.45 var(--ui); border-left: 3px solid var(--amber); }
 .comment-card .replies { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; max-height: 260px; overflow: auto; }
 .comment-card .replies li { display: flex; gap: 8px; }
-.comment-card .avatar { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; color: #fff; font-size: 11px; font-weight: 600; }
+.comment-card .avatar { width: 22px; height: 22px; font-size: 11px; }
 .comment-card .head time { color: var(--muted); font-size: 11.5px; }
 .comment-card p { margin: 1px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .comment-card .write { display: flex; flex-direction: column; gap: 6px; }

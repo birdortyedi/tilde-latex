@@ -1,7 +1,7 @@
 import { addComment, addReply, resolveThread, threads, unresolve, watchComments, type Reply, type Thread } from './comments';
 import type { CardTarget } from './commentsView';
 import type { Editor } from './editor';
-import { colorFor } from './live';
+import { avatar } from './avatar';
 import { notify } from './notices';
 import { sharedFiles } from './sharedDoc';
 import type { SharedSync } from './sharedSync';
@@ -23,7 +23,7 @@ const QUOTE_LENGTH = 70;
 
 export class CommentsUi {
   private sync: SharedSync | null = null;
-  private me = { name: '', account: '' };
+  private me: { name: string; account: string; photo?: string } = { name: '', account: '' };
   private stopWatching: () => void = () => {};
   private cards = new Set<{ dom: HTMLElement; render: () => void }>(); // open thread cards
   private seen = new Set<string>(); // replies already known, so only new ones are announced
@@ -36,7 +36,7 @@ export class CommentsUi {
   }
 
   // A project was opened: comments are for shared projects only.
-  attach(sync: SharedSync | null, me: { name: string; account: string }): void {
+  attach(sync: SharedSync | null, me: { name: string; account: string; photo?: string }): void {
     this.stopWatching();
     this.sync = sync;
     this.me = me;
@@ -200,7 +200,7 @@ export class CommentsUi {
   }
 
   private reply(text: string): Reply {
-    return { author: this.me.name, account: this.me.account, at: Date.now(), text };
+    return { author: this.me.name, account: this.me.account, at: Date.now(), text, ...(this.me.photo ? { photo: this.me.photo } : {}) };
   }
 
   private resolve(id: string, close: () => void): void {
@@ -217,11 +217,6 @@ const replyKey = (_id: string, reply: Reply): string => `${reply.account}|${repl
 
 function replyItem(reply: Reply): HTMLLIElement {
   const item = document.createElement('li');
-  const avatar = document.createElement('span');
-  avatar.className = 'avatar';
-  avatar.style.background = colorFor(reply.account);
-  avatar.textContent = (reply.author.match(/[\p{L}\p{N}]/u)?.[0] ?? '?').toUpperCase();
-  avatar.setAttribute('aria-hidden', 'true');
   const body = document.createElement('div');
   const head = document.createElement('div');
   head.className = 'head';
@@ -235,6 +230,6 @@ function replyItem(reply: Reply): HTMLLIElement {
   const text = document.createElement('p');
   text.textContent = reply.text;
   body.append(head, text);
-  item.append(avatar, body);
+  item.append(avatar(reply.author, reply.account, reply.photo), body);
   return item;
 }

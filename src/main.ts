@@ -15,7 +15,7 @@ import { createProject, lastEdited, listProjects, moveProjectsFolder, openProjec
 import { GROUPS, kitMainFile, STARTERS, type Kit, type StarterGroup } from './starters';
 import { browserDrafts, forgetOtherAccounts, type Draft } from './drafts';
 import { ProjectSync, type DriveChanges, type SyncState } from './sync';
-import { SharedSync } from './sharedSync';
+import { SharedSync, type Face } from './sharedSync';
 import { browserShared, type SharedCopy } from './sharedStore';
 import { sharedFiles } from './sharedDoc';
 import {
@@ -50,6 +50,7 @@ import { ownStarters, removeStarter, saveStarter, starterFiles, type OwnStarter 
 import { MAX_PEOPLE, peopleCount, peopleOf, type Person } from './people';
 import { CommentsUi } from './commentsUi';
 import { colorFor, webrtcLink } from './live';
+import { avatar } from './avatar';
 
 // Files that TeX Live's basic bundle lacks (TikZ, pgfplots, ...) are fetched
 // one at a time from TeXlyre's public package server.
@@ -108,7 +109,7 @@ const closeProjectsButton = element<HTMLButtonElement>('#close-projects');
 const mainArea = element<HTMLElement>('main');
 const compileButton = element<HTMLButtonElement>('#compile');
 const syncButton = element<HTMLButtonElement>('#sync');
-const peopleLabel = element<HTMLSpanElement>('#people');
+const facesView = element<HTMLDivElement>('#faces');
 const conflictDialog = element<HTMLDialogElement>('#conflict-dialog');
 const conflictPath = element<HTMLElement>('#conflict-path');
 const downloadBothButton = element<HTMLButtonElement>('#download-both');
@@ -116,7 +117,7 @@ const signOutDialog = element<HTMLDialogElement>('#sign-out-dialog');
 const signOutFiles = element<HTMLUListElement>('#sign-out-files');
 const newProjectButton = element<HTMLButtonElement>('#new-project');
 const signInButton = element<HTMLButtonElement>('#sign-in');
-const signOutButton = element<HTMLButtonElement>('#sign-out');
+const accountButton = element<HTMLButtonElement>('#account');
 const newProjectDialog = element<HTMLDialogElement>('#new-project-dialog');
 const newProjectName = element<HTMLInputElement>('#new-project-name');
 const newProjectForm = element<HTMLFormElement>('#new-project-form');
@@ -173,6 +174,7 @@ let syncTex: SyncTex | null = null; // where each part of the PDF came from, fro
 let cursorLine = 1; // in the open file, for "Show in PDF"
 let sync: ProjectSync | SharedSync | null = null; // saves the open project to Drive; null for examples
 let myName = ''; // the signed-in account's name, for "who is here" in shared projects
+let myPhoto: string | undefined; // and its Google profile photo
 let joinedById = new Map<string, Joined>(); // projects others shared with this account, by folder
 let starterList: OwnStarter[] = []; // the user's own starters (see ownStarters.ts)
 let conflictShown = ''; // the file the conflict dialog was last opened for
@@ -543,7 +545,12 @@ function scheduleAutoCompile(): void {
 type AccountState = 'signed-out' | 'signed-in' | 'expired';
 function showAccount(state: AccountState): void {
   signInButton.hidden = state === 'signed-in';
-  signOutButton.hidden = state !== 'signed-in';
+  accountButton.hidden = state !== 'signed-in';
+  if (state === 'signed-in') {
+    accountButton.replaceChildren(avatar(myName, accountId, myPhoto));
+    accountButton.title = `Signed in as ${myName}`;
+    accountButton.setAttribute('aria-label', `${myName}: account`);
+  }
   const [long, short] = signInButton.querySelectorAll('span');
   long.textContent = state === 'expired' ? 'Sign in again' : 'Sign in with Google';
   short.textContent = state === 'expired' ? 'Sign in again' : 'Sign in';
@@ -1281,11 +1288,7 @@ async function renderPeople(): Promise<void> {
   if (sync !== current) return;
   peopleList.replaceChildren(...people.map((person) => {
     const item = document.createElement('li');
-    const avatar = document.createElement('span');
-    avatar.className = 'avatar';
-    avatar.textContent = (person.name.match(/[\p{L}\p{N}]/u)?.[0] ?? '?').toUpperCase();
-    avatar.style.background = colorFor(person.email ?? person.name);
-    avatar.setAttribute('aria-hidden', 'true');
+    const face = avatar(person.name, person.email ?? person.name, person.photo);
     const who = document.createElement('span');
     who.className = 'who';
     const name = document.createElement('span');
@@ -1298,7 +1301,7 @@ async function renderPeople(): Promise<void> {
       email.textContent = person.email;
       who.append(email);
     }
-    item.append(avatar, who);
+    item.append(face, who);
     const label = { owner: 'Owner', writer: 'Can edit', commenter: 'Can comment', reader: 'Can view' }[person.role] ?? person.role;
     if (!owner || person.role === 'owner' || !person.user) {
       const role = document.createElement('span');
@@ -1458,13 +1461,13 @@ interface SharedOpen {
 
 function showProject(plainProject: Project | null, shared?: SharedOpen): void {
   sync?.close();
-  peopleLabel.hidden = true;
+  facesView.hidden = true;
   // An "Allow" notice belongs to the project it was about.
   missingNotice?.remove();
   missingNotice = null;
   missingShown = '';
   if (shared) {
-    sync = new SharedSync(googleDrive, browserShared, accountId, myName, shared.loaded, {
+    sync = new SharedSync(googleDrive, browserShared, accountId, { name: myName, photo: myPhoto }, shared.loaded, {
       stateChanged: showSyncState,
       fileReplaced: () => {},
       filesChanged: showDriveChanges,
@@ -1505,7 +1508,7 @@ function showProject(plainProject: Project | null, shared?: SharedOpen): void {
   showProblems([]);
   showSyncState();
   renderTree();
-  commentsUi.attach(sync instanceof SharedSync ? sync : null, { name: myName, account: accountId });
+  commentsUi.attach(sync instanceof SharedSync ? sync : null, { name: myName, account: accountId, photo: myPhoto });
   if (!project) return;
   if (project.driveId) {
     try { localStorage.setItem(LAST_PROJECT_KEY, project.driveId); } catch { /* storage blocked */ }
@@ -1517,17 +1520,35 @@ function showProject(plainProject: Project | null, shared?: SharedOpen): void {
   preloadEngine();
 }
 
-// Who else has the shared project open, next to the sync status.
+// Who else has the shared project open: their faces in the top bar, ringed
+// in the colour of their cursor, with a green dot while connected directly.
+// A click goes to their cursor.
 function showPeople(): void {
-  const people = sync instanceof SharedSync ? sync.people : [];
-  const live = sync instanceof SharedSync ? sync.livePeople : [];
-  peopleLabel.hidden = people.length === 0;
-  peopleLabel.textContent = people.length === 0 ? ''
-    : `With ${people.length === 1 ? people[0] : `${people.slice(0, -1).join(', ')} and ${people.at(-1)}`}`
-      + (live.length > 0 && live.length >= people.length ? ' · live' : '');
-  peopleLabel.title = live.length > 0
-    ? `Connected directly to ${live.join(', ')}: edits and cursors show up at once.`
-    : 'Who else has this shared project open. Their edits arrive through Google Drive, a few seconds behind.';
+  const faces = sync instanceof SharedSync ? sync.faces : [];
+  facesView.hidden = faces.length === 0;
+  facesView.replaceChildren(...faces.map((face) => {
+    const button = document.createElement('button');
+    button.className = face.live ? 'face live' : 'face';
+    button.style.setProperty('--ring', colorFor(face.account));
+    button.title = face.live ? `${face.name}: connected, typing shows at once. Click to go to their cursor.`
+      : `${face.name}: here, with edits arriving through Google Drive a few seconds behind.`;
+    button.setAttribute('aria-label', button.title);
+    button.append(avatar(face.name, face.account, face.photo));
+    button.addEventListener('click', () => goToCursorOf(face));
+    return button;
+  }));
+}
+
+function goToCursorOf(face: Face): void {
+  const place = sync instanceof SharedSync ? sync.cursorOf(face.account) : null;
+  if (!place) {
+    notify(face.live ? `${face.name} has no cursor in a file right now.`
+      : `${face.name}'s cursor shows once your browsers are connected directly.`, 'info');
+    return;
+  }
+  if (place.path !== activePath) openFile(place.path);
+  reveal('editor');
+  editor.goToOffset(place.offset);
 }
 
 // Images and other files someone else added to the shared project, which
@@ -1684,7 +1705,10 @@ async function handleSignIn(): Promise<void> {
 async function startDrive(): Promise<void> {
   showBusy('Loading your projects…');
   try {
-    [accountId, myName] = await Promise.all([googleDrive.whoAmI(), googleDrive.myName()]);
+    let profile;
+    [accountId, profile] = await Promise.all([googleDrive.whoAmI(), googleDrive.myProfile()]);
+    myName = profile.name;
+    myPhoto = profile.photo;
     // Unsaved edits left in this browser by another Google account are deleted.
     await forgetOtherAccounts(browserDrafts, accountId)
       .catch((error: unknown) => console.warn('Could not clean up the copies kept in the browser', error));
@@ -2623,6 +2647,53 @@ try {
   if (zoom === 'width' || zoom === 'page' || typeof zoom === 'number') pdfViewer.setZoom(zoom);
 } catch { /* defaults */ }
 
+// The editor's text size and whether long lines wrap, remembered in this
+// browser. Ctrl/Cmd with + or − changes the size while typing in the editor
+// (over the PDF, the same keys zoom the PDF); "Aa" in the status bar has both.
+const EDITOR_SIZES = [11, 12, 13, 14, 15, 16, 18, 20, 22, 24];
+const DEFAULT_EDITOR_SIZE = 14;
+const editorLookButton = element<HTMLButtonElement>('#editor-look');
+let editorSize = DEFAULT_EDITOR_SIZE;
+let wrapLines = true;
+try {
+  const size = Number(localStorage.getItem('tilde.editorSize'));
+  if (EDITOR_SIZES.includes(size)) editorSize = size;
+  wrapLines = localStorage.getItem('tilde.wrapLines') !== 'false';
+} catch { /* defaults */ }
+
+function applyEditorLook(): void {
+  editor.setFontSize(editorSize);
+  editor.setWrap(wrapLines);
+  editorLookButton.title = `Text size (${editorSize} px) and line wrapping in the editor`;
+  try {
+    localStorage.setItem('tilde.editorSize', String(editorSize));
+    localStorage.setItem('tilde.wrapLines', String(wrapLines));
+  } catch { /* not remembered */ }
+}
+
+function stepEditorSize(direction: number): void {
+  const index = EDITOR_SIZES.indexOf(editorSize);
+  editorSize = direction === 0 ? DEFAULT_EDITOR_SIZE : EDITOR_SIZES[Math.min(Math.max(index + direction, 0), EDITOR_SIZES.length - 1)];
+  applyEditorLook();
+  setStatus(`Editor text: ${editorSize} px`);
+}
+
+editorLookButton.addEventListener('click', () => openMenu(editorLookButton, [
+  { label: `Text size: ${editorSize} px`, action: () => {}, disabled: true },
+  { label: 'Larger text (Ctrl/Cmd +)', action: () => stepEditorSize(1), disabled: editorSize === EDITOR_SIZES.at(-1) },
+  { label: 'Smaller text (Ctrl/Cmd −)', action: () => stepEditorSize(-1), disabled: editorSize === EDITOR_SIZES[0] },
+  { label: `Usual size (${DEFAULT_EDITOR_SIZE} px)`, action: () => stepEditorSize(0), disabled: editorSize === DEFAULT_EDITOR_SIZE },
+  { label: wrapLines ? '✓ Wrap long lines' : 'Wrap long lines', action: () => { wrapLines = !wrapLines; applyEditorLook(); } },
+]));
+applyEditorLook();
+window.addEventListener('keydown', (event) => {
+  if (!(event.ctrlKey || event.metaKey) || pointerOverPdf || !editorElement.contains(document.activeElement)) return;
+  const direction = event.key === '+' || event.key === '=' ? 1 : event.key === '-' ? -1 : event.key === '0' ? 0 : null;
+  if (direction === null) return;
+  event.preventDefault();
+  stepEditorSize(direction);
+});
+
 // Ctrl/Cmd with + or − (or the mouse wheel) zooms the PDF while the pointer
 // is over it, instead of zooming the whole page. Ctrl/Cmd+0 fits the width.
 let pointerOverPdf = false;
@@ -2730,7 +2801,10 @@ zipInput.addEventListener('change', () => {
   if (file) void importZip(file);
 });
 signInButton.addEventListener('click', () => void handleSignIn());
-signOutButton.addEventListener('click', () => void handleSignOut());
+accountButton.addEventListener('click', () => openMenu(accountButton, [
+  { label: myName, action: () => {}, disabled: true },
+  { label: 'Sign out', action: () => void handleSignOut() },
+]));
 newProjectButton.addEventListener('click', () => {
   newProjectName.value = '';
   newProjectProblem.hidden = true;

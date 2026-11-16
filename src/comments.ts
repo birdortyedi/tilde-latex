@@ -18,6 +18,7 @@ export interface Reply {
   account: string; // the Google account's id, for its colour
   at: number; // milliseconds since 1970
   text: string;
+  photo?: string; // the author's Google profile photo
 }
 
 export interface Thread {

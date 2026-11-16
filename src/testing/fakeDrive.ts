@@ -99,7 +99,7 @@ export class FakeDrive implements Drive {
   }
 
   async whoAmI() { this.check(); return this.account; }
-  async myName() { this.check(); return this.account; }
+  async myProfile() { this.check(); return { name: this.account, photo: `https://lh3.googleusercontent.com/${this.account}` }; }
   async findByProperty(key: string, value: string) {
     this.check();
     return [...this.items.values()].filter((i) => !i.trashed && this.visible(i) && i.appProperties?.[key] === value).map((i) => this.info(i.id));

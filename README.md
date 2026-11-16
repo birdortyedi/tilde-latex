@@ -54,6 +54,7 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - Spell checking by your browser, leaving out commands, labels, citation keys, file names and maths. The editor tells the browser the document's language from `babel` or `polyglossia`; Firefox then checks in that language (if its dictionary is installed), while Chrome, Edge and Safari use the languages set in the browser or the system
 - Multi-file projects with folders: new, upload or drag in files, add from Drive, rename or move, duplicate, delete, choose the main file
 - Panes you can resize and hide (files, source, PDF); one at a time in a narrow window
+- The editor's text size (Ctrl/Cmd and + or − while typing, or "Aa" in the status bar) and whether long lines wrap, remembered in your browser
 
 **Compiling**
 - pdfLaTeX, XeLaTeX and LuaLaTeX from TeX Live 2026, running in your browser (WebAssembly). Tilde picks XeLaTeX by itself when a project loads `fontspec`, `polyglossia` or `unicode-math`, and LuaLaTeX when it runs Lua (`luacode`, `\directlua`); a line `% !TEX program = lualatex` (or `xelatex`, `pdflatex`) in the main file chooses one
@@ -82,7 +83,7 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - Invite people to edit, or only to view (a supervisor, say: they read and compile, and see edits come in). The same panel shows who has access; the owner changes what someone may do or removes them there
 - Comments in the margin: select text and click "Comment" (or Ctrl/Cmd+Alt+M). The words are underlined, and a click opens the thread to reply or resolve. Comments stay on their words while anyone edits around them, are listed under the files, and never go into your `.tex` files; a notice tells you when someone else comments
 - Edits from everyone merge by themselves, even made at the same moment or offline: there is no conflict to resolve, and Ctrl/Cmd+Z undoes only your own edits
-- While you are in the project together, your browsers connect directly to each other: typing shows up at once, with each person's cursor and name. On networks that block direct connections, edits arrive through Drive a few seconds later. The status bar shows who else is there ("With Efecan · live")
+- While you are in the project together, your browsers connect directly to each other: typing shows up at once, with each person's cursor and name. On networks that block direct connections, edits arrive through Drive a few seconds later. The faces of the others who are there show at the top right, ringed in the colour of their cursor, with a green dot while connected directly; click a face to go to that person's cursor
 - The project stays an ordinary LaTeX folder in its owner's Drive: the owner's Tilde keeps the `.tex` files there up to date, and edits made to them outside Tilde (on the Drive website, with Drive for desktop, in another editor) are merged in. One that clashes with an edit made in Tilde at the same place is kept next to it as a copy, "main (changed outside Tilde).tex"
 - Images a co-author adds: if your browsers are connected they arrive at once; otherwise an "Allow" button opens Google's file picker on exactly those files, which is what lets your Tilde read them
 - Leave a project someone shared with you from its ⋯ menu in the project list
@@ -119,6 +120,7 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 | Ctrl/Cmd+V with spreadsheet cells copied | Paste them as a table |
 | Ctrl/Cmd+F | Find and replace in the open file; Enter for the next match, Shift+Enter for the previous one, Esc to close |
 | Ctrl/Cmd and + or −, over the PDF | Zoom the PDF (Ctrl/Cmd+0 fits the width) |
+| Ctrl/Cmd and + or −, in the editor | Larger or smaller text in the editor (Ctrl/Cmd+0 for the usual size) |
 | Esc, on the project page | Back to the open project |
 
 ## Limits, and what to do instead
@@ -129,7 +131,7 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 | **Comments are for shared projects.** | In a project of your own, use `% comments` in the source or the `todonotes` package; share the project and comments appear. |
 | **In a shared project, only the owner invites people** or changes who has access. | Ask the owner. They can also share or stop sharing the folder in Google Drive itself. |
 | **The maths preview is KaTeX, not LaTeX**: some packages' commands are unknown to it, and it says so. | The PDF is always right; the preview is for checking a formula quickly. |
-| **Some networks block direct connections** between browsers (some company and university Wi-Fi). Then others' edits arrive through Drive, a few seconds behind, and their cursors do not show. | Nothing to do: edits still merge. The status bar says "live" when your browsers are connected. |
+| **Some networks block direct connections** between browsers (some company and university Wi-Fi). Then others' edits arrive through Drive, a few seconds behind, and their cursors do not show. | Nothing to do: edits still merge. A green dot on a person's face at the top right means your browsers are connected. |
 | **Images co-authors add stay in the folder `Tilde uploads`** in the owner's Drive, not next to the project's other images. | Tilde finds them there. For a tidy folder, the owner can download the project as a `.zip`, which has every file where it belongs, once the owner's Tilde can read the images (after "Allow", or sent by a co-author's connected browser). |
 | **Deleting a file in a shared project deletes it for everyone**, and Drive's trash cannot bring it back (Tilde asks first). | Download the project as a `.zip` first if you may want the file again, or keep it and stop using it. |
 | **Shared projects have no "Go back to the version from …"** per file. | The owner's `.tex` files in Drive keep Drive's own version history. |
@@ -151,7 +153,7 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - TeX packages are downloaded from TeXlyre's public package server, without any of your data.
 - "Add a paper from its DOI" sends only that DOI to doi.org, which answers with the paper's citation.
 - Sharing the PDF by link makes that PDF viewable by anyone with the link, until you stop sharing it.
-- In a shared project, your co-authors see your name, your edits and your comments. While you are in the project together, your browsers may connect directly (encrypted, with no server of ours in between), so each sees the other's IP address; Google's free STUN server helps them find each other.
+- In a shared project, your co-authors see your name, your Google profile photo, your edits and your comments. While you are in the project together, your browsers may connect directly (encrypted, with no server of ours in between), so each sees the other's IP address; Google's free STUN server helps them find each other.
 - The full [privacy policy](public/privacy.html) is also shown in the app ("Privacy" at the bottom of the projects page). Licenses of everything Tilde serves: [public/licenses/NOTICE.txt](public/licenses/NOTICE.txt).
 
 ## Run it yourself

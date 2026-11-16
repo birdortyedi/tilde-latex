@@ -42,9 +42,10 @@
         </div>
       </div>
       <div class="right">
+        <div id="faces" role="group" aria-label="Who else has this project open" hidden></div>
         <button id="theme-toggle" class="quiet"></button>
         <button id="sign-in"><span class="long">Sign in with Google</span><span class="short">Sign in</span></button>
-        <button id="sign-out" class="quiet" hidden>Sign out</button>
+        <button id="account" class="quiet" aria-haspopup="menu" hidden></button>
       </div>
     </header>
     <dialog id="new-project-dialog" class="wide starters">
@@ -157,10 +158,10 @@
           <span>Files</span>
           <span class="side-actions">
             <button id="go-to" class="quiet" title="Go to a file, heading, label, citation or text (Ctrl/Cmd+K)" aria-label="Go to anything" hidden>
-              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>
+              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.25"/><path d="M10.25 10.25 13.5 13.5"/></svg>
             </button>
-            <button id="add-files" class="quiet" aria-haspopup="menu" title="Add a file" aria-label="Add a file" hidden>+</button>
-            <button id="project-actions" class="quiet" aria-haspopup="menu" title="Project actions" aria-label="Project actions" hidden>⋯</button>
+            <button id="add-files" class="quiet" aria-haspopup="menu" title="Add a file" aria-label="Add a file" hidden><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg></button>
+            <button id="project-actions" class="quiet" aria-haspopup="menu" title="Project actions" aria-label="Project actions" hidden><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="currentColor" stroke="none" fill-rule="nonzero"><circle cx="3.5" cy="8" r="1.1"/><circle cx="8" cy="8" r="1.1"/><circle cx="12.5" cy="8" r="1.1"/></svg></button>
           </span>
         </div>
         <nav id="tree" aria-label="Project files"></nav>
@@ -220,11 +221,11 @@
     <div id="toasts" aria-live="polite"></div>
     <footer id="statusbar">
       <button id="sync" hidden disabled></button>
-      <span id="people" hidden title="Who else has this shared project open"></span>
       <span id="cursor-position"></span>
       <span id="word-count" hidden title="Words in the PDF, including headings, captions and references"></span>
       <button id="problem-count" hidden title="Show or hide the errors and warnings"></button>
       <span id="status">The first compile downloads the TeX engine (about 125 MB).</span>
+      <button id="editor-look" aria-haspopup="menu" title="Text size and line wrapping in the editor">Aa</button>
       <button id="toggle-log" title="Show or hide the full compile log">Log</button>
     </footer>
     <dialog id="ask-dialog">

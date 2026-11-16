@@ -1,6 +1,6 @@
 import * as Y from 'yjs';
 import { SignInNeededError } from './auth';
-import { OfflineError, type Drive } from './drive';
+import { OfflineError, type Drive, type Profile } from './drive';
 import type { DraftStore } from './drafts';
 import type { Project, ProjectFile } from './projects';
 import {
@@ -51,14 +51,22 @@ export interface SharedListener extends SyncListener {
 }
 
 interface Mailbox {
-  // By tab; leads: it keeps the owner's plain files (see isLeader).
-  here?: Record<string, { name: string; at: number; account?: string; leads?: boolean }>;
+  // By tab; leads: it keeps the owner's plain files (see isLeader); photo: the account's Google profile photo.
+  here?: Record<string, { name: string; at: number; account?: string; leads?: boolean; photo?: string }>;
   signals?: Signals; // introductions for direct connections (see live.ts)
 }
 
 // Saving changes for the owner's plain files: never kept as drafts, since the
 // shared document is the copy that matters.
 const noDrafts: DraftStore = { put: async () => {}, remove: async () => {}, list: async () => [], clear: async () => {} };
+
+// Someone else who has the project open, for the faces in the top bar.
+export interface Face {
+  account: string;
+  name: string;
+  photo?: string;
+  live: boolean; // connected directly: their typing and cursor show at once
+}
 
 export class SharedSync {
   readonly conflicts = new Set<string>(); // never any: edits merge
@@ -67,6 +75,7 @@ export class SharedSync {
   readonly ids: SharedIds;
   people: string[] = []; // names of the others who have the project open
   livePeople: string[] = []; // those of them this browser is connected to directly
+  faces: Face[] = []; // the same, with their photos, one per account
   missing = new Map<string, string>(); // binary files this browser cannot read yet: Drive id → path
   state: SyncState = 'saved';
   errorMessage = '';
@@ -74,6 +83,8 @@ export class SharedSync {
   onCanEdit: () => void = () => {}; // a viewer was allowed to edit meanwhile (main.ts opens the project again)
   private accessChecked = 0;
   private stateId: string;
+  private myName: string;
+  private myPhoto: string | undefined;
   private saved: Uint8Array; // the document as it was in Drive when last read or written
   private revision: string | undefined;
   private localChange = false; // edits here since the last save
@@ -115,12 +126,15 @@ export class SharedSync {
     private drive: Drive,
     private store: SharedStore,
     private accountId: string,
-    private myName: string,
+    me: string | Profile, // this account's name (and photo), which the others see
     loaded: LoadedShared,
     listener: SharedListener,
     plain?: Project, // the owner's plain files in the folder; absent for collaborators
     makeLink?: MakeLink, // direct connections to the others (absent: Drive only)
   ) {
+    const profile = typeof me === 'string' ? { name: me } : me;
+    this.myName = profile.name;
+    this.myPhoto = profile.photo;
     this.stateId = loaded.stateId;
     this.doc = loaded.doc;
     this.saved = loaded.saved;
@@ -146,7 +160,7 @@ export class SharedSync {
       this.localChange = renamed;
     }
     if (makeLink) {
-      this.live = new Live(this.doc, this.session, { name: myName, color: colorFor(accountId) }, makeLink,
+      this.live = new Live(this.doc, this.session, { name: this.myName, color: colorFor(accountId), account: accountId }, makeLink,
         () => this.liveChanged(),
         (driveId) => this.bytes.get(driveId),
         (driveId, bytes) => this.fileFromPeer(driveId, bytes));
@@ -168,6 +182,22 @@ export class SharedSync {
     this.live = null;
     this.localChange = false;
     this.update();
+  }
+
+  // Where someone's cursor is, if their browser is connected directly to this one.
+  cursorOf(account: string): { path: string; offset: number } | null {
+    for (const state of this.live?.awareness.getStates().values() ?? []) {
+      const { user, cursor } = state as { user?: { account?: string }; cursor?: { head?: unknown } };
+      if (user?.account !== account || !cursor?.head) continue;
+      try {
+        const place = Y.createAbsolutePositionFromRelativePosition(Y.createRelativePositionFromJSON(cursor.head), this.doc);
+        const entry = place && sharedFiles(this.doc).find((e) => e.text === place.type);
+        if (place && entry) return { path: entry.path, offset: place.index };
+      } catch {
+        // A cursor in text that is gone: none.
+      }
+    }
+    return null;
   }
 
   // The shared file in Drive, which everyone in the project may open.
@@ -583,7 +613,16 @@ export class SharedSync {
     const names = (entries: typeof others) => [...new Map(entries.map(([, h]) => [h.account ?? h.name, h.name])).values()].sort();
     const people = names(others);
     const livePeople = names(others.filter(([session]) => connected.has(session)));
-    if (people.join('\n') === this.people.join('\n') && livePeople.join('\n') === this.livePeople.join('\n')) return;
+    // One face per account: live if any of its tabs is connected.
+    const faces = new Map<string, Face>();
+    for (const [session, h] of others) {
+      const account = h.account ?? h.name;
+      const face = faces.get(account) ?? { account, name: h.name, live: false };
+      faces.set(account, { ...face, photo: face.photo ?? h.photo, live: face.live || connected.has(session) });
+    }
+    const sortedFaces = [...faces.values()].sort((a, b) => a.name.localeCompare(b.name));
+    if (JSON.stringify(sortedFaces) === JSON.stringify(this.faces)) return;
+    this.faces = sortedFaces;
     const arrived = people.length > this.people.length;
     this.people = people;
     this.livePeople = livePeople;
@@ -847,7 +886,7 @@ export class SharedSync {
       }));
       this.here = fresh(box.here);
       const beat = !this.readOnly && (now - this.lastBeat >= HEARTBEAT || !this.here[this.session]);
-      if (beat) this.here[this.session] = { name: this.myName, at: now, account: this.accountId, leads: this.leading };
+      if (beat) this.here[this.session] = { name: this.myName, at: now, account: this.accountId, leads: this.leading, ...(this.myPhoto ? { photo: this.myPhoto } : {}) };
       const signals = await this.live?.step(Object.keys(this.here), box.signals ?? {}) ?? null;
       if (this.closed) return; // left meanwhile: do not say "here" again
       if (beat || signals) {

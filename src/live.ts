@@ -93,7 +93,7 @@ export class Live {
   constructor(
     private doc: Y.Doc,
     readonly session: string, // this tab
-    user: { name: string; color: string },
+    user: { name: string; color: string; account: string },
     private makeLink: MakeLink,
     private changed: () => void, // the set of connected peers changed
     // Binary files this browser has, for peers that may not read them from Drive yet.
@@ -101,7 +101,7 @@ export class Live {
     private fileArrived: (driveId: string, bytes: Uint8Array) => void,
   ) {
     this.awareness = new awarenessProtocol.Awareness(doc);
-    this.awareness.setLocalStateField('user', { name: user.name, color: user.color, colorLight: `${user.color}33` });
+    this.awareness.setLocalStateField('user', { name: user.name, color: user.color, colorLight: `${user.color}33`, account: user.account });
     doc.on('update', this.onDocUpdate);
     this.awareness.on('update', this.onAwarenessUpdate);
   }

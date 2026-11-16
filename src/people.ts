@@ -11,6 +11,7 @@ export interface Person {
   email?: string;
   role: string; // "owner", "writer", "commenter" or "reader"
   user: boolean; // a person (not a group, a domain or "anyone")
+  photo?: string; // their Google profile photo
 }
 
 const ORDER: Record<string, number> = { owner: 0, writer: 1, commenter: 2, reader: 3 };
@@ -20,7 +21,7 @@ function personFrom(permission: Permission): Person {
   const name = permission.type === 'anyone' ? 'Anyone with the link'
     : permission.type === 'domain' ? `Anyone at ${permission.domain ?? 'your organisation'}`
     : permission.displayName || permission.emailAddress || 'Someone';
-  return { permissionId: permission.id, name, email: permission.emailAddress, role: permission.role, user };
+  return { permissionId: permission.id, name, email: permission.emailAddress, role: permission.role, user, ...(permission.photoLink ? { photo: permission.photoLink } : {}) };
 }
 
 // The owner first, then those who may edit, then those who may view, each by name.

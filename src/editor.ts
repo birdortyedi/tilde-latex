@@ -1,5 +1,5 @@
 import { basicSetup } from 'codemirror';
-import { EditorSelection, EditorState, Prec, type Extension, type TransactionSpec } from '@codemirror/state';
+import { Compartment, EditorSelection, EditorState, Prec, type Extension, type TransactionSpec } from '@codemirror/state';
 import { EditorView, keymap, scrollPastEnd, tooltips } from '@codemirror/view';
 import { lintGutter, setDiagnostics, type Diagnostic } from '@codemirror/lint';
 import { HighlightStyle, StreamLanguage, syntaxHighlighting } from '@codemirror/language';
@@ -38,7 +38,7 @@ const latexColours = HighlightStyle.define([
 ]);
 
 const look = EditorView.theme({
-  '&': { height: '100%', backgroundColor: 'var(--editor)', color: 'var(--ink)', fontSize: '14px' },
+  '&': { height: '100%', backgroundColor: 'var(--editor)', color: 'var(--ink)', fontSize: 'var(--editor-size, 14px)' },
   '.cm-scroller': { fontFamily: 'var(--mono)', lineHeight: '1.6' },
   '.cm-content': { caretColor: 'var(--ink)', paddingBlock: '10px' },
   '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--ink)' },
@@ -82,6 +82,8 @@ export class Editor {
   private readOnly = false; // a project this account may only view
   private comments = new Map<string, CommentRange[]>(); // by file path, in shared projects
   private commenting: Extension;
+  private wrapping = new Compartment(); // long lines wrap, or scroll sideways
+  private wrap = true;
 
   constructor(
     parent: HTMLElement,
@@ -136,6 +138,13 @@ export class Editor {
   forget(path: string): void {
     this.states.delete(path);
     if (this.currentPath === path) this.currentPath = null;
+  }
+
+  // Puts the cursor at an offset of the open file and scrolls it into the middle.
+  goToOffset(offset: number): void {
+    const at = Math.min(Math.max(offset, 0), this.view.state.doc.length);
+    this.view.dispatch({ selection: { anchor: at }, effects: EditorView.scrollIntoView(at, { y: 'center' }) });
+    this.view.focus();
   }
 
   // Selects a line (1 = first) of the open file and scrolls it into the middle.
@@ -247,6 +256,21 @@ export class Editor {
     return setDiagnostics(state, diagnostics);
   }
 
+  // The text size, in pixels (set on the page as --editor-size).
+  setFontSize(pixels: number): void {
+    this.view.dom.parentElement?.style.setProperty('--editor-size', `${pixels}px`);
+    this.view.requestMeasure();
+  }
+
+  // Whether long lines wrap onto the next line, or the text scrolls sideways.
+  setWrap(wrap: boolean): void {
+    if (wrap === this.wrap) return;
+    this.wrap = wrap;
+    const effects = this.wrapping.reconfigure(wrap ? EditorView.lineWrapping : []);
+    this.view.dispatch({ effects });
+    for (const [path, state] of this.states) this.states.set(path, state.update({ effects }).state);
+  }
+
   get isReadOnly(): boolean {
     return this.readOnly;
   }
@@ -308,7 +332,7 @@ export class Editor {
           return { left: box.left + 6, right: box.right - 6, top: box.top, bottom: box.bottom };
         } }),
         lintGutter(),
-        EditorView.lineWrapping,
+        this.wrapping.of(this.wrap ? EditorView.lineWrapping : []),
         this.language,
         latexSpellcheck,
         findPanel,
