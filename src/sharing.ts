@@ -97,7 +97,8 @@ export async function joinedProjects(drive: Drive, rootId: string): Promise<Join
   const file = await joinedFile(drive, rootId);
   if (!file) return [];
   try {
-    return JSON.parse(new TextDecoder().decode(await drive.download(file.id))) as Joined[];
+    const list: unknown = JSON.parse(new TextDecoder().decode(await drive.download(file.id)));
+    return Array.isArray(list) ? list.filter((j): j is Joined => typeof j?.folderId === 'string' && typeof j?.stateId === 'string') : [];
   } catch {
     return [];
   }
@@ -105,8 +106,16 @@ export async function joinedProjects(drive: Drive, rootId: string): Promise<Join
 
 // Adds a project to the list, or updates its name.
 export async function rememberJoined(drive: Drive, rootId: string, joined: Joined): Promise<void> {
-  const list = (await joinedProjects(drive, rootId)).filter((j) => j.stateId !== joined.stateId);
-  list.push(joined);
+  await writeJoined(drive, rootId, [...(await joinedProjects(drive, rootId)).filter((j) => j.stateId !== joined.stateId), joined]);
+}
+
+// Leaving a project: it leaves the list. The owner still shares the folder
+// (only they can stop that, in Drive), so the join link brings it back.
+export async function forgetJoined(drive: Drive, rootId: string, folderId: string): Promise<void> {
+  await writeJoined(drive, rootId, (await joinedProjects(drive, rootId)).filter((j) => j.folderId !== folderId));
+}
+
+async function writeJoined(drive: Drive, rootId: string, list: Joined[]): Promise<void> {
   const bytes = new TextEncoder().encode(JSON.stringify(list));
   const file = await joinedFile(drive, rootId);
   if (file) await drive.updateFile(file.id, bytes);

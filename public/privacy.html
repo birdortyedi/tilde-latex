@@ -26,7 +26,7 @@
   <body>
     <main>
       <h1>Privacy</h1>
-      <p class="updated">Tilde · LaTeX editor · last changed 15 November 2026</p>
+      <p class="updated">Tilde · LaTeX editor · last changed 16 November 2026</p>
 
       <p class="short"><strong>In short:</strong> Tilde has no server and no database. Your documents go
         from your browser to your own Google Drive and nowhere else. Tilde never receives your files,
@@ -48,15 +48,34 @@
           settings on its own folders and files (such as a project's main file).</li>
         <li>Google gives Tilde an access token that lasts about an hour. It stays in your browser tab
           and is gone when you close the tab or sign out.</li>
-        <li>Tilde reads one value about your account from Google: an anonymous account number, used only
-          in your browser to keep unsaved edits apart if several people use the same computer. It does
-          not read your name, email address or contacts.</li>
+        <li>Tilde reads two values about your account from Google: an anonymous account number, used in
+          your browser to keep unsaved edits apart if several people use the same computer, and your name
+          as Google shows it, which co-authors of a shared project see (below). It does not read your
+          email address or contacts.</li>
+      </ul>
+
+      <h2>Shared projects</h2>
+      <p>When you share a project, or join one someone shared with you:</p>
+      <ul>
+        <li>The project's folder is shared through Google Drive with the people you name; Google emails
+          them a link. Everyone in the project can read and change its files.</li>
+        <li>Tilde keeps three of its own items in the project's folder: the project's text, which merges
+          everyone's edits; a mailbox file with the names of the people who have the project open right
+          now; and a folder for images that co-authors add.</li>
+        <li>While two people have the project open, their browsers may connect directly to each other, to
+          send typing and cursor positions at once. Each then sees the other's IP address, as with any
+          direct connection, and Google's free STUN server (<code>stun.l.google.com</code>) learns your
+          IP address to help make the connection. The connection is encrypted, and nothing passes through
+          a server of Tilde's: Tilde has none.</li>
+        <li>Leaving a project removes it from your list. To stop sharing a project with someone, its owner
+          removes them in Google Drive.</li>
       </ul>
 
       <h2>What Tilde keeps in your browser</h2>
       <ul>
         <li><strong>Unsaved edits</strong>, until they reach your Drive, so a closed tab or a lost network
-          loses nothing. Signing out deletes them, after offering to download anything not yet saved.</li>
+          loses nothing (for a shared project, its whole text). Signing out deletes them, after offering
+          to download anything not yet saved.</li>
         <li><strong>The TeX engine and TeX package files</strong>, so later compiles are fast and work offline.
           These contain nothing of yours.</li>
         <li><strong>Small settings</strong>: light or dark, pane sizes, PDF zoom, auto-compile, how the project
@@ -66,8 +85,11 @@
 
       <h2>What goes to other services, and when</h2>
       <ul>
-        <li><strong>Google</strong>, for sign-in, Google Drive and the file picker, under
+        <li><strong>Google</strong>, for sign-in, Google Drive and the file picker, and in shared projects for
+          finding a direct connection (STUN), under
           <a href="https://policies.google.com/privacy">Google's privacy policy</a>.</li>
+        <li><strong>Your co-authors' browsers</strong>, in a shared project you have open at the same time:
+          your edits, cursor position and name, directly.</li>
         <li><strong>TeXlyre's TeX package server</strong> (<code>texlive2026.texlyre.org</code>): the names of
           TeX package files that a document needs and that are not built in, such as TikZ. Never the
           document itself.</li>

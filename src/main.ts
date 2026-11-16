@@ -16,10 +16,11 @@ import { GROUPS, kitMainFile, STARTERS, type Kit, type StarterGroup } from './st
 import { browserDrafts, forgetOtherAccounts, type Draft } from './drafts';
 import { ProjectSync, type DriveChanges, type SyncState } from './sync';
 import { SharedSync } from './sharedSync';
-import { browserShared } from './sharedStore';
+import { webrtcLink } from './live';
+import { browserShared, type SharedCopy } from './sharedStore';
 import { sharedFiles } from './sharedDoc';
 import {
-  invite, joinedProjects, joinFromPicked, joinLink, joinTarget, loadShared, makeShared, rememberJoined, sharedStateIn,
+  forgetJoined, invite, joinedProjects, joinFromPicked, joinLink, joinTarget, loadShared, makeShared, rememberJoined, sharedStateIn,
   type Joined, type LoadedShared,
 } from './sharing';
 import * as Y from 'yjs';
@@ -642,6 +643,7 @@ function renderProjectList(): void {
     // A project shared with this account belongs to someone else: no renaming or deleting it here.
     more.addEventListener('click', () => openMenu(more, joinedById.has(row.id) ? [
       { label: 'Open', action: () => void openProjectById(row.id) },
+      { label: 'Leave…', action: () => void leaveProject(row.id, row.name), danger: true },
     ] : [
       { label: 'Open', action: () => void openProjectById(row.id) },
       { label: 'Download as .zip', action: () => void downloadProjectZip(row.id) },
@@ -745,6 +747,27 @@ async function renameProject(id: string, name: string): Promise<void> {
   }
 }
 
+// Leaves a project someone else shared: it leaves the project list. The
+// project itself stays in its owner's Drive, with everyone's edits.
+async function leaveProject(id: string, name: string): Promise<void> {
+  if (!rootId) return;
+  const root = rootId;
+  if (!await askConfirm(`Leave "${name}"? It leaves your project list; the project stays in its owner's Drive with everyone's edits. `
+    + 'The link they sent you brings it back. To stop sharing it with you, the owner removes you in Google Drive.', 'Leave')) return;
+  try {
+    if (project?.driveId === id) {
+      await sync?.saveNow();
+      showProject(null);
+    }
+    await forgetJoined(googleDrive, root, id);
+    await browserShared.remove(accountId, id).catch(() => {});
+    await refreshProjects();
+    notify(`Left "${name}".`);
+  } catch (error) {
+    showError(error);
+  }
+}
+
 async function deleteProject(id: string, name: string): Promise<void> {
   if (!await askConfirm(`Delete the project "${name}"? Its folder goes to the trash in your Google Drive, where you can restore it for 30 days.`, 'Delete')) return;
   try {
@@ -839,6 +862,9 @@ async function downloadProjectZip(id?: string): Promise<void> {
       if (!folder) return;
       showBusy(`Reading ${folder.name}…`);
       target = await openProject(googleDrive, folder);
+      // A shared project's newest text is in its shared file; the plain files may lag behind.
+      const stateId = await sharedStateIn(googleDrive, folder.id);
+      if (stateId) target = sharedSnapshot((await loadShared(googleDrive, stateId)).doc, target);
       hideBusy();
     }
     if (!target) return;
@@ -847,6 +873,20 @@ async function downloadProjectZip(id?: string): Promise<void> {
   } catch (error) {
     showError(error);
   }
+}
+
+// A shared project as it is now: the text of its shared file, and its binary
+// files from the plain ones (those this account may read).
+function sharedSnapshot(doc: Y.Doc, plain: Project): Project {
+  const files: ProjectFile[] = [];
+  for (const entry of sharedFiles(doc)) {
+    if (entry.text) files.push({ path: entry.path, content: entry.text.toString() });
+    else {
+      const file = plain.files.find((f) => f.driveId === entry.driveId || f.path === entry.path);
+      if (file) files.push({ path: entry.path, content: file.content });
+    }
+  }
+  return { ...plain, files };
 }
 
 // Renames the projects folder. Tilde created it, so this works without the
@@ -921,6 +961,26 @@ async function importZip(file: File): Promise<void> {
   }
   const name = await askProjectName(`Name for the imported project (${files.length} files):`, file.name.replace(/\.zip$/i, ''));
   if (name) await createAndOpen(name, files);
+}
+
+// Edits this browser kept for the project before it became shared (made
+// offline on this computer, say): they join it as copies, so nothing is lost
+// and nothing written over.
+async function keepDraftsFromBeforeSharing(shared: SharedSync): Promise<void> {
+  try {
+    const old = (await browserDrafts.list()).filter((d) => d.accountId === accountId && d.projectId === shared.ids.folderId);
+    for (const draft of old) {
+      const now = shared.project.files.find((f) => f.path === draft.path)?.content;
+      if (now !== draft.content) {
+        const path = draft.path.replace(/(\.[^./]+)?$/, (extension) => ` (not saved before sharing)${extension}`);
+        await shared.addFile(path, draft.content);
+        notify(`${draft.path} had edits on this computer from before the project was shared. They are kept as ${path}.`, 'info');
+      }
+      await browserDrafts.remove(draft);
+    }
+  } catch (error) {
+    console.warn('Could not look at the edits kept from before sharing', error);
+  }
 }
 
 // "Share…" in the project menu: shares the open project with a co-author.
@@ -1016,7 +1076,9 @@ function showProject(plainProject: Project | null, shared?: SharedOpen): void {
       filesChanged: showDriveChanges,
       peopleChanged: showPeople,
       missingChanged: showMissing,
-    }, shared.plain);
+      notice: (text) => notify(text, 'info'),
+    }, shared.plain, typeof RTCPeerConnection === 'undefined' ? undefined : webrtcLink);
+    void keepDraftsFromBeforeSharing(sync);
   } else {
     sync = plainProject?.driveId
       ? new ProjectSync(googleDrive, browserDrafts, accountId, plainProject, {
@@ -1055,23 +1117,32 @@ function showProject(plainProject: Project | null, shared?: SharedOpen): void {
 // Who else has the shared project open, next to the sync status.
 function showPeople(): void {
   const people = sync instanceof SharedSync ? sync.people : [];
+  const live = sync instanceof SharedSync ? sync.livePeople : [];
   peopleLabel.hidden = people.length === 0;
   peopleLabel.textContent = people.length === 0 ? ''
-    : `With ${people.length === 1 ? people[0] : `${people.slice(0, -1).join(', ')} and ${people.at(-1)}`}`;
+    : `With ${people.length === 1 ? people[0] : `${people.slice(0, -1).join(', ')} and ${people.at(-1)}`}`
+      + (live.length > 0 && live.length >= people.length ? ' · live' : '');
+  peopleLabel.title = live.length > 0
+    ? `Connected directly to ${live.join(', ')}: edits and cursors show up at once.`
+    : 'Who else has this shared project open. Their edits arrive through Google Drive, a few seconds behind.';
 }
 
 // Images and other files someone else added to the shared project, which
 // this browser may only read once the user allows them in the Picker.
 let missingShown = '';
+let missingNotice: HTMLElement | null = null;
 function showMissing(): void {
   renderTree();
-  if (!(sync instanceof SharedSync) || sync.missing.size === 0) return;
-  const shared = sync;
-  const key = [...shared.missing.keys()].sort().join(',');
+  const shared = sync instanceof SharedSync ? sync : null;
+  const key = shared ? [...shared.missing.keys()].sort().join(',') : '';
   if (key === missingShown) return; // asked already
+  // Files that arrived meanwhile (from a co-author's browser, say) need no asking any more.
+  missingNotice?.remove();
+  missingNotice = null;
   missingShown = key;
+  if (!shared || shared.missing.size === 0) return;
   const paths = [...shared.missing.values()];
-  notify(`${paths.join(', ')} ${paths.length === 1 ? 'was' : 'were'} added by someone else. Google lets Tilde read ${paths.length === 1 ? 'it' : 'them'} once you allow it.`,
+  missingNotice = notify(`${paths.join(', ')} ${paths.length === 1 ? 'was' : 'were'} added by someone else. Google lets Tilde read ${paths.length === 1 ? 'it' : 'them'} once you allow it.`,
     'info', { label: 'Allow', run: () => void allowMissing(shared) });
 }
 
@@ -1229,7 +1300,8 @@ async function startDrive(): Promise<void> {
 async function handleSignOut(): Promise<void> {
   await sync?.saveNow();
   try {
-    unsavedAtSignOut = [...await browserDrafts.list(), ...(await browserShared.list()).flatMap(sharedDrafts)];
+    const shared = await Promise.all((await browserShared.list()).map(sharedDrafts));
+    unsavedAtSignOut = [...await browserDrafts.list(), ...shared.flat()];
   } catch {
     unsavedAtSignOut = [];
   }
@@ -1247,10 +1319,19 @@ async function handleSignOut(): Promise<void> {
 }
 
 // The text files of a shared project's unsaved copy, to offer for download like drafts.
-function sharedDrafts(copy: { accountId: string; projectId: string; projectName: string; update: Uint8Array }): Draft[] {
+// Only the files whose text Drive's shared file does not have yet (all of
+// them if Drive cannot be asked, offline say).
+async function sharedDrafts(copy: SharedCopy): Promise<Draft[]> {
   const doc = new Y.Doc();
   Y.applyUpdate(doc, copy.update);
-  return sharedFiles(doc).flatMap((entry) => (entry.text
+  let inDrive: Map<string, string> | null = null;
+  try {
+    const stateId = joinedById.get(copy.projectId)?.stateId ?? await sharedStateIn(googleDrive, copy.projectId);
+    if (stateId) inDrive = new Map(sharedFiles((await loadShared(googleDrive, stateId)).doc).map((e) => [e.path, e.text?.toString() ?? '']));
+  } catch {
+    // Not reachable: list them all.
+  }
+  return sharedFiles(doc).flatMap((entry) => (entry.text && inDrive?.get(entry.path) !== entry.text.toString()
     ? [{ accountId: copy.accountId, projectId: copy.projectId, projectName: copy.projectName, path: entry.path, content: entry.text.toString() }]
     : []));
 }
@@ -1697,6 +1778,13 @@ async function addFromDrive(folder?: string): Promise<void> {
   try {
     let picked = await pickUsableFiles('Pick files to add to this project', projectSync.project.driveId);
     if (picked.length === 0) return;
+    if (projectSync instanceof SharedSync) {
+      // The plain files in a shared project's folder are copies of its text, kept by the owner's Tilde: not new files.
+      const already = picked.filter((f) => projectSync.belongs(f.id));
+      if (already.length > 0) notify(`${already.map((f) => f.name).join(', ')} ${already.length === 1 ? 'is' : 'are'} part of this shared project already.`, 'info');
+      await addFiles(picked.filter((f) => !projectSync.belongs(f.id)).map((file) => ({ name: file.name, read: () => googleDrive.download(file.id) })), folder);
+      return;
+    }
     const before = new Set(projectSync.project.files.map((f) => f.driveId));
     await projectSync.checkDrive();
     const inProject = new Set(projectSync.project.files.map((f) => f.driveId));
@@ -1760,8 +1848,13 @@ async function duplicateFile(original: string): Promise<void> {
 async function deleteFile(path: string): Promise<void> {
   const projectSync = sync;
   if (!projectSync) return;
-  if (!await askConfirm(`Delete ${path}? It goes to the trash in your Google Drive, where you can restore it for 30 days.`, 'Delete')) return;
-  if (await runFileAction(`Deleting ${path}`, `Deleted ${path}. You can restore it from the trash in Google Drive for 30 days.`, () => projectSync.deleteFile(path))) {
+  // A shared project's file is deleted for everyone; Drive's trash cannot bring it back.
+  const shared = projectSync instanceof SharedSync;
+  const question = shared ? `Delete ${path} for everyone in this shared project? It cannot be brought back afterwards.`
+    : `Delete ${path}? It goes to the trash in your Google Drive, where you can restore it for 30 days.`;
+  const done = shared ? `Deleted ${path}.` : `Deleted ${path}. You can restore it from the trash in Google Drive for 30 days.`;
+  if (!await askConfirm(question, 'Delete')) return;
+  if (await runFileAction(`Deleting ${path}`, done, () => projectSync.deleteFile(path))) {
     editor.forget(path);
     if (activePath !== path) return;
     activePath = null;
@@ -2247,7 +2340,10 @@ window.addEventListener('keydown', (event) => {
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) void sync?.saveNow();
 });
-window.addEventListener('pagehide', () => void sync?.saveNow());
+window.addEventListener('pagehide', () => {
+  void sync?.saveNow();
+  if (sync instanceof SharedSync) sync.leave();
+});
 window.addEventListener('focus', () => {
   void sync?.checkDrive();
   if (!projectsPage.hidden && rootId) refreshProjects().catch((error: unknown) => console.warn('Could not refresh the project list', error));

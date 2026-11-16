@@ -72,6 +72,14 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - A safe copy of every file: before your first save in a session, Tilde asks Drive to keep the version you opened for good (Drive otherwise drops old versions after 30 days or 100 saves). The file's ⋯ menu then offers "Go back to the version from 10:42", which shows what changed and restores it. Earlier safe copies stay in Drive's "Manage versions"; Tilde never deletes a version
 - Older versions are in Drive's own version history
 
+**Writing together**
+- Share a project from its ⋯ menu ("Share…") with up to four co-authors: Tilde shares its folder through Google Drive, and Google emails them a link. Opening it, they choose the project's files once in Google's file picker, and from then on the project is in their own project list ("Shared with you"), on all their computers
+- Edits from everyone merge by themselves, even made at the same moment or offline: there is no conflict to resolve, and Ctrl/Cmd+Z undoes only your own edits
+- While you are in the project together, your browsers connect directly to each other: typing shows up at once, with each person's cursor and name. On networks that block direct connections, edits arrive through Drive a few seconds later. The status bar shows who else is there ("With Efecan · live")
+- The project stays an ordinary LaTeX folder in its owner's Drive: the owner's Tilde keeps the `.tex` files there up to date, and edits made to them outside Tilde (on the Drive website, with Drive for desktop, in another editor) are merged in. One that clashes with an edit made in Tilde at the same place is kept next to it as a copy, "main (changed outside Tilde).tex"
+- Images a co-author adds: if your browsers are connected they arrive at once; otherwise an "Allow" button opens Google's file picker on exactly those files, which is what lets your Tilde read them
+- Leave a project someone shared with you from its ⋯ menu in the project list
+
 **Projects**
 - Try it without signing in: seven examples (a minimal document, maths, TikZ and pgfplots, BibTeX with natbib, biblatex with Biber, a multi-file project, and Unicode text with XeLaTeX)
 - A project is a normal folder in your Drive, inside a projects folder that you can rename, move, or swap for another one
@@ -106,7 +114,11 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 
 | Limit | What to do instead |
 |---|---|
-| **One person per project.** Real-time co-editing, track changes and comments need a server, and Tilde has none. | Send a co-author the project as a `.zip` (they can import it into their own Tilde) or the PDF. |
+| **Up to 5 people in a project, and no track changes or comments.** | Share with the co-authors who write; send others the PDF. For notes, `% comments` in the source, or the `todonotes` package. |
+| **In a shared project, only the owner invites people**, and only from Tilde. | Ask the owner to share it with more people. They can also share or stop sharing the folder in Google Drive itself. |
+| **Some networks block direct connections** between browsers (some company and university Wi-Fi). Then others' edits arrive through Drive, a few seconds behind, and their cursors do not show. | Nothing to do: edits still merge. The status bar says "live" when your browsers are connected. |
+| **Images co-authors add stay in the folder `Tilde uploads`** in the owner's Drive, not next to the project's other images. | Tilde finds them there; for a tidy folder, the owner can download the project as a `.zip`, which has every file where it belongs. |
+| **Shared projects have no "Go back to the version from …"** per file. | The owner's `.tex` files in Drive keep Drive's own version history. |
 | **Fonts installed on your computer are not found by name**, so `\setmainfont{Arial}` fails. | Put the font file in the project and load it by file name: `\setmainfont{Arial.ttf}[Path=fonts/]`. In Chrome and Edge, "+" → "Add a font from this computer" copies a font and its bold and italic files for you. Or use one that comes with TeX Live, such as TeX Gyre Termes (like Times) or TeX Gyre Heros (like Helvetica). |
 | **EPS images** need a converter program, which a browser cannot run. | Convert them to PDF (most drawing and plotting programs export PDF), then add those. |
 | **No shell escape**, so no `minted`. | Use `listings` for code, which needs no shell escape. |
@@ -124,6 +136,7 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - Your sign-in stays in the browser tab. Unsaved edits are kept in your browser until they reach Drive, and **signing out deletes them** (after offering to download anything unsaved).
 - TeX packages are downloaded from TeXlyre's public package server, without any of your data.
 - "Add a paper from its DOI" sends only that DOI to doi.org, which answers with the paper's citation.
+- In a shared project, your co-authors see your name and your edits. While you are in the project together, your browsers may connect directly (encrypted, with no server of ours in between), so each sees the other's IP address; Google's free STUN server helps them find each other.
 - The full [privacy policy](public/privacy.html) is also shown in the app ("Privacy" at the bottom of the projects page). Licenses of everything Tilde serves: [public/licenses/NOTICE.txt](public/licenses/NOTICE.txt).
 
 ## Run it yourself
@@ -167,6 +180,8 @@ npm run build   # the static site, in dist/
 ```
 
 The editor is CodeMirror, the PDF viewer is PDF.js, and the TeX engine runs in a Web Worker, so typing never waits for a compile.
+
+A shared project's text is one [Yjs](https://github.com/yjs/yjs) document, saved as one file in the project's folder: Yjs merges edits from several people by itself, in any order, so saving never needs to ask whose version wins. The browsers of the people in a project introduce themselves through a small mailbox file in the same folder and then connect directly (WebRTC), so no server is needed for live editing either.
 
 Tilde is written in TypeScript, built with Vite, and served as static files.
 

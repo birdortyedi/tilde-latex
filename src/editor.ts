@@ -11,12 +11,15 @@ import { findPanel } from './findPanel';
 import type { ProjectFile } from './projects';
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
 import type * as Y from 'yjs';
+import type { Awareness } from 'y-protocols/awareness';
 
-// A file of a shared project: its text, which merges everyone's edits, and
-// an undo history of this browser's edits only (see sharedSync.ts).
+// A file of a shared project: its text, which merges everyone's edits, an
+// undo history of this browser's edits only, and the cursors of the people
+// connected directly (see sharedSync.ts and live.ts).
 export interface SharedText {
   text: Y.Text;
   undo: Y.UndoManager;
+  awareness: Awareness | null;
 }
 
 // Colours for LaTeX source. They are CSS variables from style.css, so they
@@ -205,7 +208,7 @@ export class Editor {
       extensions: [
         // Shared text: typing goes into it, others' edits come out of it, and
         // Ctrl/Cmd+Z undoes only this browser's edits.
-        shared ? [yCollab(shared.text, null, { undoManager: shared.undo }), Prec.high(keymap.of(yUndoManagerKeymap))] : [],
+        shared ? [yCollab(shared.text, shared.awareness, { undoManager: shared.undo }), Prec.high(keymap.of(yUndoManagerKeymap))] : [],
         basicSetup,
         syntaxHighlighting(latexColours),
         look,

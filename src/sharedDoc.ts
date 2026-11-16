@@ -93,6 +93,39 @@ export function setSharedMainFile(doc: Y.Doc, path: string): void {
   projectMap(doc).set('mainFile', path);
 }
 
+// The owner's plain files: the Drive version of each that Tilde wrote or
+// saw last, by document id, to notice edits made outside Tilde.
+export function plainRevisions(doc: Y.Doc): Y.Map<string> {
+  return doc.getMap('plain');
+}
+
+// The owner's plain files that Tilde wrote, by document id: the plain
+// file's Drive id. A plain file Tilde wrote for an entry that was renamed or
+// deleted since is moved or deleted, never taken for a new file.
+export function plainFileIds(doc: Y.Doc): Y.Map<string> {
+  return doc.getMap('plainFiles');
+}
+
+// The owner's plain files: fingerprints (textHash, the last few, separated
+// by spaces) of the texts Tilde wrote into each, by document id. Noted and saved before writing, so a tab
+// taking over the plain files knows Tilde's own writes even if the tab that
+// wrote them went away before noting their Drive version.
+export function plainHashes(doc: Y.Doc): Y.Map<string> {
+  return doc.getMap('plainHashes');
+}
+
+// A short fingerprint of a text (FNV-1a, 32 bits, with the length).
+export function textHash(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193) >>> 0;
+  return `${text.length}:${hash.toString(16)}`;
+}
+
+// Points a binary file's entry to another Drive file (it was replaced).
+export function setSharedDriveId(doc: Y.Doc, id: string, driveId: string): void {
+  filesMap(doc).get(id)?.set('driveId', driveId);
+}
+
 export function sharedName(doc: Y.Doc): string {
   return projectMap(doc).get('name') ?? 'Shared project';
 }

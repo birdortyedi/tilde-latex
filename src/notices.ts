@@ -15,7 +15,8 @@ const busyText = element<HTMLSpanElement>('#busy-text');
 export type NoticeKind = 'success' | 'info' | 'error';
 
 // With `action`, the notice has a button for it and stays until closed.
-export function notify(text: string, kind: NoticeKind = 'success', action?: { label: string; run: () => void }): void {
+// Returns the notice, so it can be taken away when it no longer applies.
+export function notify(text: string, kind: NoticeKind = 'success', action?: { label: string; run: () => void }): HTMLElement {
   const toast = document.createElement('div');
   toast.className = `toast ${kind}`;
   toast.setAttribute('role', kind === 'error' ? 'alert' : 'status');
@@ -41,6 +42,7 @@ export function notify(text: string, kind: NoticeKind = 'success', action?: { la
   // Longer texts stay a little longer; errors stay until closed.
   if (kind !== 'error' && !action) setTimeout(() => toast.remove(), Math.min(4000 + text.length * 40, 10_000));
   while (toasts.children.length > 4) toasts.firstElementChild?.remove();
+  return toast;
 }
 
 // Shows the overlay, or changes its text if it is already shown.
