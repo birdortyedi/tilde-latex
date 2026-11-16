@@ -15,7 +15,7 @@ Instructions for Claude Code working on this repository. Read this file fully at
 
 A free, open-source LaTeX editor that runs entirely in the browser. Users sign in with their own Google account, and their projects are stored in their own Google Drive. There is no server or database of our own, no account system of our own, and no cost to anyone. The target users are researchers writing papers, theses and TikZ figures.
 
-In one sentence: **Tilde is Overleaf for one person, with your own storage.** It covers what a solo researcher needs. It does not try to replace Overleaf's collaboration features, because real-time co-editing needs a server. See "Scope" below.
+In one sentence: **Tilde is Overleaf with your own storage.** It covers what a researcher needs, alone or with a few co-authors. Writing together works without a server of our own (Milestone 7): the text merges in each browser, and Drive and direct browser-to-browser connections carry it. See "Scope" below.
 
 The project owner is not a professional web developer. They will test every change by hand in the browser. Write code they can follow, and explain what you did in plain language.
 
@@ -38,7 +38,7 @@ The project owner is not a professional web developer. They will test every chan
 - Offline editing with sync on reconnect
 
 **Out of scope, do not build or suggest:**
-- Real-time co-editing, track changes, or a comment system
+- Track changes or a comment system
 - A visual rich-text editor
 - Shell escape (`minted`, `--shell-escape`)
 - Any feature that needs a server or database
@@ -180,16 +180,23 @@ Mark the current milestone with **← current**. Update this list as work is com
    Everything in "Saving and conflicts" above, with tests.
 5. **Quality of life** ✓ done, tested by the owner. Also added: a full project page, file actions (new, upload, rename/move, duplicate, delete, set main), error icons next to line numbers.
    Clickable error messages that jump to the right file and line. Project list. Import an existing project from a zip or via the Picker. Package caching so repeat compiles are fast.
-6. **Release** ← current
+6. **Release** (phase 2 waits for the domain)
    Decided before Milestone 6: no custom domain for now (cost); a free site on GitHub Pages later.
    - **Phase 1, open-source release that people run on their own computer.** Easy install (`npm run download-engine` keeps only what Tilde uses, Node 22 in `.nvmrc` and `engines`, `npm run dev` always on port 5173). Sign-in for anyone with Tilde's own Google app, switched to "In production" (`drive.file` only, a non-sensitive scope); own IDs through `.env.local`. "Add from Google Drive" explains what is missing when there is no Picker key. README with "Run it yourself" first and a clear "what works / what doesn't" section. Version 1.0.0 with a Git tag and a GitHub Release.
    - **Phase 2, a public site on GitHub Pages**, probably on a custom domain the owner buys (otherwise `birdortyedi.github.io/tilde-latex`). Tilde moved to its own Google Cloud project "Tilde", with no billing linked (decided before phase 2).
      - Done, waiting for the domain: privacy policy (`public/privacy.html`); "Privacy · Source code · Licenses" links on the projects page (AGPL section 13); license texts and `NOTICE.txt` in `public/licenses/`; a Content-Security-Policy in `index.html` (tested: sign-in session, Drive, compiling, the package server, DOI lookups through Crossref, DataCite and mEDRA, the Picker; other sites blocked); the workflow `.github/workflows/deploy.yml`, started by hand for now, with the base path in the repository variable `BASE_PATH`.
      - To do with the domain: DNS records and the custom domain in GitHub Pages, the secret `VITE_GOOGLE_API_KEY` with a Picker key restricted to the site, Google sign-in origin and consent screen (home page, privacy policy, authorized domain verified in Search Console), publishing the Google app, the push trigger in the workflow, a test of signing in again under the CSP. Tell TeXlyre before announcing it.
+7. **Writing together** ← current (phase 1)
+   Decided after a test with two Google accounts (branch `collab-spike`): with `drive.file`, each person's Tilde sees only the files it created and the files that person picked, so files one person adds later are invisible to the other; two browsers on different networks connected directly (WebRTC, Google's STUN server only) with an 18 ms round trip; a Drive file as the go-between gives about 3 s delay. Libraries: Yjs, y-protocols, y-codemirror.next, lib0 (all MIT). Up to 5 people per project. Solo projects stay as they are.
+   - The text of a shared project lives in one file in its folder, `Tilde shared project.tilde` (a Yjs document: files by a stable id, each with its path and text). Everyone picks it once when joining, so files added later travel inside it. Saving reads it, merges, and writes it back only if it lacks something of this browser's; a write that covers someone else's is repaired by their next save, so no conflict dialog.
+   - Only the owner's Tilde writes the plain files in the folder, from the shared file, so the folder stays an ordinary LaTeX project and nothing is created twice.
+   - Images and other binary files stay ordinary Drive files, referenced from the shared file. Those a collaborator adds go into the folder `Tilde uploads`. A file someone else added needs one "Allow" in the Picker before this browser can read it.
+   - `Tilde mailbox.tilde` shows who has the project open (phase 1) and carries the introductions for direct connections (phase 2).
+   - Phase 1: shared projects with about 3 s delay (sharing by email, join link, merging, plain files, Allow, who is here). Phase 2: live typing and cursors over direct connections, with the shared file as fallback. Phase 3: images directly between browsers, edits made outside Tilde, leaving a project, privacy page, README.
 
 ## Known limitations (state these in the README)
 
-- Tilde is for one person working on their own projects. There is no real-time co-editing, track changes or commenting.
+- Up to 5 people can write in one project. There is no track changes or commenting.
 - Shell escape (`minted`, `--shell-escape`) is not supported.
 - Very large documents compile more slowly than with a local TeX Live installation.
 - Free Google accounts have 15 GB of storage, shared with Gmail and Photos.

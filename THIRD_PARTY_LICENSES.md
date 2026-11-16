@@ -16,6 +16,10 @@ This file lists everything Tilde uses that was written by others.
 | @codemirror/merge | 6.12.3 | MIT | https://codemirror.net | The two versions side by side in "Go back to the version from …" |
 | pdfjs-dist | 6.5.438 | Apache-2.0 | https://mozilla.github.io/pdf.js/ | PDF viewer |
 | fflate | 0.8.3 | MIT | https://github.com/101arrowz/fflate | Unpacking .zip files when importing a project |
+| yjs | 13.6.33 | MIT | https://github.com/yjs/yjs | The text of shared projects, which merges edits from several people by itself |
+| y-protocols | 1.0.7 | MIT | https://github.com/yjs/y-protocols | Messages for keeping shared projects in step and showing who is here |
+| y-codemirror.next | 0.3.6 | MIT | https://github.com/yjs/y-codemirror.next | Connects the editor to the shared text |
+| lib0 | 0.2.119 | MIT | https://github.com/dmonad/lib0 | Small helpers that Yjs and its add-ons use |
 | IBM Plex Sans (`@fontsource/ibm-plex-sans`) | 5.3.0 | OFL-1.1 (font); license file in the package | https://github.com/IBM/plex | Font for the interface |
 | IBM Plex Mono (`@fontsource/ibm-plex-mono`) | 5.3.0 | OFL-1.1 (font); license file in the package | https://github.com/IBM/plex | Font for the editor |
 | TeX Live 2026 package files (`texlive-basic.data`) | 2026 | Each package has its own license (mostly LPPL-1.3c, also GPL, OFL, public domain and others); see `LICENSE.TL` inside the bundle | https://tug.org/texlive/ | LaTeX classes, packages and fonts. Served unmodified |

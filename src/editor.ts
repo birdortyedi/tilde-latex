@@ -1,6 +1,6 @@
 import { basicSetup } from 'codemirror';
-import { EditorState, type Extension, type TransactionSpec } from '@codemirror/state';
-import { EditorView, scrollPastEnd } from '@codemirror/view';
+import { EditorSelection, EditorState, Prec, type Extension, type TransactionSpec } from '@codemirror/state';
+import { EditorView, keymap, scrollPastEnd } from '@codemirror/view';
 import { lintGutter, setDiagnostics, type Diagnostic } from '@codemirror/lint';
 import { HighlightStyle, StreamLanguage, syntaxHighlighting } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
@@ -9,6 +9,15 @@ import { latexEditing, type AddCitation } from './latexEditing';
 import { latexSpellcheck } from './spellcheck';
 import { findPanel } from './findPanel';
 import type { ProjectFile } from './projects';
+import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
+import type * as Y from 'yjs';
+
+// A file of a shared project: its text, which merges everyone's edits, and
+// an undo history of this browser's edits only (see sharedSync.ts).
+export interface SharedText {
+  text: Y.Text;
+  undo: Y.UndoManager;
+}
 
 // Colours for LaTeX source. They are CSS variables from style.css, so they
 // follow the light and dark themes by themselves.
@@ -51,6 +60,8 @@ export class Editor {
   onImages: (files: File[], at: number) => void = () => {};
   // "Add a paper from its DOI…" in the \cite{} suggestions (see main.ts).
   onAddCitation: AddCitation = () => Promise.resolve(null);
+  // In a shared project, a file's shared text; null in other projects.
+  shared: (path: string) => SharedText | null = () => null;
   private view: EditorView;
   private states = new Map<string, EditorState>();
   private currentPath: string | null = null;
@@ -80,7 +91,11 @@ export class Editor {
   open(path: string, text: string): void {
     if (this.currentPath) this.states.set(this.currentPath, this.view.state);
     this.currentPath = path;
-    this.view.setState(this.states.get(path) ?? this.newState(path, text));
+    const kept = this.states.get(path);
+    const shared = this.shared(path);
+    // Others may have changed a shared file while it was closed, so it
+    // starts again from the shared text, with the cursor where it was.
+    this.view.setState(shared ? this.newState(path, shared.text.toString(), shared, kept?.selection.main.head) : kept ?? this.newState(path, text));
     this.reportCursor(this.view.state);
     this.view.focus();
   }
@@ -183,10 +198,14 @@ export class Editor {
     this.view.setState(EditorState.create());
   }
 
-  private newState(path: string, text: string): EditorState {
+  private newState(path: string, text: string, shared?: SharedText, cursor?: number): EditorState {
     const state = EditorState.create({
       doc: text,
+      selection: cursor === undefined ? undefined : EditorSelection.cursor(Math.min(cursor, text.length)),
       extensions: [
+        // Shared text: typing goes into it, others' edits come out of it, and
+        // Ctrl/Cmd+Z undoes only this browser's edits.
+        shared ? [yCollab(shared.text, null, { undoManager: shared.undo }), Prec.high(keymap.of(yUndoManagerKeymap))] : [],
         basicSetup,
         syntaxHighlighting(latexColours),
         look,

@@ -47,7 +47,7 @@ export async function pickDriveFolder(title: string): Promise<PickedFile | null>
   return folder ?? null;
 }
 
-async function openPicker(title: string, several: boolean, configure: (view: google.picker.DocsView) => google.picker.DocsView): Promise<PickedFile[]> {
+export async function openPicker(title: string, several: boolean, configure: (view: google.picker.DocsView) => google.picker.DocsView): Promise<PickedFile[]> {
   if (!GOOGLE_API_KEY) {
     throw new Error('Choosing files from Google Drive needs a Google Cloud setup of your own, which this copy of Tilde does not have: '
       + 'see docs/google-setup.md and docs/google-picker-setup.md (free, about 20 minutes). Everything else in Tilde works without it.');

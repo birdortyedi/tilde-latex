@@ -1,6 +1,7 @@
 import { SignInNeededError } from './auth';
 import { FOLDER_TYPE, OfflineError, type Drive, type DriveFile } from './drive';
 import { isTextFile } from './fileTree';
+import { isTildeFile } from './sharing';
 import type { Project, ProjectFile } from './projects';
 
 // Every project is a folder inside this one, at the top of the user's Drive.
@@ -126,11 +127,13 @@ async function inParallel<T>(items: T[], work: (item: T) => Promise<void>): Prom
 }
 
 // Every file in a project folder and its subfolders, with its path in the
-// project. Costs one request per folder, not one per file.
+// project. Costs one request per folder, not one per file. A shared
+// project's own Tilde files (see sharing.ts) are left out.
 async function filesIn(drive: Drive, folderId: string): Promise<{ item: DriveFile; path: string }[]> {
   const files: { item: DriveFile; path: string }[] = [];
   const walk = async (id: string, prefix: string): Promise<void> => {
     await Promise.all((await drive.list(id)).map(async (item) => {
+      if (prefix === '' && isTildeFile(item)) return;
       const path = prefix + item.name;
       if (isFolder(item)) return walk(item.id, `${path}/`);
       files.push({ item, path });

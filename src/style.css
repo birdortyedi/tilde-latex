@@ -327,6 +327,7 @@ body.resizing iframe, body.resizing canvas { pointer-events: none; }
 #sync.saved::before { background: var(--green); }
 #sync.offline, #sync.signin, #sync.error { color: var(--amber); }
 #sync.offline::before, #sync.signin::before, #sync.error::before { background: var(--amber); }
+#people { color: var(--teal); }
 #sync.conflict { color: var(--red); font-weight: 600; }
 #sync.conflict::before { background: var(--red); }
 #problem-count.has-errors { color: var(--red); }

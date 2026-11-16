@@ -12,6 +12,7 @@ declare namespace google.picker {
     setMode(mode: string): DocsView;
     setMimeTypes(mimeTypes: string): DocsView;
     setParent(folderId: string): DocsView;
+    setFileIds(fileIds: string): DocsView; // comma-separated: shows just these files
   }
 
   interface Picker {

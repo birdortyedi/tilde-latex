@@ -10,11 +10,19 @@ import { Editor, type LineMark } from './editor';
 import { PdfViewer, type PdfViewState } from './pdfViewer';
 import type { Zoom } from './pdfZoom';
 import { forgetToken, restoreSignIn, signIn, SignInNeededError, signOut } from './auth';
-import { googleDrive, type DriveFile } from './drive';
+import { FOLDER_TYPE, googleDrive, type DriveFile } from './drive';
 import { createProject, lastEdited, listProjects, moveProjectsFolder, openProject, projectsFolder, setMainFile as saveMainFile } from './driveProjects';
 import { GROUPS, kitMainFile, STARTERS, type Kit, type StarterGroup } from './starters';
 import { browserDrafts, forgetOtherAccounts, type Draft } from './drafts';
 import { ProjectSync, type DriveChanges, type SyncState } from './sync';
+import { SharedSync } from './sharedSync';
+import { browserShared } from './sharedStore';
+import { sharedFiles } from './sharedDoc';
+import {
+  invite, joinedProjects, joinFromPicked, joinLink, joinTarget, loadShared, makeShared, rememberJoined, sharedStateIn,
+  type Joined, type LoadedShared,
+} from './sharing';
+import * as Y from 'yjs';
 import { cachedPackages, REMOTE_DIR, storeNewPackages } from './packageCache';
 import { lastLatexLog, parseLog, type LogProblem } from './logParser';
 import { unzipProject, zipProject } from './zipImport';
@@ -27,7 +35,7 @@ import { convertToPng } from './imageConvert';
 import { fontFamilies, fontFormat, fontspecLine, pickFaces, type Faces, type LocalFont } from './localFonts';
 import { fetchBibtex, keyWithDoi, parseDoi, tidyBibtex } from './doi';
 import { showChanges } from './changesView';
-import { isGoogleDoc, pickDriveFiles, pickDriveFolder, type PickedFile } from './picker';
+import { isGoogleDoc, openPicker, pickDriveFiles, pickDriveFolder, type PickedFile } from './picker';
 import { askConfirm, askText } from './ask';
 import { initLayout, type Pane } from './layout';
 import { initTheme } from './theme';
@@ -91,6 +99,7 @@ const closeProjectsButton = element<HTMLButtonElement>('#close-projects');
 const mainArea = element<HTMLElement>('main');
 const compileButton = element<HTMLButtonElement>('#compile');
 const syncButton = element<HTMLButtonElement>('#sync');
+const peopleLabel = element<HTMLSpanElement>('#people');
 const conflictDialog = element<HTMLDialogElement>('#conflict-dialog');
 const conflictPath = element<HTMLElement>('#conflict-path');
 const downloadBothButton = element<HTMLButtonElement>('#download-both');
@@ -152,7 +161,9 @@ let buildKey = '';
 const ENGINE_PROJECT_DIR = '/home/web_user/project_dir'; // where the engine compiles
 let syncTex: SyncTex | null = null; // where each part of the PDF came from, from the last compile
 let cursorLine = 1; // in the open file, for "Show in PDF"
-let sync: ProjectSync | null = null; // saves the open project to Drive; null for examples
+let sync: ProjectSync | SharedSync | null = null; // saves the open project to Drive; null for examples
+let myName = ''; // the signed-in account's name, for "who is here" in shared projects
+let joinedById = new Map<string, Joined>(); // projects others shared with this account, by folder
 let conflictShown = ''; // the file the conflict dialog was last opened for
 let braveHintShown = false;
 let welcomeShown = false;
@@ -168,6 +179,7 @@ const editor = new Editor(editorElement, (path, text) => {
   cursorLine = line;
   cursorPosition.textContent = `Ln ${line}, Col ${column}`;
 }, () => project?.files ?? []);
+editor.shared = (path) => (sync instanceof SharedSync ? sync.textFor(path) : null);
 const pdfViewer = new PdfViewer(pdfContainer, showPdfState);
 
 // The toolbar above the PDF: zoom, page number, auto-compile, download.
@@ -280,9 +292,7 @@ async function addCitation(given: string | null): Promise<string | null> {
     if (bib.path === activePath) {
       editor.insertText(bib.content.length, gap + entry.text); // through the editor, so Ctrl/Cmd+Z undoes it
     } else {
-      bib.content += gap + entry.text;
-      editor.replace(bib.path, bib.content);
-      sync?.edited(bib.path);
+      insertIntoClosedFile(bib, bib.content.length, gap + entry.text);
     }
     notify(`Added ${entry.key} to ${bib.path}.`);
   } else {
@@ -369,11 +379,19 @@ function loadGraphicx(): string | null {
   if (main.path === activePath) {
     editor.insertText(at, line); // through the editor, so Ctrl/Cmd+Z undoes it
   } else {
-    main.content = main.content.slice(0, at) + line + main.content.slice(at);
-    editor.replace(main.path, main.content);
-    sync?.edited(main.path);
+    insertIntoClosedFile(main, at, line);
   }
   return main.path;
+}
+
+// Inserts text into a file that is not open in the editor. In a shared
+// project it goes into the shared text, so everyone gets it.
+function insertIntoClosedFile(file: ProjectFile, at: number, text: string): void {
+  if (sync instanceof SharedSync && sync.insertText(file.path, at, text)) return;
+  const content = typeof file.content === 'string' ? file.content : '';
+  file.content = content.slice(0, at) + text + content.slice(at);
+  editor.replace(file.path, file.content);
+  sync?.edited(file.path);
 }
 
 pdfViewer.onDoubleClick = (page, x, y) => {
@@ -512,9 +530,17 @@ function showKitSteps(): void {
 }
 
 // After sign-in: reopens the last project, or shows the project page.
+// The projects in the projects folder, and the projects others shared with
+// this account (shown like folders, under the shared folder's id).
+async function listAllProjects(id: string): Promise<DriveFile[]> {
+  const [own, joined] = await Promise.all([listProjects(googleDrive, id), joinedProjects(googleDrive, id)]);
+  joinedById = new Map(joined.map((j) => [j.folderId, j]));
+  return [...own, ...joined.map((j) => ({ id: j.folderId, name: j.name, mimeType: FOLDER_TYPE }))];
+}
+
 async function showDriveProjects(): Promise<void> {
   if (!rootId) return;
-  driveFolders = await listProjects(googleDrive, rootId);
+  driveFolders = await listAllProjects(rootId);
   let last: string | null = null;
   try { last = localStorage.getItem(LAST_PROJECT_KEY); } catch { /* storage blocked */ }
   if (driveFolders.some((f) => f.id === last) && last) await openProjectById(last);
@@ -593,10 +619,11 @@ function renderProjectList(): void {
     const name = document.createElement('span');
     name.className = 'project-name';
     name.textContent = row.name;
-    if (project?.driveId === row.id) {
+    for (const label of [project?.driveId === row.id ? 'Current' : '', joinedById.has(row.id) ? 'Shared with you' : '']) {
+      if (!label) continue;
       const badge = document.createElement('span');
       badge.className = 'badge';
-      badge.textContent = 'Current';
+      badge.textContent = label;
       name.append(badge);
     }
     const edited = document.createElement('span');
@@ -612,7 +639,10 @@ function renderProjectList(): void {
     more.title = `Actions for ${row.name}`;
     more.setAttribute('aria-label', more.title); // screen readers would read only "⋯"
     more.setAttribute('aria-haspopup', 'menu');
-    more.addEventListener('click', () => openMenu(more, [
+    // A project shared with this account belongs to someone else: no renaming or deleting it here.
+    more.addEventListener('click', () => openMenu(more, joinedById.has(row.id) ? [
+      { label: 'Open', action: () => void openProjectById(row.id) },
+    ] : [
       { label: 'Open', action: () => void openProjectById(row.id) },
       { label: 'Download as .zip', action: () => void downloadProjectZip(row.id) },
       { label: 'Rename…', action: () => void renameProject(row.id, row.name) },
@@ -640,7 +670,21 @@ async function openProjectById(id: string): Promise<void> {
     // Save the project we leave. Whatever cannot be saved now stays in the
     // browser and is saved the next time that project is opened.
     await sync?.saveNow();
-    showProject(await openProject(googleDrive, folder));
+    const joined = joinedById.get(id);
+    if (joined) {
+      // Shared with this account: everything is in the shared document.
+      showProject(null, { loaded: await loadShared(googleDrive, joined.stateId) });
+      const name = project?.name;
+      if (rootId && name && name !== joined.name) {
+        // The owner renamed it: the project list follows.
+        rememberJoined(googleDrive, rootId, { ...joined, name })
+          .catch((error: unknown) => console.warn('Could not update the list of shared projects', error));
+      }
+    } else {
+      const [plain, stateId] = await Promise.all([openProject(googleDrive, folder), sharedStateIn(googleDrive, folder.id)]);
+      if (stateId) showProject(null, { loaded: await loadShared(googleDrive, stateId), plain });
+      else showProject(plain);
+    }
     showProjectsPage(false);
     hideBusy();
   } catch (error) {
@@ -676,7 +720,7 @@ async function askProjectName(question: string, suggestion: string, unchanged?: 
 async function refreshProjects(): Promise<void> {
   const id = rootId;
   if (id) {
-    const [folder, projects] = await Promise.all([googleDrive.get(id), listProjects(googleDrive, id)]);
+    const [folder, projects] = await Promise.all([googleDrive.get(id), listAllProjects(id)]);
     if (rootId !== id) return; // signed out or switched folder meanwhile
     rootName = folder.name;
     driveFolders = projects;
@@ -690,6 +734,7 @@ async function renameProject(id: string, name: string): Promise<void> {
   try {
     await googleDrive.updateMetadata(id, { name: newName });
     if (project?.driveId === id) {
+      if (sync instanceof SharedSync) await sync.rename(newName); // co-authors see the new name too
       project.name = newName;
       projectNameLabel.textContent = newName;
     }
@@ -878,15 +923,110 @@ async function importZip(file: File): Promise<void> {
   if (name) await createAndOpen(name, files);
 }
 
-function showProject(newProject: Project | null): void {
+// "Share…" in the project menu: shares the open project with a co-author.
+// The first time, the project becomes a shared project (see sharing.ts).
+// Google emails the co-author a link that opens the join steps.
+async function shareProject(): Promise<void> {
+  const current = sync;
+  if (!current?.project.driveId) return;
+  if (current instanceof SharedSync && !current.isOwner) {
+    notify('Only the owner of this project can invite more people. Ask them to share it.', 'info');
+    return;
+  }
+  const email = (await askText('Share this project with whom? Type their Google account\'s email address. '
+    + 'They can then write in it with you, from their own Tilde. Up to 5 people can work in one project.', ''))?.trim();
+  if (!email) return;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    notify(`"${email}" is not an email address.`, 'error');
+    return;
+  }
+  try {
+    if (current instanceof ProjectSync) {
+      if (!await askConfirm(`Sharing makes "${current.project.name}" a shared project: Tilde adds three of its own files to the project's folder `
+        + 'in your Drive, and edits from everyone merge by themselves. Your .tex files stay in the folder as before.', 'Share')) return;
+      showBusy(`Sharing ${current.project.name}…`);
+      await current.saveNow();
+      if (current.hasUnsaved()) throw new Error('Save the project first: some edits have not reached Google Drive yet.');
+      const loaded = await makeShared(googleDrive, current.project);
+      const plain = current.project;
+      showProject(null, { loaded, plain });
+    } else {
+      showBusy('Sharing…');
+    }
+    const shared = project;
+    if (!shared?.driveId) return;
+    await invite(googleDrive, shared, email, myName, joinLink(shared.driveId));
+    hideBusy();
+    notify(`Shared with ${email}. Google emails them a link to join.`);
+  } catch (error) {
+    showError(error);
+  }
+}
+
+// Opening a join link: the user chooses the shared project's files once in
+// the Picker, which is what lets their Tilde read them (drive.file).
+async function joinProject(folderId: string): Promise<void> {
+  if (!rootId) return;
+  const id = rootId;
+  if (driveFolders.some((f) => f.id === folderId)) {
+    await openProjectById(folderId); // their own project, or one they joined before
+    return;
+  }
+  if (!await askConfirm('A LaTeX project was shared with you. To open it, choose its files once: in the next window, select everything '
+    + '(Ctrl+A, or Cmd+A on a Mac), then click Select.', 'Choose the files')) return;
+  try {
+    if (!await readyForPicker()) return;
+    const picked = await openPicker('Select everything in this folder, then click Select', true, (view) => view
+      .setIncludeFolders(true)
+      .setSelectFolderEnabled(true)
+      .setParent(folderId));
+    if (picked.length === 0) return;
+    showBusy('Opening the shared project…');
+    const { loaded, ids, missing } = await joinFromPicked(googleDrive, picked.map((p) => p.id));
+    if (missing.length > 0) {
+      notify(`${missing.join(' and ')} ${missing.length === 1 ? 'was' : 'were'} not among the chosen files, so you will not see who else is here `
+        + 'or be able to add images. Open the link again and select everything.', 'error');
+    }
+    const name = loaded.doc.getMap<string>('project').get('name') ?? 'Shared project';
+    await rememberJoined(googleDrive, id, { folderId: ids.folderId, stateId: loaded.stateId, name });
+    driveFolders = await listAllProjects(id);
+    await sync?.saveNow();
+    showProject(null, { loaded });
+    showProjectsPage(false);
+    hideBusy();
+    notify(`Joined ${name}. Edits from everyone show up here within a few seconds.`);
+  } catch (error) {
+    showError(error);
+  }
+}
+
+// A shared project to open: its document, and for its owner the plain files in its folder.
+interface SharedOpen {
+  loaded: LoadedShared;
+  plain?: Project;
+}
+
+function showProject(plainProject: Project | null, shared?: SharedOpen): void {
   sync?.close();
-  sync = newProject?.driveId
-    ? new ProjectSync(googleDrive, browserDrafts, accountId, newProject, {
+  peopleLabel.hidden = true;
+  if (shared) {
+    sync = new SharedSync(googleDrive, browserShared, accountId, myName, shared.loaded, {
       stateChanged: showSyncState,
-      fileReplaced: (path, content) => editor.replace(path, content),
+      fileReplaced: () => {},
       filesChanged: showDriveChanges,
-    })
-    : null;
+      peopleChanged: showPeople,
+      missingChanged: showMissing,
+    }, shared.plain);
+  } else {
+    sync = plainProject?.driveId
+      ? new ProjectSync(googleDrive, browserDrafts, accountId, plainProject, {
+        stateChanged: showSyncState,
+        fileReplaced: (path, content) => editor.replace(path, content),
+        filesChanged: showDriveChanges,
+      })
+      : null;
+  }
+  const newProject = sync?.project ?? plainProject;
   project = newProject;
   collapsedFolders = new Set();
   projectNameLabel.textContent = newProject?.name ?? 'Tilde';
@@ -910,6 +1050,43 @@ function showProject(newProject: Project | null): void {
   if (main) openFile(main);
   void sync?.restoreDrafts(); // edits from last time that never reached Drive
   preloadEngine();
+}
+
+// Who else has the shared project open, next to the sync status.
+function showPeople(): void {
+  const people = sync instanceof SharedSync ? sync.people : [];
+  peopleLabel.hidden = people.length === 0;
+  peopleLabel.textContent = people.length === 0 ? ''
+    : `With ${people.length === 1 ? people[0] : `${people.slice(0, -1).join(', ')} and ${people.at(-1)}`}`;
+}
+
+// Images and other files someone else added to the shared project, which
+// this browser may only read once the user allows them in the Picker.
+let missingShown = '';
+function showMissing(): void {
+  renderTree();
+  if (!(sync instanceof SharedSync) || sync.missing.size === 0) return;
+  const shared = sync;
+  const key = [...shared.missing.keys()].sort().join(',');
+  if (key === missingShown) return; // asked already
+  missingShown = key;
+  const paths = [...shared.missing.values()];
+  notify(`${paths.join(', ')} ${paths.length === 1 ? 'was' : 'were'} added by someone else. Google lets Tilde read ${paths.length === 1 ? 'it' : 'them'} once you allow it.`,
+    'info', { label: 'Allow', run: () => void allowMissing(shared) });
+}
+
+async function allowMissing(shared: SharedSync): Promise<void> {
+  try {
+    if (!await readyForPicker()) return;
+    const ids = [...shared.missing.keys()];
+    const picked = await openPicker('Select these files, then click Select', true, (view) => view.setFileIds(ids.join(',')));
+    if (picked.length === 0) return;
+    missingShown = '';
+    await shared.retryMissing();
+    if (shared.missing.size === 0) notify('Allowed. The files are in the project now.');
+  } catch (error) {
+    showError(error);
+  }
 }
 
 // Files added, renamed or deleted on another computer: the editor and the
@@ -1026,16 +1203,21 @@ async function handleSignIn(): Promise<void> {
 async function startDrive(): Promise<void> {
   showBusy('Loading your projects…');
   try {
-    accountId = await googleDrive.whoAmI();
+    [accountId, myName] = await Promise.all([googleDrive.whoAmI(), googleDrive.myName()]);
     // Unsaved edits left in this browser by another Google account are deleted.
     await forgetOtherAccounts(browserDrafts, accountId)
       .catch((error: unknown) => console.warn('Could not clean up the copies kept in the browser', error));
+    for (const copy of await browserShared.list().catch(() => [])) {
+      if (copy.accountId !== accountId) await browserShared.remove(copy.accountId, copy.projectId).catch(() => {});
+    }
     const folder = await projectsFolder(googleDrive);
     rootId = folder.id;
     rootName = folder.name;
     showAccount('signed-in');
     await showDriveProjects();
     hideBusy();
+    const join = pendingJoin();
+    if (join) await joinProject(join);
   } catch (error) {
     showError(error);
   }
@@ -1047,7 +1229,7 @@ async function startDrive(): Promise<void> {
 async function handleSignOut(): Promise<void> {
   await sync?.saveNow();
   try {
-    unsavedAtSignOut = await browserDrafts.list();
+    unsavedAtSignOut = [...await browserDrafts.list(), ...(await browserShared.list()).flatMap(sharedDrafts)];
   } catch {
     unsavedAtSignOut = [];
   }
@@ -1064,6 +1246,15 @@ async function handleSignOut(): Promise<void> {
   signOutDialog.showModal(); // continues in the dialog's "close" handler
 }
 
+// The text files of a shared project's unsaved copy, to offer for download like drafts.
+function sharedDrafts(copy: { accountId: string; projectId: string; projectName: string; update: Uint8Array }): Draft[] {
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, copy.update);
+  return sharedFiles(doc).flatMap((entry) => (entry.text
+    ? [{ accountId: copy.accountId, projectId: copy.projectId, projectName: copy.projectName, path: entry.path, content: entry.text.toString() }]
+    : []));
+}
+
 async function finishSignOut(): Promise<void> {
   rootId = null;
   accountId = '';
@@ -1074,6 +1265,7 @@ async function finishSignOut(): Promise<void> {
   signOut();
   try {
     await browserDrafts.clear();
+    await browserShared.clear();
     localStorage.removeItem(LAST_PROJECT_KEY);
   } catch (error) {
     console.warn('Could not clean up the copies kept in the browser', error);
@@ -1842,6 +2034,7 @@ function jumpTo(problem: LogProblem): void {
 compileButton.addEventListener('click', () => void compile());
 addFilesButton.addEventListener('click', showAddMenu);
 projectActionsButton.addEventListener('click', () => openMenu(projectActionsButton, [
+  ...(project?.driveId ? [{ label: 'Share…', action: () => void shareProject() }] : []),
   { label: 'Download as .zip', action: () => void downloadProjectZip() },
   { label: 'All projects', action: () => showProjectsPage(true) },
 ]));
@@ -2072,7 +2265,27 @@ function reveal(pane: Pane): void {
   layout.reveal(pane);
 }
 
+// A join link (see sharing.ts) is kept in this tab until the user is signed
+// in, then opens the join steps once.
+const JOIN_KEY = 'tilde.join';
+const linked = joinTarget(location.hash);
+if (linked) {
+  try { sessionStorage.setItem(JOIN_KEY, linked); } catch { /* joins only if already signed in */ }
+  history.replaceState(null, '', location.pathname + location.search);
+}
+function pendingJoin(): string | null {
+  let folderId = linked;
+  try {
+    folderId = sessionStorage.getItem(JOIN_KEY) ?? folderId;
+    sessionStorage.removeItem(JOIN_KEY);
+  } catch { /* storage blocked */ }
+  return folderId;
+}
+
 void loadExamples().then(() => {
   if (restoreSignIn()) void startDrive(); // still signed in from before a reload
-  else showProjectsPage(true); // the welcome page, with the examples
+  else {
+    showProjectsPage(true); // the welcome page, with the examples
+    if (linked) notify('A LaTeX project was shared with you. Sign in with the Google account it was shared with to open it.', 'info');
+  }
 });

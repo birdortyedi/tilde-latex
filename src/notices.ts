@@ -14,12 +14,22 @@ const busyText = element<HTMLSpanElement>('#busy-text');
 
 export type NoticeKind = 'success' | 'info' | 'error';
 
-export function notify(text: string, kind: NoticeKind = 'success'): void {
+// With `action`, the notice has a button for it and stays until closed.
+export function notify(text: string, kind: NoticeKind = 'success', action?: { label: string; run: () => void }): void {
   const toast = document.createElement('div');
   toast.className = `toast ${kind}`;
   toast.setAttribute('role', kind === 'error' ? 'alert' : 'status');
   const message = document.createElement('span');
   message.textContent = text;
+  if (action) {
+    const button = document.createElement('button');
+    button.textContent = action.label;
+    button.addEventListener('click', () => {
+      toast.remove();
+      action.run();
+    });
+    message.append(' ', button);
+  }
   const close = document.createElement('button');
   close.className = 'quiet';
   close.textContent = '×';
@@ -29,7 +39,7 @@ export function notify(text: string, kind: NoticeKind = 'success'): void {
   toast.append(message, close);
   toasts.append(toast);
   // Longer texts stay a little longer; errors stay until closed.
-  if (kind !== 'error') setTimeout(() => toast.remove(), Math.min(4000 + text.length * 40, 10_000));
+  if (kind !== 'error' && !action) setTimeout(() => toast.remove(), Math.min(4000 + text.length * 40, 10_000));
   while (toasts.children.length > 4) toasts.firstElementChild?.remove();
 }
 

@@ -1,13 +1,15 @@
 // Tilde's own IndexedDB database in the browser. It holds:
 // - "drafts": edits that have not reached Drive yet (see drafts.ts)
 // - "packages": TeX package files downloaded from the package server (see packageCache.ts)
+// - "shared": shared projects' text with edits that have not reached Drive yet (see sharedStore.ts)
 
 const DB_NAME = 'tilde';
-// 2: drafts are tagged with the Google account. 3: package cache.
-const DB_VERSION = 3;
+// 2: drafts are tagged with the Google account. 3: package cache. 4: shared projects.
+const DB_VERSION = 4;
 
 export const DRAFTS = 'drafts';
 export const PACKAGES = 'packages';
+export const SHARED = 'shared';
 
 let database: Promise<IDBDatabase> | null = null;
 
@@ -22,6 +24,7 @@ function openDatabase(): Promise<IDBDatabase> {
         db.createObjectStore(DRAFTS, { keyPath: ['accountId', 'projectId', 'path'] });
       }
       if (event.oldVersion < 3) db.createObjectStore(PACKAGES, { keyPath: 'path' });
+      if (event.oldVersion < 4) db.createObjectStore(SHARED, { keyPath: ['accountId', 'projectId'] });
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);

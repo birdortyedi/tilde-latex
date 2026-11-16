@@ -32,6 +32,8 @@ export interface Drive {
   findByProperty(key: string, value: string): Promise<DriveFile[]>;
   // A stable id of the signed-in Google account (not the email address).
   whoAmI(): Promise<string>;
+  // The signed-in account's name, as Google shows it, for "who is here".
+  myName(): Promise<string>;
   list(folderId: string): Promise<DriveFile[]>;
   get(fileId: string): Promise<DriveFile>;
   download(fileId: string): Promise<Uint8Array>;
@@ -45,6 +47,9 @@ export interface Drive {
   keepRevision(fileId: string, revisionId: string): Promise<{ id: string; modifiedTime?: string }>;
   // The content of an old version of a file.
   downloadRevision(fileId: string, revisionId: string): Promise<Uint8Array>;
+  // Shares a file or folder Tilde made with someone, who may edit it. Google
+  // emails them, with `message` in the email.
+  share(fileId: string, email: string, message: string): Promise<void>;
 }
 
 // Thrown when Drive cannot be reached because the computer is offline.
@@ -101,6 +106,12 @@ export const googleDrive: Drive = {
     const about = (await (await request(`https://www.googleapis.com/drive/v3/about?fields=user(permissionId)`)).json()) as
       { user: { permissionId: string } };
     return about.user.permissionId;
+  },
+
+  async myName() {
+    const about = (await (await request('https://www.googleapis.com/drive/v3/about?fields=user(displayName)')).json()) as
+      { user: { displayName?: string } };
+    return about.user.displayName ?? 'Someone';
   },
 
   // Lists a folder's files and subfolders (not the ones in the trash).
@@ -177,6 +188,15 @@ export const googleDrive: Drive = {
       body: JSON.stringify({ keepForever: true }),
     });
     return response.json();
+  },
+
+  async share(fileId, email, message) {
+    const params = new URLSearchParams({ sendNotificationEmail: 'true', emailMessage: message });
+    await request(`${API}/${fileId}/permissions?${params}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: 'writer', type: 'user', emailAddress: email }),
+    });
   },
 
   async downloadRevision(fileId, revisionId) {
