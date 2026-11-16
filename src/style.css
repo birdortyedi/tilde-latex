@@ -116,8 +116,8 @@ button.large { padding: 8px 18px; font-size: 15px; }
    it spins while updating. The arrow beside it holds "Compile as you type". */
 .compile-box { display: flex; }
 #pdf-toolbar #compile { display: flex; align-items: center; gap: 7px; padding: 0 10px; border-radius: 4px 0 0 4px; color: var(--ink); font-weight: 500; background: var(--editor); }
-#pdf-toolbar #compile-menu { width: 24px; padding: 0; margin-left: -1px; border-radius: 0 4px 4px 0; background: var(--editor); }
-#pdf-toolbar #compile-menu .chevron { margin: 0 0 3px; }
+#pdf-toolbar #compile-menu { display: grid; place-items: center; width: 24px; padding: 0; margin-left: -1px; border-radius: 0 4px 4px 0; background: var(--editor); }
+#pdf-toolbar #compile-menu svg { display: block; }
 #compile[aria-busy='true'] { cursor: progress; }
 /* The refresh icon carries the dot at its corner, and turns while updating. */
 .update-icon { position: relative; display: grid; place-items: center; }
@@ -131,6 +131,8 @@ button.large { padding: 8px 18px; font-size: 15px; }
 /* In a narrow PDF pane, Update PDF is its icon alone. */
 #preview { container-type: inline-size; }
 @container (max-width: 470px) { #compile-label { display: none; } #pdf-toolbar #compile { padding: 0 8px; } }
+/* On a phone, the toolbar keeps one row: the size menu and "show the cursor's line" go (− and + stay). */
+@container (max-width: 360px) { #pdf-toolbar #zoom-menu, #pdf-toolbar #show-in-pdf { display: none; } }
 #preview { position: relative; }
 #preview.compiling::before {
   content: ''; position: absolute; z-index: 2; top: 0; left: 0; height: 2px; width: 30%; background: var(--teal);
@@ -216,7 +218,7 @@ body.resizing iframe, body.resizing canvas { pointer-events: none; }
 #side > .side-head { padding: 0 6px 0 14px; }
 #editor-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 6px 0 14px; background: var(--chrome); color: var(--muted); font-size: 12.5px; }
 #editor-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#editor-head button, #fold-pdf { display: grid; place-items: center; width: 26px; height: 24px; padding: 0; }
+#editor-head button, #fold-pdf { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; }
 /* A folded pane: a slim strip with its icon and name; a click brings it back. */
 .rail {
   display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 10px; align-self: stretch; height: auto; min-width: 0; padding: 12px 0;
@@ -231,7 +233,7 @@ body.resizing iframe, body.resizing canvas { pointer-events: none; }
 .side-head button { padding: 0 7px; font-size: 16px; line-height: 22px; }
 .side-actions { display: flex; align-items: center; gap: 2px; }
 /* Three icons of one size, centred the same way, so they sit on one line. */
-.side-actions button { display: grid; place-items: center; width: 26px; height: 24px; padding: 0; }
+.side-actions button { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; }
 .side-actions button svg { display: block; }
 
 #tree { flex: 1; overflow: auto; padding: 2px 6px 12px; font-size: 13.5px; }
@@ -384,7 +386,7 @@ body.resizing iframe, body.resizing canvas { pointer-events: none; }
   font-variant-numeric: tabular-nums;
 }
 #statusbar > * { padding: 0 8px; white-space: nowrap; }
-#statusbar button { border: none; background: none; padding: 1px 8px; color: inherit; }
+#statusbar button { height: 20px; border: none; background: none; padding: 0 8px; color: inherit; }
 #statusbar button:hover:enabled { background: var(--hover); }
 #statusbar #toggle-log { display: grid; place-items: center; }
 #statusbar #toggle-log svg { display: block; width: 15px; height: 15px; }
@@ -419,6 +421,10 @@ body.resizing iframe, body.resizing canvas { pointer-events: none; }
 }
 .menu button { display: block; width: 100%; text-align: left; border: none; background: none; padding: 5px 10px; border-radius: 3px; white-space: nowrap; }
 .menu button:hover:enabled, .menu button:focus-visible { background: var(--hover); outline: none; }
+.menu button:has(.tick) { display: flex; align-items: center; gap: 6px; padding-left: 6px; }
+.menu .tick { display: grid; place-items: center; flex: none; width: 16px; height: 16px; color: var(--teal); }
+.menu-heading { padding: 5px 10px 3px; color: var(--muted); font-size: 12px; }
+.menu:has(.tick) .menu-heading { padding-left: 28px; } /* in line with the labels, past the ticks */
 
 /* Dialogs */
 
@@ -447,6 +453,7 @@ dialog.wide { width: min(700px, 94vw); max-width: none; padding: 24px 28px; }
 
 /* "Go to anything" (Ctrl/Cmd+K): a search box near the top, results in groups below. */
 #goto-dialog { width: min(640px, 94vw); max-width: none; margin: 12vh auto auto; padding: 0; overflow: hidden; }
+#goto-input::-webkit-search-cancel-button { display: none; } /* Escape closes the box; no second × */
 #goto-input { width: 100%; box-sizing: border-box; padding: 14px 16px; border: none; border-bottom: 1px solid var(--rule); border-radius: 0; background: transparent; font-size: 16px; outline: none; }
 #goto-results { list-style: none; margin: 0; padding: 4px 6px 6px; max-height: min(52vh, 460px); overflow: auto; }
 .goto-group { padding: 10px 10px 3px; color: var(--muted); font-size: 12px; font-weight: 600; }
@@ -565,8 +572,11 @@ dialog.starters { width: min(880px, 94vw); }
 /* The welcome has its own sign-in button, and nothing to show in the status
    bar or behind the project switcher. */
 body.on-welcome #sign-in, body.on-welcome #show-projects .switch { display: none; }
+/* The welcome page draws the tilde large itself. */
+body.on-welcome #home { visibility: hidden; }
 body.on-welcome #status, body.on-welcome #toggle-log { visibility: hidden; }
-body.on-projects #editor-look { visibility: hidden; } /* text size is for the editor */
+/* On the project list, the status bar keeps only whether the open project is saved. */
+body.on-projects :is(#editor-look, #toggle-log, #cursor-position, #word-count, #problem-count, #status) { visibility: hidden; }
 
 /* "Back to editor": a small floating button at the bottom of the page. */
 #back-bar { position: sticky; bottom: 20px; display: flex; justify-content: center; pointer-events: none; }
@@ -602,6 +612,9 @@ button.link:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px;
   border: 1px solid var(--rule); border-radius: 4px; background: var(--editor); color: var(--ink);
 }
 .sort select:hover, .select-box select:hover { background: var(--hover); }
+/* A drawn arrow after a label ("Fit width", "Import", the project's name), centred with it. */
+.arrow { display: inline-block; flex: none; vertical-align: middle; margin-left: 4px; opacity: 0.75; }
+#zoom-menu, #import-menu { display: inline-flex; align-items: center; }
 /* One small arrow for every menu-like control ("Import", the project
    switcher, the Sort box), drawn the same way everywhere. */
 .chevron {

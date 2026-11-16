@@ -2685,7 +2685,7 @@ pageNumber.addEventListener('focus', () => pageNumber.select());
 // The arrow next to Update PDF: compiling as you type.
 element<HTMLButtonElement>('#compile-menu').addEventListener('click', (event) => openMenu(event.currentTarget as HTMLElement, [
   { label: 'Update the PDF now (Ctrl/Cmd+S)', action: () => void compile() },
-  { label: autoCompile ? '✓ Compile as you type' : 'Compile as you type', action: () => {
+  { label: 'Compile as you type', checked: autoCompile, action: () => {
     autoCompile = !autoCompile;
     try { localStorage.setItem(AUTO_COMPILE_KEY, String(autoCompile)); } catch { /* not remembered */ }
     notify(autoCompile ? 'The PDF now updates a moment after you stop typing.' : 'The PDF updates when you press Update PDF or Ctrl/Cmd+S.');
@@ -2730,11 +2730,11 @@ function stepEditorSize(direction: number): void {
 }
 
 editorLookButton.addEventListener('click', () => openMenu(editorLookButton, [
-  { label: `Text size: ${editorSize} px`, action: () => {}, disabled: true },
+  { label: `Text size: ${editorSize} px` },
   { label: 'Larger text (Ctrl/Cmd +)', action: () => stepEditorSize(1), disabled: editorSize === EDITOR_SIZES.at(-1) },
   { label: 'Smaller text (Ctrl/Cmd −)', action: () => stepEditorSize(-1), disabled: editorSize === EDITOR_SIZES[0] },
   { label: `Usual size (${DEFAULT_EDITOR_SIZE} px)`, action: () => stepEditorSize(0), disabled: editorSize === DEFAULT_EDITOR_SIZE },
-  { label: wrapLines ? '✓ Wrap long lines' : 'Wrap long lines', action: () => { wrapLines = !wrapLines; applyEditorLook(); } },
+  { label: 'Wrap long lines', checked: wrapLines, action: () => { wrapLines = !wrapLines; applyEditorLook(); } },
 ]));
 applyEditorLook();
 window.addEventListener('keydown', (event) => {
@@ -2831,7 +2831,8 @@ side.addEventListener('drop', (event) => {
 });
 syncButton.addEventListener('click', showConflict);
 logButton.addEventListener('click', () => { logView.hidden = !logView.hidden; });
-projectsButton.addEventListener('click', () => showProjectsPage(true));
+// The project's name: to the project list, or back to the project from there.
+projectsButton.addEventListener('click', () => showProjectsPage(projectsPage.hidden === true));
 element<HTMLButtonElement>('#home').addEventListener('click', () => showProjectsPage(true));
 closeProjectsButton.addEventListener('click', () => showProjectsPage(false));
 // Esc on the project page goes back to the open project (dialogs and menus close first).
@@ -2859,7 +2860,7 @@ zipInput.addEventListener('change', () => {
 });
 signInButton.addEventListener('click', () => void handleSignIn());
 accountButton.addEventListener('click', () => openMenu(accountButton, [
-  { label: myName, action: () => {}, disabled: true },
+  { label: myName },
   { label: 'Sign out', action: () => void handleSignOut() },
 ]));
 newProjectButton.addEventListener('click', () => {

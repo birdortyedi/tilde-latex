@@ -119,7 +119,14 @@ export function initLayout(elements: LayoutElements): LayoutControl {
     elements.rails[pane].addEventListener('click', () => set(pane, true));
     elements.folds[pane].addEventListener('click', () => set(pane, false));
   }
-  window.addEventListener('resize', apply);
+  // Whenever the workspace changes width (a resized window, a rotated phone), not only on "resize" events.
+  let lastWidth = 0;
+  new ResizeObserver(() => {
+    const width = elements.workspace.clientWidth;
+    if (width === lastWidth) return;
+    lastWidth = width;
+    apply();
+  }).observe(elements.workspace);
 
   // Dragging a handle. Double-click puts it back where it started.
   const drag = (handle: HTMLElement, onMove: (x: number) => void, reset: () => void): void => {

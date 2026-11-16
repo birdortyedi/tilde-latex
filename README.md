@@ -17,7 +17,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/editor-dark.png">
-    <img src="docs/screenshots/editor-light.png" alt="Tilde with a CVPR paper from the official author kit: the kit's files and the outline on the left, the introduction in the middle, and the compiled two-column PDF with review line numbers on the right" width="900">
+    <img src="docs/screenshots/editor-light.png" alt="Tilde with the TikZ example: the files and the outline on the left, the source in the middle with the cursor in a TikZ figure, and on the right the compiled PDF with a TikZ figure and a pgfplots plot; the green dot on Update PDF says the PDF matches the source" width="900">
   </picture>
 </p>
 
@@ -56,6 +56,20 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - Panes you can resize (files, source, PDF), each with a header whose button folds it into a slim strip at the side; click the strip to bring it back. In a narrow window one pane shows at a time and the others wait as strips
 - The editor's text size (Ctrl/Cmd and + or − while typing, or "Aa" in the status bar) and whether long lines wrap, remembered in your browser
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/writing-dark.png">
+    <img src="docs/screenshots/writing-light.png" alt="Writing with the files and the PDF folded into slim strips at the sides, the source using the whole width, and the maths preview showing an align block typeset where the pointer rests; the green dot on the PDF strip says the PDF is up to date" width="900">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/goto-dark.png">
+    <img src="docs/screenshots/goto-light.png" alt="Go to anything (Ctrl/Cmd+K) after typing res: a file, a heading, a label and lines of text from every file of the project, in groups, with the matches marked" width="900">
+  </picture>
+</p>
+
 **Compiling**
 - pdfLaTeX, XeLaTeX and LuaLaTeX from TeX Live 2026, running in your browser (WebAssembly). Tilde picks XeLaTeX by itself when a project loads `fontspec`, `polyglossia` or `unicode-math`, and LuaLaTeX when it runs Lua (`luacode`, `\directlua`); a line `% !TEX program = lualatex` (or `xelatex`, `pdflatex`) in the main file chooses one
 - Unicode text with XeLaTeX (Greek, Cyrillic, Arabic with `polyglossia`, Chinese with `xeCJK`), in the OpenType fonts that come with TeX Live (TeX Gyre, Libertinus, Noto, Amiri, Fandol and more) or in your own: upload the `.otf` or `.ttf` file, or in Chrome and Edge use "+" → "Add a font from this computer"
@@ -71,6 +85,24 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - PDF zoom (fit width, fit page or a size), page numbers, and Download PDF
 - Share the PDF by link: Share PDF above the PDF saves it in the project's Drive folder and copies a link anyone can open, without an account (a supervisor, a reviewer). Update it to a newer PDF behind the same link, or stop sharing it
 - Download for arXiv: in the project's ⋯ menu. Tilde compiles once more, then saves a `.zip` with your source and the compiled bibliography (`.bbl`), which arXiv and most journals ask for, without build files, and if you like without `%` comments (arXiv shows your source to everyone)
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/error-dark.png">
+    <img src="docs/screenshots/error-light.png" alt="An error: a misspelt command (\textbff) underlined in the source with its message where the pointer rests and an icon at the line number, the red dot on Update PDF, the PDF from before the error still shown, and the problems list below it" width="900">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/phone-editor-dark.png">
+    <img src="docs/screenshots/phone-editor-light.png" alt="Tilde on a phone: the source fills the screen, the files and the PDF wait as strips at the sides" width="260">
+  </picture>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/phone-pdf-dark.png">
+    <img src="docs/screenshots/phone-pdf-light.png" alt="Tilde on a phone: the PDF fills the screen, the files and the source wait as strips on the left" width="260">
+  </picture>
+</p>
 
 **Saving**
 - Autosave to your Google Drive a few seconds after you stop typing

@@ -39,6 +39,7 @@ const latexColours = HighlightStyle.define([
 
 const look = EditorView.theme({
   '&': { height: '100%', backgroundColor: 'var(--editor)', color: 'var(--ink)', fontSize: 'var(--editor-size, 14px)' },
+  '&.cm-focused': { outline: 'none' }, // CodeMirror's dotted frame; the cursor shows where you type
   '.cm-scroller': { fontFamily: 'var(--mono)', lineHeight: '1.6' },
   '.cm-content': { caretColor: 'var(--ink)', paddingBlock: '10px' },
   '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--ink)' },

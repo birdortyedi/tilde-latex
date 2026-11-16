@@ -4,10 +4,13 @@
 
 export interface MenuItem {
   label: string;
-  action: () => void;
+  action?: () => void; // none: a heading, not a choice
   danger?: boolean;
   disabled?: boolean;
+  checked?: boolean; // an on/off choice: a tick when on, in a column of its own
 }
+
+const TICK = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-7"/></svg>';
 
 let open: HTMLElement | null = null;
 
@@ -17,15 +20,32 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[]): void {
   menu.className = 'menu';
   menu.popover = 'auto';
   menu.setAttribute('role', 'menu');
+  // With on/off choices in it, every item leaves room for the tick, so the labels line up.
+  const ticks = items.some((item) => item.checked !== undefined);
   for (const item of items) {
+    if (!item.action) {
+      const heading = document.createElement('div');
+      heading.className = 'menu-heading';
+      heading.textContent = item.label;
+      menu.append(heading);
+      continue;
+    }
+    const action = item.action;
     const button = document.createElement('button');
-    button.textContent = item.label;
-    button.setAttribute('role', 'menuitem');
+    button.setAttribute('role', item.checked === undefined ? 'menuitem' : 'menuitemcheckbox');
+    if (item.checked !== undefined) button.setAttribute('aria-checked', String(item.checked));
+    if (ticks) {
+      const tick = document.createElement('span');
+      tick.className = 'tick';
+      if (item.checked) tick.innerHTML = TICK; // Tilde's own fixed drawing
+      button.append(tick);
+    }
+    button.append(item.label);
     button.disabled = item.disabled ?? false;
     if (item.danger) button.classList.add('danger');
     button.addEventListener('click', () => {
       menu.hidePopover();
-      item.action();
+      action();
     });
     menu.append(button);
   }
