@@ -7,7 +7,7 @@ import { sharedFiles } from './sharedDoc';
 import type { SharedSync } from './sharedSync';
 import { timeAgo } from './time';
 
-// Comments in a shared project, as the user sees them: the thread cards in
+// Comments, as the user sees them: the thread cards in
 // the editor, the "Comments" list under the files, and a notice when someone
 // else comments. Kept in the shared document (see comments.ts).
 
@@ -17,6 +17,10 @@ export interface CommentsPage {
   title: HTMLElement;
   list: HTMLElement;
   openFile(path: string): void; // opens a file in the editor and shows the editor
+  // In a project of one's own (not shared yet): whether comments can be added there,
+  // and turning comments on, which keeps them in the shared format (see main.ts).
+  soloCanComment(): boolean;
+  turnOnComments(): Promise<SharedSync | null>;
 }
 
 const QUOTE_LENGTH = 70;
@@ -30,12 +34,13 @@ export class CommentsUi {
 
   constructor(private page: CommentsPage) {
     page.editor.commentHooks = {
-      canComment: () => this.sync !== null && !this.sync.readOnly,
+      canComment: () => (this.sync ? !this.sync.readOnly : page.soloCanComment()),
       card: (target, close) => this.card(target, close),
     };
   }
 
-  // A project was opened: comments are for shared projects only.
+  // A project was opened. Comments live in the shared format; a project of
+  // one's own has none until its first comment (see turnOnComments in main.ts).
   attach(sync: SharedSync | null, me: { name: string; account: string; photo?: string }): void {
     this.stopWatching();
     this.sync = sync;
@@ -146,15 +151,19 @@ export class CommentsUi {
         }, [{ label: 'Resolve', run: () => this.resolve(first.id, close) }], close));
       }
     } else {
-      dom.append(this.writeBox('Add a comment…', 'Comment', (text) => {
+      dom.append(this.writeBox('Add a comment…', 'Comment', (text) => void (async () => {
         const now = target();
-        const sync = this.sync;
-        const file = sync && 'from' in (now ?? {}) ? sharedFiles(sync.doc).find((f) => f.path === this.page.editor.path()) : undefined;
-        if (!sync || !now || !('from' in now) || !file?.text) return;
+        const path = this.page.editor.path();
+        if (!now || !('from' in now) || !path) return;
+        // The first comment in a project of one's own turns comments on for it.
+        const sync = this.sync ?? await this.page.turnOnComments();
+        const file = sync && sharedFiles(sync.doc).find((f) => f.path === path);
+        if (!sync || !file?.text) return;
+        if (this.page.editor.path() !== path) this.page.openFile(path);
         const id = addComment(sync.doc, file.id, now.from, now.to, this.reply(text));
         this.refresh();
         this.page.editor.openComment(id);
-      }, [{ label: 'Cancel', run: close }], close));
+      })(), [{ label: 'Cancel', run: close }], close));
     }
     return dom;
   }

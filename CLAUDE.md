@@ -38,7 +38,7 @@ The project owner is not a professional web developer. They will test every chan
 - Offline editing with sync on reconnect
 
 **Out of scope, do not build or suggest:**
-- Track changes (suggestions to accept or reject). Comments are in scope since Milestone 8, in shared projects only
+- Track changes (suggestions to accept or reject). Comments are in scope since Milestone 8
 - A visual rich-text editor
 - Shell escape (`minted`, `--shell-escape`)
 - Any feature that needs a server or database
@@ -50,7 +50,9 @@ Everything runs in the user's browser. The app is a static site built with Vite 
 - **Editor:** CodeMirror 6, with LaTeX syntax highlighting.
 - **TeX engine:** [TeXlyre BusyTeX](https://github.com/TeXlyre/texlyre-busytex) (npm `texlyre-busytex`, AGPL-3.0, TeX Live 2026), used in pdfLaTeX, XeLaTeX and LuaLaTeX modes with bibtex8, and Biber for biblatex. Runs in a Web Worker so the editor never freezes. Chosen in Milestone 1 over SwiftLaTeX (no BibTeX, package server gone), the original BusyTeX (no current browser build) and texlive.js (GPL-2.0, unmaintained).
 - **PDF viewer:** PDF.js.
-- **Maths preview:** KaTeX (MIT; fonts OFL-1.1), loaded the first time the pointer rests on maths (Milestone 8).
+- **Maths preview:** KaTeX (MIT; fonts OFL-1.1), loaded the first time the pointer rests on maths (Milestone 8). Maths KaTeX cannot show is typeset by the TeX engine in a one-formula document with the main file's preamble, never during a compile.
+- **EPS images:** Ghostscript (`@okathira/ghostpdl-wasm`, AGPL-3.0-or-later, about 15 MB) in a Web Worker, only when the user turns on "Convert EPS images". It makes `<name>-eps-converted-to.pdf`, which the engine gets with the project's files; never saved to Drive.
+- **Engine scripts:** `public/engine/keep-going.js` and `stop-at-errors.js`, one loaded into the engine's worker before every compile, decide whether LaTeX stops at the first error ("Show all errors", off by default).
 - **Drive sync:** Google Identity Services for sign-in, Google Drive API v3 called with `fetch`, and the Google Picker for importing existing files.
 - **Package files:** TeX Live package files are loaded on demand and cached in the browser (IndexedDB).
 
@@ -68,6 +70,7 @@ Data flow: the editor sends the project files to the engine, the engine returns 
 - **Kept in the browser between visits (IndexedDB):**
   - Unsaved changes that have not reached Drive yet, so a crashed tab or dropped network loses nothing. They are synced on the next visit.
   - The engine and the downloaded TeX package files, so only the first compile is slow.
+  - Projects started without signing in ("Start writing", `src/localProjects.ts`), decided after Milestone 8: kept only in the browser until "Save to Google Drive" makes them Drive projects and removes them. They belong to no account; signing out leaves them. The status bar always says they are only in this browser.
 - **Temporary, rebuilt when needed:** the compiled PDF and build files (`.aux`, `.log`, `.toc`, and so on). They are regenerated with one compile when a project is reopened. Never upload them to Drive unless the user explicitly exports the PDF. The last compile's `.aux`, `.bbl` and similar files are kept in memory, so auto-compile can run one quick LaTeX pass (`src/buildFiles.ts`).
 - Google sign-in tokens expire after about an hour. Refresh them without interrupting the user where Google allows it, and never lose edits while signing in again.
 
@@ -185,7 +188,7 @@ Mark the current milestone with **← current**. Update this list as work is com
    Decided before Milestone 6: no custom domain for now (cost); a free site on GitHub Pages later.
    - **Phase 1, open-source release that people run on their own computer.** Easy install (`npm run download-engine` keeps only what Tilde uses, Node 22 in `.nvmrc` and `engines`, `npm run dev` always on port 5173). Sign-in for anyone with Tilde's own Google app, switched to "In production" (`drive.file` only, a non-sensitive scope); own IDs through `.env.local`. "Add from Google Drive" explains what is missing when there is no Picker key. README with "Run it yourself" first and a clear "what works / what doesn't" section. Version 1.0.0 with a Git tag and a GitHub Release.
    - **Phase 2, a public site on GitHub Pages**, probably on a custom domain the owner buys (otherwise `birdortyedi.github.io/tilde-latex`). Tilde moved to its own Google Cloud project "Tilde", with no billing linked (decided before phase 2).
-     - Done, waiting for the domain: privacy policy (`public/privacy.html`); "Privacy · Source code · Licenses" links on the projects page (AGPL section 13); license texts and `NOTICE.txt` in `public/licenses/`; a Content-Security-Policy in `index.html` (tested: sign-in session, Drive, compiling, the package server, DOI lookups through Crossref, DataCite and mEDRA, the Picker; other sites blocked); the workflow `.github/workflows/deploy.yml`, started by hand for now, with the base path in the repository variable `BASE_PATH`.
+     - Done, waiting for the domain: privacy policy (`public/privacy.html`); "Privacy", "Source code" and "Licenses" in the welcome page's footer and, signed in, in the account menu (AGPL section 13); license texts and `NOTICE.txt` in `public/licenses/`; a Content-Security-Policy in `index.html` (tested: sign-in session, Drive, compiling, the package server, DOI lookups through Crossref, DataCite and mEDRA, the Picker; other sites blocked); the workflow `.github/workflows/deploy.yml`, started by hand for now, with the base path in the repository variable `BASE_PATH`.
      - To do with the domain: DNS records and the custom domain in GitHub Pages, the secret `VITE_GOOGLE_API_KEY` with a Picker key restricted to the site, Google sign-in origin and consent screen (home page, privacy policy, authorized domain verified in Search Console), publishing the Google app, the push trigger in the workflow, a test of signing in again under the CSP. Tell TeXlyre before announcing it.
 7. **Writing together** ✓ done, tested by the owner with two Google accounts (all three phases on main). Also checked by two independent code reviews and a randomized stress test (`src/sharedSync.stress.test.ts`; `STRESS_SEEDS=50 STRESS_STEPS=300 npx vitest run src/sharedSync.stress.test.ts` for a longer run).
    Decided after a test with two Google accounts (branch `collab-spike`): with `drive.file`, each person's Tilde sees only the files it created and the files that person picked, so files one person adds later are invisible to the other; two browsers on different networks connected directly (WebRTC, Google's STUN server only) with an 18 ms round trip; a Drive file as the go-between gives about 3 s delay. Libraries: Yjs, y-protocols, y-codemirror.next, lib0 (all MIT). Up to 5 people per project. Solo projects stay as they are.
@@ -197,11 +200,11 @@ Mark the current milestone with **← current**. Update this list as work is com
    - Phase 1: shared projects (sharing by email, join link, merging, plain files, Allow, who is here). Phase 2: live typing and cursors over direct connections. Phase 3: images directly between browsers, edits made outside Tilde, Leave…, privacy page, README.
 
 8. **Everyday tools** ← current (branch `part-e`; tested in the browser with two Google accounts, waiting to be merged)
-   Chosen by the owner after comparing Tilde with Overleaf (not copying its design): Download for arXiv (a `.zip` with the `.bbl`, comments taken out if asked), Go to anything (Ctrl/Cmd+K), pasting spreadsheet cells as a `booktabs` table, the spell checker told the document's language (babel, polyglossia), Share the PDF by link (saved in the project folder with Tilde's note `tilde: shared-pdf`, so it is never a project file), Make a copy, own starters (a `.zip` in the projects folder with the note `tildeStarter`), People and access (invite to edit or to view; viewers' Tilde writes nothing to Drive), a maths preview on hover (KaTeX), and comments in the margin for shared projects (`src/comments.ts`: threads in the shared document's `comments` map, tied to the text by Yjs relative positions; resolving deletes one). Later, when the owner asks: a time slider over the project's Drive versions, Zotero.
+   Chosen by the owner after comparing Tilde with Overleaf (not copying its design): Download for arXiv (a `.zip` with the `.bbl`, comments taken out if asked), Go to anything (Ctrl/Cmd+K), pasting spreadsheet cells as a `booktabs` table, the spell checker told the document's language (babel, polyglossia), Share the PDF by link (saved in the project folder with Tilde's note `tilde: shared-pdf`, so it is never a project file), Make a copy, own starters (a `.zip` in the projects folder with the note `tildeStarter`), People and access (invite to edit or to view; viewers' Tilde writes nothing to Drive), a maths preview on hover (KaTeX), and comments in the margin (`src/comments.ts`: threads in the shared document's `comments` map, tied to the text by Yjs relative positions; resolving deletes one). A solo project's first comment changes it to the shared format, with no one else in it. Also, chosen later: the maths preview falls back to the TeX engine, and two options next to Update PDF, off by default: "Show all errors" and "Convert EPS images". Later, when the owner asks: a time slider over the project's Drive versions, Zotero.
 
 ## Known limitations (state these in the README)
 
-- Up to 5 people can write in one project. There is no track changes; comments are only in shared projects.
+- Up to 5 people can write in one project. There is no track changes.
 - Shell escape (`minted`, `--shell-escape`) is not supported.
 - Very large documents compile more slowly than with a local TeX Live installation.
 - Free Google accounts have 15 GB of storage, shared with Gmail and Photos.

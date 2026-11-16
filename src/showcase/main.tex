@@ -1,0 +1,31 @@
+\documentclass[11pt]{article}
+\usepackage{tikz}
+\setcounter{figure}{2}
+\begin{document}
+\begin{center}
+  {\huge\bfseries Tilde}\par\medskip
+  {\large Keeps your work together,
+  like Fig.~\ref{fig:tie}.}\par\bigskip
+  A LaTeX editor in your browser,\\
+  with your projects in your Drive.
+\end{center}
+
+\begin{figure}[h]
+  \centering
+  \begin{tikzpicture}[line cap=round]
+    \draw[teal, line width=4pt]
+      (0,0) sin (1,.6) cos (2,0)
+      sin (3,-.6) cos (4,0);
+  \end{tikzpicture}
+  \caption{A space that never breaks.}
+  \label{fig:tie}
+\end{figure}
+\end{document}
+
+The intro on Tilde's welcome page (LaTeX ignores everything after
+\end{document}): its source is shown next to a picture of its PDF,
+main.png. CC0-1.0, like the examples. Keep its lines short (38
+characters at most), so they do not wrap there. To change it, compile it
+in Tilde, render page 1 at 300 dpi with Ghostscript, crop the printed
+part with the same margin on every side (60 pixels), and scale it to 640
+pixels wide.

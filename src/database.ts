@@ -2,14 +2,17 @@
 // - "drafts": edits that have not reached Drive yet (see drafts.ts)
 // - "packages": TeX package files downloaded from the package server (see packageCache.ts)
 // - "shared": shared projects' text with edits that have not reached Drive yet (see sharedStore.ts)
+// - "local": projects started without signing in, kept only in this browser (see localProjects.ts)
 
 const DB_NAME = 'tilde';
 // 2: drafts are tagged with the Google account. 3: package cache. 4: shared projects.
-const DB_VERSION = 4;
+// 5: projects kept in this browser.
+const DB_VERSION = 5;
 
 export const DRAFTS = 'drafts';
 export const PACKAGES = 'packages';
 export const SHARED = 'shared';
+export const LOCAL = 'local';
 
 let database: Promise<IDBDatabase> | null = null;
 
@@ -25,6 +28,7 @@ function openDatabase(): Promise<IDBDatabase> {
       }
       if (event.oldVersion < 3) db.createObjectStore(PACKAGES, { keyPath: 'path' });
       if (event.oldVersion < 4) db.createObjectStore(SHARED, { keyPath: ['accountId', 'projectId'] });
+      if (event.oldVersion < 5) db.createObjectStore(LOCAL, { keyPath: 'id' });
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);

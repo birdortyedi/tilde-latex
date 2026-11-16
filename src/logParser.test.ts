@@ -191,7 +191,8 @@ describe('hints', () => {
       '(pdftex.def)                using draft setting.',
     ), files);
     expect(problems).toHaveLength(1);
-    expect(problems[0].hint).toContain('Convert figures/plot.eps to PDF');
+    expect(problems[0].hint).toContain('figures/plot.eps is an EPS image');
+    expect(problems[0].hint).toContain('Convert EPS images');
   });
 
   it('explains the review line-number warning and hyperref\'s PDF string warning (real logs)', () => {

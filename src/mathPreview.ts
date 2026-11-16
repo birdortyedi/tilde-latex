@@ -123,13 +123,43 @@ function loadKatex(): Promise<Katex> {
   return katex;
 }
 
-function render(dom: HTMLElement, math: MathAt, files: () => ProjectFile[]): void {
+// Typesets maths with the real TeX engine, when KaTeX cannot (see main.ts).
+export type TexTypesetter = (math: MathAt) => Promise<HTMLCanvasElement>;
+
+// A one-formula document for the TeX engine: the main file's preamble, so
+// the document's own packages and commands work, around just the formula.
+export function formulaDocument(main: string, math: MathAt): string {
+  const preamble = /\\documentclass\s*(?:\[[^\]]*\])?\s*\{[^}]*\}([\s\S]*?)\\begin\s*\{document\}/.exec(main)?.[1] ?? '';
+  const body = math.tex.startsWith('\\begin{') ? math.tex : math.display ? `\\[${math.tex}\\]` : `$${math.tex}$`;
+  return `\\documentclass[border=3pt,varwidth=40em]{standalone}\n${preamble}\n\\begin{document}\n${body}\n\\end{document}\n`;
+}
+
+// What KaTeX said, without its prefix: "Undefined control sequence: \foo".
+const katexProblem = (error: unknown): string =>
+  (error instanceof Error ? error.message : String(error)).replace(/^KaTeX parse error: /, '').replace(/ at position \d+:[\s\S]*$/, '');
+
+function render(dom: HTMLElement, math: MathAt, files: () => ProjectFile[], tex?: TexTypesetter): void {
   loadKatex().then((library) => {
     try {
       library.render(math.tex, dom, { displayMode: math.display, throwOnError: true, strict: 'ignore', macros: macrosIn(files()), maxSize: 20 });
     } catch (error) {
+      const problem = katexProblem(error);
       dom.className = 'math-preview problem';
-      dom.textContent = `No preview: ${error instanceof Error ? error.message.replace(/^KaTeX parse error: /, '') : String(error)}`;
+      if (!tex) {
+        dom.textContent = `No preview: ${problem}`;
+        return;
+      }
+      // KaTeX is a quick preview, not LaTeX: TeX itself typesets what KaTeX cannot, and the preview says so.
+      dom.textContent = `The quick preview cannot show this (${problem}), so TeX is typesetting it…`;
+      tex(math).then((canvas) => {
+        dom.className = 'math-preview by-tex';
+        const note = document.createElement('div');
+        note.className = 'math-note';
+        note.textContent = 'Typeset by TeX: the quick preview did not know this.';
+        dom.replaceChildren(canvas, note);
+      }).catch((texError: unknown) => {
+        dom.textContent = `No preview: ${problem}. TeX could not typeset it either: ${texError instanceof Error ? texError.message : String(texError)}`;
+      });
     }
   }).catch(() => {
     dom.className = 'math-preview problem';
@@ -137,7 +167,7 @@ function render(dom: HTMLElement, math: MathAt, files: () => ProjectFile[]): voi
   });
 }
 
-export function mathPreview(files: () => ProjectFile[]): Extension {
+export function mathPreview(files: () => ProjectFile[], tex?: TexTypesetter): Extension {
   return hoverTooltip((view, pos): Tooltip | null => {
     const math = mathAt(view.state.doc.toString(), pos);
     if (!math || !math.tex) return null;
@@ -149,7 +179,7 @@ export function mathPreview(files: () => ProjectFile[]): Extension {
         const dom = document.createElement('div');
         dom.className = 'math-preview';
         dom.textContent = '…';
-        render(dom, math, files);
+        render(dom, math, files, tex);
         return { dom };
       },
     };

@@ -16,7 +16,7 @@ export interface CommentRange {
 export type CardTarget = { id: string } | { from: number; to: number };
 
 export interface CommentHooks {
-  canComment(): boolean; // a shared project this account may change
+  canComment(): boolean; // a project this account may change
   // The card's content. `target` gives what it is about now (a new comment's
   // text moves with edits made while it is being written).
   card(target: () => CardTarget | null, close: () => void): HTMLElement;

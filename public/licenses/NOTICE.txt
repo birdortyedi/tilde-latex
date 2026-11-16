@@ -56,3 +56,14 @@ fonts (SIL Open Font License 1.1), KaTeX (MIT) with its fonts (SIL Open
 Font License 1.1, katex-fonts.txt). The license file of every npm package
 in the page is in npm-packages.txt. When Tilde's dependencies change,
 make that file again (see "Licensing policy" in CLAUDE.md).
+
+
+Ghostscript (assets/gs-*.wasm and the script that starts it)
+------------------------------------------------------------
+GPL Ghostscript 10.06.0 compiled to WebAssembly, used only to convert EPS
+images to PDF when "Convert EPS images" is on.
+  License: AGPL-3.0-or-later (AGPL-3.0.txt)
+  Source:  https://github.com/okathira/ghostpdl-wasm (the WebAssembly build)
+           https://github.com/ArtifexSoftware/ghostpdl (Ghostscript itself)
+  Libraries inside it (freetype, libjpeg, libpng, zlib, lcms2mt, OpenJPEG,
+  jbig2dec) come with Ghostscript's source, each with its license there.

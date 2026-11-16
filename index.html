@@ -77,29 +77,38 @@
     <section id="projects-page" hidden>
       <div class="inner">
         <div id="welcome" hidden>
-          <div class="welcome-main">
+          <div class="welcome-pitch">
             <p class="tie-figure" role="img" aria-label="Fig.~3">
               <span class="tie-word">Fig.</span>
               <svg class="tie-mark" viewBox="0 0 120 48" aria-hidden="true"><path d="M8 32 C 22 8, 44 6, 60 24 S 98 42, 112 16" /></svg>
               <span class="tie-word">3</span>
             </p>
             <h1>Tilde keeps your work together.</h1>
-            <p class="welcome-lead">A LaTeX editor that runs in your browser and keeps your projects in your own Google Drive.</p>
             <div class="welcome-actions">
-              <button id="welcome-sign-in" class="primary large">Sign in with Google</button>
-              <span>Free and open source</span>
+              <button id="start-writing" class="cover-button primary">Start writing</button>
+              <button id="welcome-sign-in" class="cover-button google-button"><svg class="google-g" viewBox="0 0 48 48" width="18" height="18" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg><span>Sign in with Google</span></button>
             </div>
+            <p class="welcome-note">No account needed. What you write stays in this browser until you save it to Google Drive.</p>
+            <p class="welcome-more">
+              <button id="open-example" class="link" aria-haspopup="menu">Try an example</button>
+              <button id="welcome-import" class="link">Import from Google Drive</button>
+            </p>
+            <ul class="welcome-facts">
+              <li><strong>In your browser.</strong> Compiles on your computer.</li>
+              <li><strong>In your Drive.</strong> Saves as you type.</li>
+              <li><strong>Only your files.</strong> Sees just what it made or you picked.</li>
+            </ul>
           </div>
-          <aside class="welcome-examples">
-            <h2>Try an example first</h2>
-            <p>No account needed. Changes to examples stay in this tab.</p>
-            <ul id="example-list"></ul>
-          </aside>
-          <ul class="welcome-facts">
-            <li><strong>In your browser</strong><span>Compiles on your own computer, with TikZ, pgfplots, BibTeX and biblatex. Nothing goes to a server.</span></li>
-            <li><strong>In your Drive</strong><span>Saves as you type, and works on two computers without overwriting either.</span></li>
-            <li><strong>Only your files</strong><span>Tilde can only see the files it creates or the ones you pick.</span></li>
-          </ul>
+          <figure class="showcase" aria-label="A short document's source next to its PDF, as Tilde shows them">
+            <div class="showcase-bar">
+              <span class="showcase-file">main.tex</span>
+              <span class="showcase-state"><span class="showcase-dot" aria-hidden="true"></span>PDF up to date</span>
+            </div>
+            <div class="showcase-panes">
+              <pre class="showcase-source" id="showcase-source"></pre>
+              <div class="showcase-page"><img id="showcase-page" alt="The PDF: a heading, a sentence about Fig.~3, and Figure 3, a teal tilde" /></div>
+            </div>
+          </figure>
         </div>
         <div id="projects-signed-in" hidden>
           <div class="projects-head">
@@ -117,6 +126,11 @@
               <button id="new-project" class="primary">New project</button>
             </div>
           </div>
+          <section class="local-projects" hidden aria-labelledby="local-title-signed-in">
+            <h3 id="local-title-signed-in">Only in this browser</h3>
+            <p>Started without signing in. Save them to Google Drive to keep them safe.</p>
+            <ul class="project-rows" aria-labelledby="local-title-signed-in"></ul>
+          </section>
           <div class="projects-tools" id="projects-tools">
             <input id="project-search" type="search" placeholder="Search projects" aria-label="Search projects" autocomplete="off" />
             <label class="sort">Sort by
@@ -136,9 +150,10 @@
           <p id="projects-no-match" class="no-match" hidden></p>
           <input id="zip-input" type="file" accept=".zip,application/zip" hidden />
         </div>
-        <p class="site-links">
-          <a href="privacy.html">Privacy</a> · <a href="https://github.com/birdortyedi/tilde-latex">Source code</a> · <a href="licenses/NOTICE.txt">Licenses</a>
-        </p>
+        <footer class="site-links">
+          <span>© 2026 birdortyedi, developed with Claude Opus 5.5</span>
+          <a href="privacy.html">Privacy</a><a href="https://github.com/birdortyedi/tilde-latex">Source code</a><a href="licenses/NOTICE.txt">Licenses</a>
+        </footer>
       </div>
       <div id="back-bar" hidden>
         <button id="close-projects" title="Back to the project you have open">
@@ -235,6 +250,7 @@
       <button id="problem-count" hidden title="Show or hide the errors and warnings"></button>
       <span id="status">The first compile downloads the TeX engine (about 125 MB).</span>
       <button id="editor-look" aria-haspopup="menu" title="Text size and line wrapping in the editor">Aa</button>
+      <button id="show-shortcuts" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
       <button id="toggle-log" title="Show or hide the full compile log" aria-label="Compile log"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5h11v9h-11zM5 6.5l2 1.5-2 1.5M8.5 10h2.5"/></svg></button>
     </footer>
     <dialog id="ask-dialog">
@@ -282,7 +298,7 @@
       </div>
     </dialog>
     <dialog id="goto-dialog" aria-label="Go to anything">
-      <input id="goto-input" type="search" placeholder="Go to a file, heading, label, citation or text" autocomplete="off" spellcheck="false"
+      <input id="goto-input" type="search" placeholder="Go to a file, heading, label, citation or text, or type ? for commands" autocomplete="off" spellcheck="false"
         role="combobox" aria-expanded="true" aria-controls="goto-results" />
       <ul id="goto-results" role="listbox" aria-label="Results"></ul>
       <p class="goto-keys"><span><kbd>↑</kbd> <kbd>↓</kbd> choose</span><span><kbd>Enter</kbd> go there</span><span><kbd>Esc</kbd> close</span></p>

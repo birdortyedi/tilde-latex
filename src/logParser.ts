@@ -57,8 +57,8 @@ const IGNORED_WARNINGS = [/^epstopdf: Shell escape feature is not enabled\./];
 const HINTS: [RegExp, (match: RegExpExecArray) => string][] = [
   [/minted executable is unavailable|shell[- ]escape|write18/i, () => 'Tilde runs in the browser and cannot start other '
     + 'programs, so packages that need shell escape, such as minted, do not work. For code listings, use the listings package.'],
-  [/File `([^']+)-eps-converted-to\.pdf' not found/, (m) => `Tilde cannot convert EPS images in the browser. Convert `
-    + `${m[1]}.eps to PDF and include that file instead.`],
+  [/File `([^']+)-eps-converted-to\.pdf' not found/, (m) => `${m[1]}.eps is an EPS image, which LaTeX needs as a PDF. `
+    + 'Turn on "Convert EPS images" in the menu next to Update PDF, or convert it yourself and include the PDF instead.'],
   [/^LaTeX Error: File `([^']+)' not found/, (m) => `Tilde looked for ${m[1]} in the project and on the TeX Live `
     + 'package server. Check the spelling, or add the file to the project.'],
   [/The font "([^"]+)" cannot be found/, (m) => `"${m[1]}" is not one of the fonts that come with TeX Live, and Tilde `

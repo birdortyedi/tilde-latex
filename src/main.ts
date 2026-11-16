@@ -7,7 +7,8 @@ import { BusyTexRunner, LuaLatex, PdfLatex, XeLatex } from 'texlyre-busytex';
 import { findMainFile, groupByProject, pathProblem, type Project, type ProjectFile } from './projects';
 import { buildTree, isTextFile, type TreeNode } from './fileTree';
 import { Editor, type LineMark } from './editor';
-import { PdfViewer, type PdfViewState } from './pdfViewer';
+import { PdfViewer, pdfToCanvas, type PdfViewState } from './pdfViewer';
+import { formulaDocument } from './mathPreview';
 import type { Zoom } from './pdfZoom';
 import { forgetToken, restoreSignIn, signIn, SignInNeededError, signOut } from './auth';
 import { FOLDER_TYPE, googleDrive, type DriveFile, type Role } from './drive';
@@ -25,6 +26,12 @@ import {
 import * as Y from 'yjs';
 import { cachedPackages, REMOTE_DIR, storeNewPackages } from './packageCache';
 import { lastLatexLog, parseLog, type LogProblem } from './logParser';
+import { latexTokens } from './excerpt';
+import showcaseSource from './showcase/main.tex?raw';
+import showcasePicture from './showcase/main.png';
+import { COMMANDS, describe, findCommands, keycaps, type CommandId } from './commands';
+import { browserLocal, createLocal, LocalSync, toProject, untitledName, type LocalProject } from './localProjects';
+import { convertEpsImages, isEps } from './eps';
 import { unzipProject, zipFiles, zipProject } from './zipImport';
 import { timeAgo, versionTime } from './time';
 import { bibKeysIn, bibliographyTool, loadsPackage, outline, preambleInsertAt, texEngine } from './latex';
@@ -42,7 +49,7 @@ import { initTheme } from './theme';
 import { openMenu } from './menu';
 import { hideBusy, notify, showBusy } from './notices';
 import { arxivFiles } from './arxiv';
-import { searchProject } from './goTo';
+import { searchProject, type Hit } from './goTo';
 import { openGoTo } from './goToDialog';
 import { documentLanguage } from './language';
 import { pdfLink, sharedPdf, sharePdf, stopSharingPdf } from './pdfLink';
@@ -57,15 +64,21 @@ import { setIcon } from './icons';
 // one at a time from TeXlyre's public package server.
 const PACKAGE_SERVER = 'https://texlive2026.texlyre.org';
 const LAST_PROJECT_KEY = 'tilde.lastProject'; // reopened after a reload
-// One line about each example, for the welcome page and the New project dialog.
+// One line about each example, for the welcome page and the New project
+// dialog, in the order they are listed: from the simplest to the most
+// involved (one file; several files; graphics; a bibliography tool; another engine).
 const EXAMPLE_NOTES: Record<string, string> = {
   hello: 'The smallest document',
   math: 'Equations and theorems with amsmath',
+  multifile: '\\input, \\include and an image in a folder',
   tikz: 'A TikZ figure and a pgfplots plot',
   bibtex: 'Citations with natbib and BibTeX',
   biblatex: 'Citations with biblatex and Biber',
-  multifile: '\\input, \\include and an image in a folder',
   xetex: 'Unicode text and OpenType fonts with XeLaTeX',
+};
+const exampleRank = (name: string): number => {
+  const rank = Object.keys(EXAMPLE_NOTES).indexOf(name);
+  return rank < 0 ? Infinity : rank; // a new example without a note goes last
 };
 
 const BLANK_PROJECT: ProjectFile[] = [{
@@ -135,7 +148,6 @@ const kitFind = element<HTMLSpanElement>('#kit-find');
 const kitNote = element<HTMLParagraphElement>('#kit-note');
 const kitInput = element<HTMLInputElement>('#kit-input');
 const createProjectButton = element<HTMLButtonElement>('#create-project');
-const exampleList = element<HTMLUListElement>('#example-list');
 const backBar = element<HTMLDivElement>('#back-bar');
 const logButton = element<HTMLButtonElement>('#toggle-log');
 const statusText = element<HTMLSpanElement>('#status');
@@ -177,7 +189,9 @@ let buildKey = '';
 const ENGINE_PROJECT_DIR = '/home/web_user/project_dir'; // where the engine compiles
 let syncTex: SyncTex | null = null; // where each part of the PDF came from, from the last compile
 let cursorLine = 1; // in the open file, for "Show in PDF"
-let sync: ProjectSync | SharedSync | null = null; // saves the open project to Drive; null for examples
+// Saves the open project: to Drive, or to this browser (LocalSync, for a project
+// started without signing in); null for examples.
+let sync: ProjectSync | SharedSync | LocalSync | null = null;
 let myName = ''; // the signed-in account's name, for "who is here" in shared projects
 let myPhoto: string | undefined; // and its Google profile photo
 let joinedById = new Map<string, Joined>(); // projects others shared with this account, by folder
@@ -207,6 +221,8 @@ const commentsUi = new CommentsUi({
     if (path !== activePath) openFile(path);
     reveal('editor');
   },
+  soloCanComment: () => sync instanceof ProjectSync,
+  turnOnComments,
 });
 const pdfViewer = new PdfViewer(pdfContainer, showPdfState);
 
@@ -223,6 +239,8 @@ const sharePdfButton = element<HTMLButtonElement>('#share-pdf');
 const showInPdfButton = element<HTMLButtonElement>('#show-in-pdf');
 const ZOOM_KEY = 'tilde.pdfZoom';
 const AUTO_COMPILE_KEY = 'tilde.autoCompile';
+const KEEP_GOING_KEY = 'tilde.keepGoing';
+const CONVERT_EPS_KEY = 'tilde.convertEps';
 const AUTO_COMPILE_DELAY = 1500; // milliseconds after the last edit
 
 function showPdfState(state: PdfViewState): void {
@@ -529,6 +547,15 @@ async function stopSharing(folderId: string): Promise<void> {
 let pdfStamp: string | null = null; // the fingerprint of the source of the PDF shown
 let lastCompileFailed = false;
 let autoCompile = false; // "Compile as you type"
+// Options in the menu next to Update PDF, off unless chosen, remembered in this browser.
+let keepGoing = false; // "Show all errors": LaTeX does not stop at the first error
+let convertEps = false; // "Convert EPS images" with Ghostscript (pdfLaTeX and LuaLaTeX)
+
+// A script the engine loads before each compile: whether LaTeX stops at the
+// first error (public/engine/). The maths preview always stops at an error.
+function engineScript(goOn: boolean): string[] {
+  return [new URL(`${import.meta.env.BASE_URL}engine/${goOn ? 'keep-going' : 'stop-at-errors'}.js`, location.href).href];
+}
 
 function sourceStamp(files: ProjectFile[]): string {
   return files.map((f) => `${f.path}\u0000${typeof f.content === 'string' ? textHash(f.content) : f.content.length}`).sort().join('\n');
@@ -543,10 +570,47 @@ function showFreshness(): void {
     busy: 'Updating the PDF…',
     fresh: 'The PDF matches the source. Ctrl/Cmd+S updates it again.',
     behind: 'The source changed since this PDF was made. Update it with this button or Ctrl/Cmd+S.',
-    error: 'The last update stopped at an error (see the problems list). Ctrl/Cmd+S tries again.',
+    error: 'The last update had an error (see the problems list). Ctrl/Cmd+S tries again.',
     '': 'Make the PDF (Ctrl/Cmd+S)',
   }[state] ?? '';
 }
+
+// Maths the quick preview (KaTeX) cannot show, typeset by the TeX engine: a
+// one-formula document with the main file's preamble, so the document's own
+// packages and commands work. Never at the same time as a compile.
+let engineFree: Promise<void> = Promise.resolve();
+const typesetCache = new Map<string, Promise<HTMLCanvasElement>>();
+editor.typesetWithTex = (math) => {
+  const target = project;
+  const mainPath = target ? findMainFile(target) : undefined;
+  const main = target?.files.find((f) => f.path === mainPath);
+  if (!target || !main || typeof main.content !== 'string') return Promise.reject(new Error('this project has no main file'));
+  const source = formulaDocument(main.content, math);
+  const cached = typesetCache.get(source);
+  if (cached) return cached;
+  const job = (async () => {
+    while (compiling) await new Promise((resolve) => setTimeout(resolve, 200));
+    const currentRunner = await getRunner();
+    const engineName = texEngine(target.files, main.path);
+    const engine = engineName === 'xelatex' ? new XeLatex(currentRunner) : engineName === 'lualatex' ? new LuaLatex(currentRunner) : new PdfLatex(currentRunner);
+    const result = await engine.compile({
+      input: source, mainTexPath: 'tilde-maths-preview.tex', additionalFiles: target.files.filter((f) => f !== main),
+      bibtex: false, biber: false, rerun: false, remoteEndpoint: PACKAGE_SERVER, shellHandlerScripts: engineScript(false),
+    });
+    if (!result.success || !result.pdf || result.pdf.length === 0) {
+      const problem = parseLog(lastLatexLog(result.logs), target.files).find((p) => p.level === 'error');
+      throw new Error(problem?.message ?? 'the formula has an error');
+    }
+    try {
+      await storeNewPackages(PACKAGE_SERVER, await currentRunner.readProjectFiles(REMOTE_DIR));
+    } catch { /* fetched again next time */ }
+    return pdfToCanvas(result.pdf);
+  })();
+  engineFree = job.then(() => {}, () => {});
+  typesetCache.set(source, job);
+  job.catch(() => typesetCache.delete(source)); // an error may be fixed by the next edit
+  return job;
+};
 
 // Auto-compile: compile by itself a moment after typing stops, quickly (one
 // LaTeX pass with the build files of the last compile). A compile that is
@@ -605,7 +669,8 @@ async function loadExamples(): Promise<void> {
   for (const [path, url] of Object.entries(binaryFileUrls)) {
     binaryFiles[path] = new Uint8Array(await (await fetch(url)).arrayBuffer());
   }
-  examples = groupByProject('/test-docs', { ...textFiles, ...binaryFiles });
+  examples = groupByProject('/test-docs', { ...textFiles, ...binaryFiles })
+    .sort((a, b) => exampleRank(a.name) - exampleRank(b.name));
   renderTemplateChoices();
 }
 
@@ -751,22 +816,51 @@ function renderProjectsPage(): void {
     setTimeout(() => welcome.classList.remove('first-visit'), 1500);
   }
   signedInSection.hidden = !signedIn;
-  exampleList.replaceChildren(...examples.map((example) => {
-    const button = document.createElement('button');
-    const name = document.createElement('span');
-    name.className = 'name';
-    name.textContent = example.name;
-    const note = document.createElement('span');
-    note.className = 'note';
-    note.textContent = EXAMPLE_NOTES[example.name] ?? '';
-    button.append(name, note);
-    button.addEventListener('click', () => void openProjectById(example.name));
-    const item = document.createElement('li');
-    item.append(button);
-    return item;
-  }));
+  void refreshLocalProjects();
   if (signedIn) renderProjectList();
 }
+
+// The welcome page's showcase: the source of a short intro (its document
+// body, to the figure's end) next to a picture of its PDF. Both come from
+// src/showcase/, so they always match.
+function renderShowcase(): void {
+  const lines = showcaseSource.split('\n');
+  const from = lines.findIndex((line) => line.startsWith('\\begin{document}')) + 1;
+  const to = lines.findIndex((line) => line.startsWith('\\end{figure}'));
+  const source = element<HTMLPreElement>('#showcase-source');
+  source.replaceChildren(...lines.slice(from, to + 1).map((line, index) => {
+    const row = document.createElement('div');
+    row.className = 'line';
+    const number = document.createElement('span');
+    number.className = 'ln';
+    number.textContent = String(from + index + 1);
+    const code = document.createElement('code');
+    code.append(...latexTokens(line).map((token) => {
+      if (token.kind === 'text') return token.text;
+      const span = document.createElement('span');
+      span.className = token.kind;
+      span.textContent = token.text;
+      return span;
+    }));
+    row.append(number, code);
+    return row;
+  }));
+  element<HTMLImageElement>('#showcase-page').src = showcasePicture;
+}
+renderShowcase();
+
+// "Try an example": the examples, from the simplest.
+const openExampleButton = element<HTMLButtonElement>('#open-example');
+openExampleButton.addEventListener('click', () => openMenu(openExampleButton, [
+  { label: 'Examples, from the simplest' },
+  ...examples.map((example) => ({ label: EXAMPLE_NOTES[example.name] ?? example.name, action: () => void openProjectById(example.name) })),
+]));
+element<HTMLButtonElement>('#start-writing').addEventListener('click', () => void startWriting());
+// "Import it from Google Drive": signs in, then opens the picker.
+element<HTMLButtonElement>('#welcome-import').addEventListener('click', () => void (async () => {
+  if (!rootId) await handleSignIn();
+  if (rootId) await importFromDrive();
+})());
 
 // The signed-in list: filtered by the search box, sorted by last edit or name.
 function renderProjectList(): void {
@@ -963,8 +1057,8 @@ async function deleteProject(id: string, name: string): Promise<void> {
 }
 
 // Creates a project in Drive from files, shows upload progress, and opens it.
-async function createAndOpen(name: string, files: ProjectFile[], mainFile?: string): Promise<void> {
-  if (!rootId) return;
+async function createAndOpen(name: string, files: ProjectFile[], mainFile?: string, announce = true): Promise<boolean> {
+  if (!rootId) return false;
   showBusy(`Creating ${name}…`);
   try {
     await sync?.saveNow();
@@ -976,10 +1070,149 @@ async function createAndOpen(name: string, files: ProjectFile[], mainFile?: stri
     showProject(created);
     showProjectsPage(false);
     hideBusy();
-    notify(`Created ${name}.`);
+    if (announce) notify(`Created ${name}.`);
+    return true;
+  } catch (error) {
+    showError(error);
+    return false;
+  }
+}
+
+// "Start writing" on the welcome page: a blank project, without signing in,
+// kept in this browser until the user saves it to Google Drive.
+async function startWriting(): Promise<void> {
+  try {
+    // Signed out there is one place to write: the latest project kept here.
+    if (localProjects[0]) {
+      await openLocal(localProjects[0]);
+      return;
+    }
+    const local = await createLocal(browserLocal, untitledName(localProjects.map((p) => p.name)), BLANK_PROJECT);
+    // Asks the browser not to clear Tilde's storage when space runs low (Firefox asks the user).
+    navigator.storage?.persist?.().catch(() => false);
+    await openLocal(local);
+    notify('This project is kept in this browser only. Save it to Google Drive (the button in the status bar) to keep it safe '
+      + 'and open it on other computers.', 'info');
   } catch (error) {
     showError(error);
   }
+}
+
+async function openLocal(local: LocalProject): Promise<void> {
+  await sync?.saveNow();
+  showProject(toProject(local), undefined, local.id);
+  showProjectsPage(false);
+}
+
+// "Save to Google Drive": signs in if needed, makes the project an ordinary
+// Drive project, opens that, and removes it from this browser.
+async function saveLocalToDrive(id?: string): Promise<void> {
+  const open = sync instanceof LocalSync && (!id || sync.id === id) ? sync : null;
+  await open?.saveNow();
+  const local = open ? { id: open.id, ...open.project } : localProjects.find((p) => p.id === id);
+  if (!local) return;
+  if (!rootId) {
+    await handleSignIn();
+    if (!rootId) return;
+  }
+  const name = projectNameProblem(local.name)
+    ? await askProjectName(`You already have a project called "${local.name}" in Google Drive. Name for this one:`, `${local.name} 2`)
+    : local.name;
+  if (!name) return;
+  if (!await createAndOpen(name, local.files.map((f) => ({ path: f.path, content: f.content })), local.mainFile, false)) return;
+  await browserLocal.remove(local.id).catch((error: unknown) => console.warn('Could not remove the copy kept in this browser', error));
+  await refreshLocalProjects();
+  notify(`${name} is in your Google Drive now, and no longer kept in this browser only.`);
+}
+
+// The projects kept in this browser, listed on the welcome page and above the Drive projects.
+let localProjects: LocalProject[] = [];
+async function refreshLocalProjects(): Promise<void> {
+  try {
+    localProjects = (await browserLocal.list()).sort((a, b) => b.edited - a.edited);
+  } catch (error) {
+    localProjects = [];
+    console.warn('Could not read the projects kept in this browser', error);
+  }
+  renderLocalProjects();
+}
+
+// The list shows on the welcome page (signed out) and above the Drive projects (signed in).
+function renderLocalProjects(): void {
+  element<HTMLButtonElement>('#start-writing').textContent = localProjects.length > 0 ? 'Continue writing' : 'Start writing';
+  for (const section of document.querySelectorAll<HTMLElement>('.local-projects')) {
+    section.hidden = localProjects.length === 0;
+    section.querySelector('ul')?.replaceChildren(...localProjects.map(localRow));
+  }
+}
+
+function localRow(local: LocalProject): HTMLLIElement {
+  const isOpen = sync instanceof LocalSync && sync.id === local.id;
+  const open = document.createElement('button');
+  open.className = 'project-open';
+  const name = document.createElement('span');
+  name.className = 'project-name';
+  name.textContent = local.name;
+  if (isOpen) {
+    const badge = document.createElement('span');
+    badge.className = 'badge';
+    badge.textContent = 'Current';
+    name.append(badge);
+  }
+  const edited = document.createElement('span');
+  edited.className = 'project-edited';
+  edited.textContent = `Edited ${timeAgo(new Date(local.edited))}`;
+  open.append(name, edited);
+  open.addEventListener('click', () => void (isOpen ? showProjectsPage(false) : openLocal(local)));
+  const more = document.createElement('button');
+  more.className = 'project-more';
+  setIcon(more, 'more');
+  more.title = `Actions for ${local.name}`;
+  more.setAttribute('aria-label', more.title);
+  more.setAttribute('aria-haspopup', 'menu');
+  more.addEventListener('click', () => openMenu(more, [
+    { label: 'Open', action: () => void openLocal(local) },
+    { label: 'Save to Google Drive', action: () => void saveLocalToDrive(local.id) },
+    { label: 'Download as .zip', action: () => downloadFile(`${local.name}.zip`, zipProject(local.name, local.files)) },
+    { label: 'Rename…', action: () => void renameLocal(local) },
+    { label: 'Delete…', action: () => void deleteLocal(local), danger: true },
+  ]));
+  const item = document.createElement('li');
+  item.append(open, more);
+  return item;
+}
+
+// The open browser project as it is listed (its row), for renaming or deleting it from the editor.
+async function withOpenLocal(act: (local: LocalProject) => Promise<void>): Promise<void> {
+  if (!(sync instanceof LocalSync)) return;
+  await sync.saveNow();
+  await refreshLocalProjects();
+  const open = sync;
+  const local = localProjects.find((p) => p.id === open.id);
+  if (local) await act(local);
+}
+
+async function renameLocal(local: LocalProject): Promise<void> {
+  const typed = (await askText('New name for the project:', local.name))?.trim();
+  if (!typed || typed === local.name) return;
+  local.name = typed;
+  if (sync instanceof LocalSync && sync.id === local.id) {
+    projectNameLabel.textContent = typed;
+    await sync.rename(typed);
+  } else {
+    await browserLocal.put(local);
+  }
+  await refreshLocalProjects();
+}
+
+async function deleteLocal(local: LocalProject): Promise<void> {
+  if (!await askConfirm(`Delete ${local.name}? It is kept only in this browser, so it cannot be brought back.`, 'Delete')) return;
+  if (sync instanceof LocalSync && sync.id === local.id) {
+    showProject(null);
+    showProjectsPage(true);
+  }
+  await browserLocal.remove(local.id);
+  await refreshLocalProjects();
 }
 
 // Lets the user pick files in their Drive. Google Docs and the like are left
@@ -1179,13 +1412,40 @@ async function downloadForArxiv(): Promise<void> {
 }
 
 // "Go to anything" (Ctrl/Cmd+K, or the magnifier above the files).
-function showGoTo(): void {
+// `typed` "?" opens it on the keyboard shortcuts (the ? key, the ? in the status bar).
+function showGoTo(typed = ''): void {
   if (!project || document.querySelector('dialog[open]')) return;
-  openGoTo((typed) => (project ? searchProject(project.files, findMainFile(project), typed) : []), (hit) => {
+  openGoTo((text) => (text.trimStart().startsWith('?') ? commandHits(text.trimStart().slice(1))
+    : project ? searchProject(project.files, findMainFile(project), text) : []), (hit) => {
+    if (hit.kind === 'command') {
+      if (hit.command) runCommand(hit.command as CommandId);
+      return;
+    }
     openFile(hit.file);
     reveal('editor');
     if (hit.line && hit.file === activePath) editor.goTo(hit.line, hit.column, hit.kind === 'text' && hit.match ? hit.match[1] - hit.match[0] : 0);
-  });
+  }, typed);
+}
+
+// The keyboard shortcuts as Go to anything rows (see commands.ts).
+const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+function commandHits(typed: string): Hit[] {
+  return findCommands(typed).map((command) => ({
+    kind: 'command', label: command.label, detail: describe(command.where ?? '', IS_MAC), file: '', group: command.group,
+    keys: command.keys.map((combo) => keycaps(combo, IS_MAC)), command: command.id,
+  }));
+}
+
+// A command chosen in the shortcut list: what its keys would do.
+function runCommand(id: CommandId): void {
+  const keys = COMMANDS.find((c) => c.id === id)?.keys[0] ?? '';
+  if (id === 'compile') void compile();
+  else if (id === 'showInPdf') showInPdf();
+  else if (id === 'goTo') setTimeout(() => showGoTo(), 0); // after this box has closed
+  else {
+    reveal('editor');
+    if (!editor.runKey(keys, IS_MAC)) notify('Open a file in the editor first.', 'info');
+  }
 }
 
 // A shared project as it is now: the text of its shared file, and its binary
@@ -1312,6 +1572,38 @@ const copyJoinLinkButton = element<HTMLButtonElement>('#copy-join-link');
 const canChange = (): boolean => sync !== null && !(sync instanceof SharedSync && sync.readOnly);
 // Whether this browser's account owns the open project (and so manages who has access).
 const ownsProject = (): boolean => sync instanceof ProjectSync || (sync instanceof SharedSync && sync.isOwner);
+
+// A project of one's own in the shared format (see sharing.ts): for sharing
+// it, or for comments, which live in the shared document. Its .tex files stay
+// as they are; Tilde adds three files of its own to the folder.
+async function toSharedFormat(current: ProjectSync): Promise<SharedSync> {
+  await current.saveNow();
+  if (current.hasUnsaved()) throw new Error('Save the project first: some edits have not reached Google Drive yet.');
+  const loaded = await makeShared(googleDrive, current.project);
+  showProject(null, { loaded, plain: current.project });
+  if (!(sync instanceof SharedSync)) throw new Error('Could not open the project in the shared format.');
+  return sync;
+}
+
+// The first comment in a project of one's own: comments are kept in the
+// shared format, so the project changes to it (nothing else changes for the user).
+async function turnOnComments(): Promise<SharedSync | null> {
+  const current = sync;
+  if (!(current instanceof ProjectSync)) return null;
+  const path = activePath;
+  showBusy('Turning on comments…');
+  try {
+    const shared = await toSharedFormat(current);
+    if (path) openFile(path);
+    hideBusy();
+    notify('Comments are on for this project. Tilde keeps them in files of its own that it added to the project\'s folder '
+      + '("Tilde shared project.tilde", "Tilde mailbox.tilde" and "Tilde uploads"); your .tex files stay as they are.', 'info');
+    return shared;
+  } catch (error) {
+    showError(error);
+    return null;
+  }
+}
 
 async function openPeople(): Promise<void> {
   const current = sync;
@@ -1450,11 +1742,7 @@ async function inviteFromPanel(): Promise<void> {
       if (!await askConfirm(`Sharing makes "${current.project.name}" a shared project: Tilde adds three of its own files to the project's folder `
         + 'in your Drive, and edits from everyone merge by themselves. Your .tex files stay in the folder as before.', 'Share')) return;
       showBusy(`Sharing ${current.project.name}…`);
-      await current.saveNow();
-      if (current.hasUnsaved()) throw new Error('Save the project first: some edits have not reached Google Drive yet.');
-      const loaded = await makeShared(googleDrive, current.project);
-      const plain = current.project;
-      showProject(null, { loaded, plain });
+      await toSharedFormat(current);
     } else {
       showBusy('Sharing…');
     }
@@ -1517,7 +1805,8 @@ interface SharedOpen {
   viewOnly?: boolean; // shared with this account as "can view"
 }
 
-function showProject(plainProject: Project | null, shared?: SharedOpen): void {
+// `localId`: a project kept in this browser (see localProjects.ts), not in Drive.
+function showProject(plainProject: Project | null, shared?: SharedOpen, localId?: string): void {
   sync?.close();
   facesView.hidden = true;
   // An "Allow" notice belongs to the project it was about.
@@ -1541,6 +1830,8 @@ function showProject(plainProject: Project | null, shared?: SharedOpen): void {
     };
     if (shared.viewOnly) sync.viewOnly();
     else void keepDraftsFromBeforeSharing(sync);
+  } else if (localId && plainProject) {
+    sync = new LocalSync(browserLocal, localId, plainProject, showSyncState);
   } else {
     sync = plainProject?.driveId
       ? new ProjectSync(googleDrive, browserDrafts, accountId, plainProject, {
@@ -1684,6 +1975,16 @@ function showSyncState(): void {
   showFreshness(); // others' edits may have arrived
   syncButton.hidden = !sync;
   if (!sync) return;
+  if (sync instanceof LocalSync) {
+    // Not in Drive: the button offers to put it there.
+    const failed = sync.state === 'error';
+    syncButton.textContent = failed ? 'Not kept in this browser' : 'Only in this browser · Save to Google Drive';
+    syncButton.className = failed ? 'error' : 'local';
+    syncButton.title = failed ? sync.errorMessage : 'This project is kept only in this browser, which may clear it '
+      + '(Safari does after seven days without a visit). Save it to your Google Drive to keep it safe and open it on other computers.';
+    syncButton.disabled = false;
+    return;
+  }
   const viewOnly = sync instanceof SharedSync && sync.readOnly;
   if (viewOnly !== editor.isReadOnly) {
     editor.setReadOnly(viewOnly); // the owner changed this account's access meanwhile
@@ -1715,7 +2016,7 @@ function showConflict(): void {
 // The dialog stays open, so the user still chooses which one Tilde keeps.
 async function downloadBoth(): Promise<void> {
   const file = project?.files.find((f) => f.path === conflictShown);
-  if (!file || !sync) return;
+  if (!file || !sync || sync instanceof LocalSync) return;
   const name = conflictShown.split('/').pop() ?? conflictShown;
   const dot = name.lastIndexOf('.');
   const [base, extension] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ''];
@@ -1848,7 +2149,8 @@ async function finishSignOut(): Promise<void> {
   } catch (error) {
     console.warn('Could not clean up the copies kept in the browser', error);
   }
-  notify('Signed out. Nothing of yours is kept in this browser.');
+  notify(localProjects.length > 0 ? 'Signed out. Nothing of your Google account is kept in this browser; the projects you started '
+    + 'without signing in stay here.' : 'Signed out. Nothing of yours is kept in this browser.');
 }
 
 // Runs when the "New project" dialog closes with the Create button.
@@ -2070,7 +2372,7 @@ function showFolderMenu(anchor: HTMLElement, dir: string): void {
   openMenu(anchor.querySelector('.file-menu') ?? anchor, [
     { label: 'New file here…', action: () => void newFile(dir) },
     { label: 'Upload here…', action: () => chooseUploads(dir) },
-    { label: 'Add from Google Drive here…', action: () => void addFromDrive(dir) },
+    ...(project?.driveId ? [{ label: 'Add from Google Drive here…', action: () => void addFromDrive(dir) }] : []),
     { label: 'Rename folder…', action: () => void renameFolderAction(dir) },
   ]);
 }
@@ -2124,7 +2426,7 @@ function showFileMenu(anchor: HTMLElement, path: string): void {
 async function goBack(path: string): Promise<void> {
   const projectSync = sync;
   const file = projectSync?.project.files.find((f) => f.path === path);
-  if (!projectSync || !file?.safeCopy || typeof file.content !== 'string') return;
+  if (!projectSync || projectSync instanceof LocalSync || !file?.safeCopy || typeof file.content !== 'string') return;
   const when = versionTime(new Date(file.safeCopy.time));
   let before: string;
   showBusy(`Loading the version from ${when}…`);
@@ -2231,7 +2533,7 @@ function showAddMenu(): void {
   openMenu(addFilesButton, [
     { label: 'New file…', action: () => void newFile() },
     { label: 'Upload from this computer…', action: () => chooseUploads() },
-    { label: 'Add from Google Drive…', action: () => void addFromDrive() },
+    ...(project?.driveId ? [{ label: 'Add from Google Drive…', action: () => void addFromDrive() }] : []),
     { label: 'Add citation from DOI…', action: () => void citeFromMenu() },
     ...(window.queryLocalFonts ? [{ label: 'Add a font from this computer…', action: () => void addLocalFont() }] : []),
   ]);
@@ -2308,7 +2610,7 @@ async function uploadFiles(files: File[], folder?: string): Promise<void> {
 // picked anywhere else are copied in.
 async function addFromDrive(folder?: string): Promise<void> {
   const projectSync = sync;
-  if (!projectSync) return;
+  if (!projectSync || projectSync instanceof LocalSync) return;
   try {
     let picked = await pickUsableFiles('Pick files to add to this project', projectSync.project.driveId);
     if (picked.length === 0) return;
@@ -2384,7 +2686,7 @@ async function deleteFile(path: string): Promise<void> {
   if (!projectSync) return;
   // A shared project's file is deleted for everyone, into "Recently deleted" for 30 days.
   const shared = projectSync instanceof SharedSync;
-  const question = shared ? `Delete ${path} for everyone in this shared project? Anyone can bring it back from ⋯ → Recently deleted for 30 days.`
+  const question = shared ? `Delete ${path}? It waits in ⋯ → Recently deleted for 30 days, where anyone in the project can bring it back.`
     : `Delete ${path}? It goes to the trash in your Google Drive, where you can restore it for 30 days.`;
   const done = shared ? `Deleted ${path}.` : `Deleted ${path}. You can restore it from the trash in Google Drive for 30 days.`;
   if (!await askConfirm(question, 'Delete')) return;
@@ -2497,6 +2799,7 @@ async function compile(kind: CompileKind = 'full', followUp = false): Promise<vo
   }
 
   compiling = true;
+  await engineFree; // a formula being typeset for the maths preview finishes first
   const stamp = sourceStamp(compiled.files); // what this compile's PDF is made from
   compileButton.setAttribute('aria-busy', 'true');
   compileLabel.textContent = 'Updating…';
@@ -2514,15 +2817,25 @@ async function compile(kind: CompileKind = 'full', followUp = false): Promise<vo
     const quick = kind === 'quick' && buildFiles.length > 0 && buildKey === key;
     setStatus(`Compiling${withEngine}…`);
     const started = performance.now();
+    // EPS images as PDFs (XeLaTeX converts them another way, which cannot run here).
+    let epsPdfs: ProjectFile[] = [];
+    if (convertEps && engineName !== 'xelatex' && compiled.files.some((f) => isEps(f.path))) {
+      setStatus('Converting EPS images…');
+      const converted = await convertEpsImages(compiled.files);
+      epsPdfs = converted.files;
+      if (converted.failed.length > 0) notify(`Could not convert ${converted.failed.join(', ')}.`, 'error');
+      setStatus(`Compiling${withEngine}…`);
+    }
     const options = {
       input: main.content,
       mainTexPath: main.path,
-      additionalFiles: [...compiled.files.filter((f) => f !== main), ...(quick ? buildFiles : [])],
+      additionalFiles: [...compiled.files.filter((f) => f !== main), ...epsPdfs, ...(quick ? buildFiles : [])],
       // Biber for biblatex, BibTeX for natbib and \bibliography.
       bibtex: !quick && bibliographyTool(compiled.files) === 'bibtex',
       biber: !quick && bibliographyTool(compiled.files) === 'biber',
       rerun: !quick, // run LaTeX again so references and citations resolve
       remoteEndpoint: PACKAGE_SERVER,
+      shellHandlerScripts: engineScript(keepGoing),
     };
     let result = await engine.compile(options);
     // When LaTeX stops at an error, Biber fails after it, and the engine
@@ -2534,10 +2847,13 @@ async function compile(kind: CompileKind = 'full', followUp = false): Promise<vo
     // After an error, a single LaTeX run (a quick compile) can still report
     // success, with an empty PDF.
     const pdf = result.success && result.pdf && result.pdf.length > 0 ? result.pdf : null;
+    const problems = parseLog(lastLatexLog(result.logs), compiled.files);
+    const errors = problems.filter((p) => p.level === 'error').length;
     // Keep this compile's build files for the next quick one, if it made a
-    // PDF; after an error they may be cut short, so the next compile is a full one.
+    // PDF without errors; after an error they may be cut short, so the next
+    // compile is a full one.
     try {
-      const kept = pdf ? keptBuildFiles(await currentRunner.readProjectFiles(ENGINE_PROJECT_DIR), new Set(compiled.files.map((f) => f.path))) : [];
+      const kept = pdf && errors === 0 ? keptBuildFiles(await currentRunner.readProjectFiles(ENGINE_PROJECT_DIR), new Set(compiled.files.map((f) => f.path))) : [];
       if (stale()) return;
       buildFiles = kept;
       buildKey = key;
@@ -2560,7 +2876,6 @@ async function compile(kind: CompileKind = 'full', followUp = false): Promise<vo
     }
 
     if (stale()) return;
-    const problems = parseLog(lastLatexLog(result.logs), compiled.files);
     showProblems(problems);
     const warnings = problems.filter((p) => p.level === 'warning').length;
     if (pdf) {
@@ -2573,9 +2888,11 @@ async function compile(kind: CompileKind = 'full', followUp = false): Promise<vo
       await pdfViewer.show(pdf);
       if (stale()) return;
       pdfStamp = stamp;
-      lastCompileFailed = false;
-      setStatus(`Compiled${withEngine} in ${seconds} s` + (warnings > 0 ? `, ${warnings} warning${warnings > 1 ? 's' : ''}` : ''));
-    } else if (problems.some((p) => p.level === 'error')) {
+      // With "Show all errors", a PDF can come with errors: the dot stays red.
+      lastCompileFailed = errors > 0;
+      setStatus(errors > 0 ? `Compiled${withEngine} in ${seconds} s with ${errors} error${errors > 1 ? 's' : ''}; the PDF may be incomplete`
+        : `Compiled${withEngine} in ${seconds} s` + (warnings > 0 ? `, ${warnings} warning${warnings > 1 ? 's' : ''}` : ''));
+    } else if (errors > 0) {
       lastCompileFailed = true;
       setStatus(`Compile stopped at an error after ${seconds} s`);
       if (!pdfContainer.querySelector('canvas')) showEmptyPdf('The PDF appears here once the error below is fixed.');
@@ -2643,6 +2960,14 @@ function showProblems(problems: LogProblem[]): void {
       add.addEventListener('click', () => void addLocalFont(font));
       item.append(add);
     }
+    // An EPS image LaTeX could not convert: turn on converting EPS images.
+    if (/-eps-converted-to\.pdf' not found/.test(problem.message) && !convertEps) {
+      const convert = document.createElement('button');
+      convert.className = 'problem-action';
+      convert.textContent = 'Convert EPS images in this browser';
+      convert.addEventListener('click', () => setConvertEps(true));
+      item.append(convert);
+    }
     return item;
   }));
   problemsPanel.hidden = problems.length === 0;
@@ -2675,13 +3000,19 @@ function jumpTo(problem: LogProblem): void {
 
 compileButton.addEventListener('click', () => void compile());
 addFilesButton.addEventListener('click', showAddMenu);
-goToButton.addEventListener('click', showGoTo);
+goToButton.addEventListener('click', () => showGoTo());
 projectActionsButton.addEventListener('click', () => openMenu(projectActionsButton, [
   ...(project?.driveId ? [{ label: 'Share…', action: () => void openPeople() }] : []),
+  // A project kept in this browser: the actions its row has above the Drive projects.
+  ...(sync instanceof LocalSync ? [
+    { label: 'Save to Google Drive', action: () => void saveLocalToDrive() },
+    { label: 'Rename…', action: () => void withOpenLocal(renameLocal) },
+    { label: 'Delete…', action: () => void withOpenLocal(deleteLocal), danger: true },
+  ] : []),
   { label: 'Download as .zip', action: () => void downloadProjectZip() },
   { label: 'Download for arXiv…', action: () => void downloadForArxiv() },
   ...(sync instanceof SharedSync && canChange() ? [{ label: 'Recently deleted…', action: () => showRecentlyDeleted() }] : []),
-  ...(rootId ? [
+  ...(rootId && project?.driveId ? [
     { label: 'Make a copy…', action: () => void copyProject(project?.driveId) },
     { label: 'Save as a starter…', action: () => void saveAsStarter() },
   ] : []),
@@ -2719,7 +3050,8 @@ pageNumber.addEventListener('keydown', (event) => {
   pageNumber.blur();
 });
 pageNumber.addEventListener('focus', () => pageNumber.select());
-// The arrow next to Update PDF: compiling as you type.
+// The arrow next to Update PDF: compiling as you type, and two options for
+// the engine (all errors instead of the first, EPS images).
 element<HTMLButtonElement>('#compile-menu').addEventListener('click', (event) => openMenu(event.currentTarget as HTMLElement, [
   { label: 'Update the PDF now (Ctrl/Cmd+S)', action: () => void compile() },
   { label: 'Compile as you type', checked: autoCompile, action: () => {
@@ -2728,9 +3060,30 @@ element<HTMLButtonElement>('#compile-menu').addEventListener('click', (event) =>
     notify(autoCompile ? 'The PDF now updates a moment after you stop typing.' : 'The PDF updates when you press Update PDF or Ctrl/Cmd+S.');
     if (autoCompile) void compile();
   } },
+  { label: 'Show all errors', checked: keepGoing, action: () => {
+    keepGoing = !keepGoing;
+    remember(KEEP_GOING_KEY, keepGoing);
+    notify(keepGoing ? 'LaTeX now goes on after an error, so the problems list shows all of them and the PDF shows how far it got. '
+      + 'Fix the first error first: later ones can be caused by it.' : 'LaTeX now stops at the first error.');
+    void compile();
+  } },
+  // Only where it matters: a project with EPS images, or when it is on.
+  ...(convertEps || project?.files.some((f) => isEps(f.path)) ? [{ label: 'Convert EPS images', checked: convertEps, action: () => setConvertEps(!convertEps) }] : []),
 ]));
+function remember(key: string, on: boolean): void {
+  try { localStorage.setItem(key, String(on)); } catch { /* not remembered */ }
+}
+function setConvertEps(on: boolean): void {
+  convertEps = on;
+  remember(CONVERT_EPS_KEY, on);
+  notify(on ? 'EPS images are now converted to PDF in this browser (pdfLaTeX and LuaLaTeX). The converter, about 15 MB, '
+    + 'downloads the first time it is needed. The converted files are not saved to your Drive.' : 'EPS images are not converted any more.');
+  if (on) void compile();
+}
 try {
   autoCompile = localStorage.getItem(AUTO_COMPILE_KEY) === 'true';
+  keepGoing = localStorage.getItem(KEEP_GOING_KEY) === 'true';
+  convertEps = localStorage.getItem(CONVERT_EPS_KEY) === 'true';
   const zoom = JSON.parse(localStorage.getItem(ZOOM_KEY) ?? '"width"') as Zoom;
   if (zoom === 'width' || zoom === 'page' || typeof zoom === 'number') pdfViewer.setZoom(zoom);
 } catch { /* defaults */ }
@@ -2866,7 +3219,7 @@ side.addEventListener('drop', (event) => {
   if (folders > 0) notify('Folders cannot be dropped yet. Drop the files themselves, or import the folder as a .zip on the project page.', 'info');
   void uploadFiles(files, dropFolder(event)?.dataset.folder ?? '');
 });
-syncButton.addEventListener('click', showConflict);
+syncButton.addEventListener('click', () => void (sync instanceof LocalSync ? saveLocalToDrive() : showConflict()));
 logButton.addEventListener('click', () => { logView.hidden = !logView.hidden; });
 // The project's name: to the project list, or back to the project from there.
 projectsButton.addEventListener('click', () => showProjectsPage(projectsPage.hidden === true));
@@ -2896,9 +3249,15 @@ zipInput.addEventListener('change', () => {
   if (file) void importZip(file);
 });
 signInButton.addEventListener('click', () => void handleSignIn());
+// Signed in there is no footer, so the account menu has its links (the
+// privacy policy, and the source code that AGPL section 13 asks to offer).
+const openPage = (url: string): void => { window.open(url, '_blank', 'noopener'); };
 accountButton.addEventListener('click', () => openMenu(accountButton, [
   { label: myName },
-  { label: 'Sign out', action: () => void handleSignOut() },
+  { label: 'Privacy', action: () => openPage('privacy.html') },
+  { label: 'Source code', action: () => openPage('https://github.com/birdortyedi/tilde-latex') },
+  { label: 'Licenses', action: () => openPage('licenses/NOTICE.txt') },
+  { label: 'Sign out', action: () => void handleSignOut(), danger: true },
 ]));
 newProjectButton.addEventListener('click', () => {
   newProjectName.value = '';
@@ -2940,6 +3299,7 @@ newProjectDialog.addEventListener('close', () => {
   if (newProjectDialog.returnValue === 'create') void createFromDialog();
 });
 conflictDialog.addEventListener('close', () => {
+  if (sync instanceof LocalSync) return; // never a conflict in this browser's own projects
   if (conflictDialog.returnValue === 'mine') void sync?.keepMine(conflictShown);
   if (conflictDialog.returnValue === 'drive') void sync?.keepDrive(conflictShown);
 });
@@ -2978,7 +3338,15 @@ window.addEventListener('keydown', (event) => {
     event.preventDefault();
     showGoTo();
   }
+  // "?" outside the text (and outside any box to type in): the keyboard shortcuts.
+  const target = event.target as HTMLElement | null;
+  if (event.key === '?' && !event.ctrlKey && !event.metaKey && !event.altKey && project && projectsPage.hidden
+    && !target?.closest('input, textarea, select, [contenteditable="true"], .cm-editor')) {
+    event.preventDefault();
+    showGoTo('?');
+  }
 });
+element<HTMLButtonElement>('#show-shortcuts').addEventListener('click', () => showGoTo('?'));
 
 // Save when the user leaves the tab or closes it; look for changes made
 // elsewhere (for example on the other computer) when they come back.
@@ -2990,7 +3358,7 @@ window.addEventListener('pagehide', () => {
   if (sync instanceof SharedSync) sync.leave();
 });
 window.addEventListener('focus', () => {
-  void sync?.checkDrive();
+  if (!(sync instanceof LocalSync)) void sync?.checkDrive();
   if (!projectsPage.hidden && rootId) refreshProjects().catch((error: unknown) => console.warn('Could not refresh the project list', error));
 });
 window.addEventListener('online', () => void sync?.saveNow());

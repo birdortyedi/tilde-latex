@@ -46,7 +46,7 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - Paste or drop an image into the text: it is saved in the project's image folder (`figures/` if there is none yet) and a figure for it is written at the cursor (never inside another figure), with `graphicx` loaded if needed. GIF, WebP and SVG images become PNG on the way in
 - Paste cells from Excel, Google Sheets, Numbers or LibreOffice: they become a `booktabs` table (header row, numbers aligned right, special characters escaped), with the package loaded if needed. Inside a `tabular`, only the rows go in. "Paste as text instead" in the notice undoes it
 - Go to anything with Ctrl/Cmd+K (or the magnifier above the files): files, headings, `\label`s, citation keys and text in every file of the project, in one list
-- Maths preview: rest the pointer on maths (`$…$`, `\[…\]`, `equation`, `align` and the like) to see it typeset, with your own `\newcommand` macros. A preview by KaTeX; the PDF stays what counts
+- Maths preview: rest the pointer on maths (`$…$`, `\[…\]`, `equation`, `align` and the like) to see it typeset, with your own `\newcommand` macros. A quick preview by KaTeX; maths it does not know (a package's own commands) is typeset by the TeX engine instead, with your document's packages, and the preview says so. The PDF stays what counts
 - Citations from a DOI or an arXiv link: type it inside `\cite{}`, or pick "Add a paper from its DOI…" there or in the "+" menu. Tilde fetches the BibTeX from doi.org, tidies it and adds it to your `.bib` file
 - An outline of your chapters and sections, through `\input` and `\include`; click to jump
 - Find and replace in the open file, with match case, whole words and regular expressions, and a count of the matches
@@ -78,6 +78,8 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - Update PDF above the PDF (or Ctrl/Cmd+S), with a dot that tells whether the PDF matches the source: green when it does, amber when someone edited since, red when the last update stopped at an error. The dot shows on the folded PDF's strip too
 - Optional "Compile as you type" (in the arrow next to Update PDF), a moment after you stop typing. It is quick: one LaTeX pass, reusing what the last compile learned (labels, page numbers, the bibliography), with a full run by itself when a new citation needs one. Update PDF and Ctrl/Cmd+S always do the full run
 - Errors and warnings in a list and as icons next to the line numbers; click one to jump to the file and line. Common problems (a font that is not in TeX Live, characters a font lacks, EPS images, `minted`) come with a hint on what to do
+- Optional "Show all errors" (in the arrow next to Update PDF): LaTeX goes on after an error instead of stopping, so the list shows every error and the PDF shows how far it got
+- EPS images: "Convert EPS images" (in the same menu, or the button on the error) converts them to PDF in your browser with Ghostscript, for pdfLaTeX and LuaLaTeX. The converter (about 15 MB) downloads the first time; the converted files are not saved to your Drive
 - The TeX engine starts loading as soon as you open a project, so the first compile waits less
 - Jump between source and PDF (SyncTeX): double-click the PDF to go to its line in the source, or press Ctrl/Cmd+Shift+Enter (or the crosshair button) to see the cursor's line in the PDF
 - Select and copy text in the PDF, and find it with your browser's search
@@ -114,7 +116,7 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 **Writing together**
 - Share a project from its ⋯ menu ("Share…") with up to four co-authors: Tilde shares its folder through Google Drive, and Google emails them a link. Opening it, they choose the project's files once in Google's file picker, and from then on the project is in their own project list ("Shared with you"), on all their computers
 - Invite people to edit, or only to view (a supervisor, say: they read and compile, and see edits come in). The same panel shows who has access; the owner changes what someone may do or removes them there
-- Comments in the margin: select text and click "Comment" (or Ctrl/Cmd+Alt+M). The words are underlined, and a click opens the thread to reply or resolve. Comments stay on their words while anyone edits around them, are listed under the files, and never go into your `.tex` files; a notice tells you when someone else comments
+- Comments in the margin: select text and click "Comment" (or Ctrl/Cmd+Alt+M); in a project of your own too, see below. The words are underlined, and a click opens the thread to reply or resolve. Comments stay on their words while anyone edits around them, are listed under the files, and never go into your `.tex` files; a notice tells you when someone else comments
 - Edits from everyone merge by themselves, even made at the same moment or offline: there is no conflict to resolve, and Ctrl/Cmd+Z undoes only your own edits
 - While you are in the project together, your browsers connect directly to each other: typing shows up at once, with each person's cursor and name. On networks that block direct connections, edits arrive through Drive a few seconds later. The faces of the others who are there show at the top right, ringed in the colour of their cursor, with a green dot while connected directly; click a face to go to that person's cursor
 - The project stays an ordinary LaTeX folder in its owner's Drive: the owner's Tilde keeps the `.tex` files there up to date, and edits made to them outside Tilde (on the Drive website, with Drive for desktop, in another editor) are merged in. One that clashes with an edit made in Tilde at the same place is kept next to it as a copy, "main (changed outside Tilde).tex"
@@ -125,7 +127,8 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - Leave a project someone shared with you from its ⋯ menu in the project list
 
 **Projects**
-- Try it without signing in: seven examples (a minimal document, maths, TikZ and pgfplots, BibTeX with natbib, biblatex with Biber, a multi-file project, and Unicode text with XeLaTeX)
+- Write without signing in: "Start writing" on the welcome page makes a blank project kept in your browser; next time the button says "Continue writing". "Save to Google Drive" (in the status bar, or the project's ⋯ menu) signs you in and makes it an ordinary Drive project
+- Try it without signing in: seven examples, from the simplest (a minimal document, maths, a multi-file project, TikZ and pgfplots, BibTeX with natbib, biblatex with Biber, Unicode text with XeLaTeX), under "Try an example" on the welcome page
 - A project is a normal folder in your Drive, inside a projects folder that you can rename, move, or swap for another one
 - Start a new project from a blank file, a starter (IEEE, ACM, Springer LNCS, a thesis with a file per chapter, beamer slides, a cover letter, a CV) or an example
 - Conference papers from the official author kit: pick CVPR, ICCV, ECCV, ICIP, NeurIPS or ICML, download the kit from the conference's page (Tilde links to it) and choose the `.zip`. The kit comes from the conference, so it is always that year's version
@@ -143,6 +146,8 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 
 ## Keyboard shortcuts
 
+In the editor, press `?` (or click the `?` in the status bar) for this list, with the keys of your computer. Type to narrow it; Enter runs the command. It is part of Go to anything: start its search with `?`.
+
 | Keys | Does |
 |---|---|
 | Ctrl/Cmd+S | Save to Drive and compile |
@@ -152,7 +157,7 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 | Ctrl/Cmd+/ | Comment or uncomment the selected lines |
 | Ctrl/Cmd+V with an image copied | Add the image to the project, with a figure for it at the cursor |
 | Ctrl/Cmd+K | Go to a file, heading, label, citation key or text in the project |
-| Ctrl/Cmd+Alt+M with text selected | Comment on it (in a shared project) |
+| Ctrl/Cmd+Alt+M with text selected | Comment on it |
 | Ctrl/Cmd+V with spreadsheet cells copied | Paste them as a table |
 | Ctrl/Cmd+F | Find and replace in the open file; Enter for the next match, Shift+Enter for the previous one, Esc to close |
 | Ctrl/Cmd and + or −, over the PDF | Zoom the PDF (Ctrl/Cmd+0 fits the width) |
@@ -164,14 +169,15 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 | Limit | What to do instead |
 |---|---|
 | **Up to 5 people in a project, and no track changes.** | Share with the co-authors who write; invite others to view, or share the PDF by link. Suggest changes in a comment. |
-| **Comments are for shared projects.** | In a project of your own, use `% comments` in the source or the `todonotes` package; share the project and comments appear. |
+| **Comments need Tilde's shared format.** In a project of your own, the first comment changes the project to it: Tilde adds two files and a folder of its own ("Tilde shared project.tilde", "Tilde mailbox.tilde", "Tilde uploads") to the project's folder, and your `.tex` files stay as they are. | Nothing to do; a notice says when it happens. |
 | **In a shared project, only the owner invites people** or changes who has access. | Ask the owner. They can also share or stop sharing the folder in Google Drive itself. |
-| **The maths preview is KaTeX, not LaTeX**: some packages' commands are unknown to it, and it says so. | The PDF is always right; the preview is for checking a formula quickly. |
+| **The maths preview is KaTeX first.** Maths it does not know is typeset by the TeX engine, which takes a second or two (longer while the PDF is compiling). | The PDF is always right; the preview is for checking a formula quickly. |
 | **Some networks block direct connections** between browsers (some company and university Wi-Fi). Then others' edits arrive through Drive, a few seconds behind, and their cursors do not show. | Nothing to do: edits still merge. A green dot on a person's face at the top right means your browsers are connected. |
 | **Fonts installed on your computer are not found by name**, so `\setmainfont{Arial}` fails. | Put the font file in the project and load it by file name: `\setmainfont{Arial.ttf}[Path=fonts/]`. In Chrome and Edge, "+" → "Add a font from this computer" copies a font and its bold and italic files for you. When a document asks for an installed font, the error offers "Add *font* from this computer" right there. Or use one that comes with TeX Live, such as TeX Gyre Termes (like Times) or TeX Gyre Heros (like Helvetica). |
-| **EPS images** need a converter program, which a browser cannot run. | Convert them to PDF (most drawing and plotting programs export PDF), then add those. |
+| **EPS images** need a converter: "Convert EPS images" downloads Ghostscript (about 15 MB) the first time. It works with pdfLaTeX and LuaLaTeX, not XeLaTeX. | With XeLaTeX, convert them to PDF (most drawing and plotting programs export PDF), then add those. |
+| **A project started without signing in lives only in that browser**, and browsers may clear it (Safari does after seven days without a visit). | Save it to Google Drive with the button in the status bar; it then works like any other project. Or download it as a `.zip` from its ⋯ menu. |
 | **No shell escape**, so no `minted`. | Use `listings` for code, which needs no shell escape. |
-| **One error at a time.** The engine stops at the first error. | Fix it and update the PDF again; with *Compile as you type* on, that happens by itself. |
+| **One error at a time**, unless you choose otherwise: the engine stops at the first error. | Fix it and update the PDF again; with *Compile as you type* on, that happens by itself. Or turn on *Show all errors*; fix the first one first, as later ones can be caused by it. |
 | **Long documents compile more slowly** than with a local TeX Live. | Turn on *Compile as you type*: its quick compiles run LaTeX once instead of three or four times. For very long ones, compile one chapter with `\includeonly{chapters/method}`, or use `\documentclass[draft]{…}`, which skips images. |
 | **The first compile downloads the TeX engine** (about 125 MB; about 30 MB more the first time Biber is used). | It happens once per browser, and starts as soon as you open a project; later visits load it from the cache. |
 | **Your Google account's storage**: 15 GB on a free account, shared with Gmail and Photos. | LaTeX projects are small; images are usually what fills it. A safe copy of a `.tex` file takes a few KB. |
@@ -183,11 +189,12 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - Tilde is a static website. There is **no Tilde server or database**; everything runs in your browser.
 - It asks Google only for the `drive.file` permission: Tilde can see **the files it creates and the files you pick**, nothing else in your Drive.
 - Your sign-in stays in the browser tab. Unsaved edits are kept in your browser until they reach Drive, and **signing out deletes them** (after offering to download anything unsaved).
+- Projects started without signing in are kept only in your browser, until you save them to Drive. They belong to no account, so signing out leaves them.
 - TeX packages are downloaded from TeXlyre's public package server, without any of your data.
 - "Add a paper from its DOI" sends only that DOI to doi.org, which answers with the paper's citation.
 - Sharing the PDF by link makes that PDF viewable by anyone with the link, until you stop sharing it.
 - In a shared project, your co-authors see your name, your Google profile photo, your edits and your comments. While you are in the project together, your browsers may connect directly (encrypted, with no server of ours in between), so each sees the other's IP address; Google's free STUN server helps them find each other.
-- The full [privacy policy](public/privacy.html) is also shown in the app ("Privacy" at the bottom of the projects page). Licenses of everything Tilde serves: [public/licenses/NOTICE.txt](public/licenses/NOTICE.txt).
+- The full [privacy policy](public/privacy.html) is also shown in the app ("Privacy" at the bottom of the welcome page, and in the menu under your photo once signed in). Licenses of everything Tilde serves: [public/licenses/NOTICE.txt](public/licenses/NOTICE.txt).
 
 ## Run it yourself
 

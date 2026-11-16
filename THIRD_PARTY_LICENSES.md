@@ -21,6 +21,7 @@ This file lists everything Tilde uses that was written by others.
 | y-codemirror.next | 0.3.6 | MIT | https://github.com/yjs/y-codemirror.next | Connects the editor to the shared text |
 | lib0 | 0.2.119 | MIT | https://github.com/dmonad/lib0 | Small helpers that Yjs and its add-ons use |
 | katex | 0.19.1 | MIT (code); its fonts and the SVG shapes adapted from them are OFL-1.1 (Design Science, Khan Academy), see `public/licenses/katex-fonts.txt` | https://katex.org | The maths preview when the pointer rests on maths in the source. Loaded the first time it is needed |
+| @okathira/ghostpdl-wasm (Ghostscript 10.06.0) | 1.1.0 | AGPL-3.0-or-later (Ghostscript and the libraries built into it: freetype, libjpeg, libpng, zlib, lcms2mt, OpenJPEG, jbig2dec, all AGPL-compatible) | https://github.com/okathira/ghostpdl-wasm | Converts EPS images to PDF when "Convert EPS images" is on. Loaded the first time it is needed (about 15 MB) |
 | IBM Plex Sans (`@fontsource/ibm-plex-sans`) | 5.3.0 | OFL-1.1 (font); license file in the package | https://github.com/IBM/plex | Font for the interface |
 | IBM Plex Mono (`@fontsource/ibm-plex-mono`) | 5.3.0 | OFL-1.1 (font); license file in the package | https://github.com/IBM/plex | Font for the editor |
 | TeX Live 2026 package files (`texlive-basic.data`) | 2026 | Each package has its own license (mostly LPPL-1.3c, also GPL, OFL, public domain and others); see `LICENSE.TL` inside the bundle | https://tug.org/texlive/ | LaTeX classes, packages and fonts. Served unmodified |

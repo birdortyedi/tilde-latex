@@ -467,6 +467,12 @@ dialog.wide { width: min(700px, 94vw); max-width: none; padding: 24px 28px; }
 .goto-label mark { background: color-mix(in srgb, var(--teal) 25%, transparent); color: inherit; border-radius: 2px; }
 .goto-detail { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
 .goto-empty { padding: 14px 10px; color: var(--muted); }
+/* A command's keys (? in the box): keycaps on the right; alternatives side by side. */
+.goto-caps { flex: none; display: flex; gap: 10px; }
+.goto-caps span { display: flex; gap: 3px; }
+.goto-caps kbd { min-width: 1.4em; text-align: center; color: var(--ink); }
+.goto-hit.command .goto-label { flex: 0 0 44%; }
+.goto-hit.command .goto-detail { flex: 1; max-width: none; }
 .goto-keys { display: flex; gap: 16px; margin: 0; padding: 7px 16px; border-top: 1px solid var(--rule); color: var(--muted); font-size: 12px; }
 @media (max-width: 720px) { .goto-keys { display: none; } }
 /* People: who has access to a shared project, and inviting more. */
@@ -491,6 +497,9 @@ dialog.wide { width: min(700px, 94vw); max-width: none; padding: 24px 28px; }
 .math-preview { max-width: min(640px, 80vw); overflow-x: auto; padding: 8px 12px; font-size: 15px; }
 .math-preview .katex-display { margin: 0; }
 .math-preview.problem { color: var(--muted); font: 12.5px var(--ui); }
+/* Typeset by TeX on white, like the PDF, with a note that says so. */
+.math-preview.by-tex canvas { display: block; background: #fff; border-radius: 3px; }
+.math-note { margin-top: 6px; color: var(--muted); font: 12px var(--ui); }
 
 /* Comments in the editor: the commented words, the "Comment" button over a
    selection, and the card with the thread. Amber, like a note in the margin. */
@@ -570,15 +579,18 @@ dialog.starters { width: min(880px, 94vw); }
 #projects-page { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; background: var(--editor); }
 #projects-page .inner { flex: 1; width: 100%; max-width: 960px; margin: 0 auto; padding: 40px 40px 24px; }
 /* Signed out: the welcome sits slightly above the middle, where the eye expects the centre of a page. */
-#projects-page.welcoming .inner { display: flex; flex-direction: column; justify-content: center; max-width: 1180px; padding: 40px 56px 8vh; }
 /* The welcome has its own sign-in button, and nothing to show in the status
    bar or behind the project switcher. */
-body.on-welcome #sign-in, body.on-welcome #show-projects .switch { display: none; }
+body.on-welcome #sign-in { display: none; }
+/* No project name on the welcome page: "Back to editor" returns to an open project. */
+body.on-welcome #show-projects { visibility: hidden; }
 /* The welcome page draws the tilde large itself. */
-body.on-welcome #home { visibility: hidden; }
 body.on-welcome #status, body.on-welcome #toggle-log { visibility: hidden; }
 /* On the project list, the status bar keeps only whether the open project is saved. */
-body.on-projects :is(#editor-look, #toggle-log, #cursor-position, #word-count, #problem-count, #status) { visibility: hidden; }
+body.on-projects :is(#editor-look, #show-shortcuts, #toggle-log, #cursor-position, #word-count, #problem-count, #status) { visibility: hidden; }
+/* The ? in the status bar: a keycap, as on the keyboard. */
+#show-shortcuts { display: grid; place-items: center; padding: 0 4px; border-color: transparent; background: none; }
+#show-shortcuts kbd { padding: 0 6px; font-size: 11px; line-height: 1.4; }
 
 /* "Back to editor": a small floating button at the bottom of the page. */
 #back-bar { position: sticky; bottom: 20px; display: flex; justify-content: center; pointer-events: none; }
@@ -631,7 +643,6 @@ button.link:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px;
   border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: translateY(-70%) rotate(45deg);
 }
 
-#project-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; background: var(--raised); }
 #project-list:empty { display: none; }
 #project-list li { display: flex; align-items: center; }
 #project-list li + li { border-top: 1px solid var(--rule); }
@@ -680,56 +691,105 @@ button.link:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px;
 #pdf .engine p:first-child { color: var(--ink); }
 #pdf .engine progress { width: 100%; height: 6px; accent-color: var(--teal); }
 
-/* Welcome, when signed out: the pitch on the left, examples on the right,
-   three facts in a row underneath across the full width. Reading text here
-   is 15px (the tool around it is 13px); gaps follow an 8px scale. */
+/* Welcome, when signed out: one screen, no scrolling. The pitch and the two
+   ways to start on the left; on the right a short document's source next to
+   its PDF, drawn like Tilde's own panes, which is what Tilde does; the facts
+   and links along the bottom. One type scale (13, 14, 17, 30 and 64 px), one
+   button size, and vertical sizes that shrink with the window's height so it
+   fits a 1366 x 768 laptop. */
 
+#projects-page.welcoming .inner {
+  display: flex; flex-direction: column; max-width: 1200px;
+  padding: clamp(12px, 3vh, 48px) 56px 12px;
+}
 #welcome {
-  display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(320px, 1fr);
-  column-gap: 72px; row-gap: 56px; align-items: center;
-  font-size: 15px; line-height: 1.55;
+  flex: 1; min-height: 0; display: grid;
+  grid-template-columns: minmax(340px, 1fr) minmax(0, 2fr); align-content: center;
+  column-gap: clamp(32px, 5vw, 72px); row-gap: clamp(20px, 6vh, 64px); align-items: center;
+  font-size: 14px; line-height: 1.5;
 }
-.tie-figure { display: flex; align-items: center; gap: 8px; margin: 0 0 24px; font: 600 112px/0.85 var(--ui); letter-spacing: -0.035em; }
-.tie-mark { width: 160px; height: 64px; overflow: visible; }
+.tie-figure { display: flex; align-items: center; gap: 0.08em; margin: 0 0 clamp(12px, 2.5vh, 24px); font: 600 clamp(40px, 7.5vh, 64px)/0.85 var(--ui); letter-spacing: -0.035em; }
+.tie-mark { width: 1.45em; height: 0.58em; overflow: visible; }
 .tie-mark path { stroke-width: 9; }
-#welcome h1 { margin: 0 0 16px; font-size: 38px; line-height: 1.12; font-weight: 600; letter-spacing: -0.02em; }
-.welcome-lead { max-width: 44ch; margin: 0 0 32px; font-size: 19px; line-height: 1.5; color: var(--muted); }
-.welcome-actions { display: flex; align-items: center; gap: 20px; color: var(--muted); font-size: 14px; }
-
-.welcome-examples { padding: 24px 24px 16px; border: 1px solid var(--rule); border-radius: 10px; background: var(--chrome); }
-#welcome .welcome-examples h2 { margin: 0 0 4px; font-size: 17px; font-weight: 600; }
-.welcome-examples > p { margin: 0 0 12px; color: var(--muted); font-size: 13.5px; }
-#example-list { list-style: none; margin: 0; padding: 0; }
-#example-list li + li { border-top: 1px solid var(--rule); }
-#example-list button {
-  all: unset; display: grid; grid-template-columns: 6.5em 1fr; align-items: baseline; gap: 12px;
-  width: 100%; box-sizing: border-box; padding: 10px 8px;
-  border: 1px solid transparent; border-radius: 5px; cursor: pointer; font-size: 14px;
+#welcome h1 { margin: 0 0 clamp(16px, 3vh, 28px); font-size: clamp(24px, 4.4vh, 30px); line-height: 1.15; font-weight: 600; letter-spacing: -0.015em; }
+.welcome-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+/* Every button here is the same size; only its colours differ. */
+.cover-button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  height: 40px; padding: 0 18px; border-radius: 6px; font: 500 14px var(--ui);
 }
-#example-list button:hover { background: var(--hover); }
-#example-list button:focus-visible { border-color: var(--teal); }
-#example-list .name { font-weight: 600; }
-#example-list .note { color: var(--muted); font-size: 13.5px; }
+/* Google's own colours for its sign-in button (its branding rules ask for them). */
+.google-button { padding-left: 14px; border: 1px solid #747775; background: #fff; color: #1f1f1f; }
+.google-button:hover:enabled { background: #f2f2f2; border-color: #747775; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .google-button { border-color: #8e918f; background: #131314; color: #e3e3e3; }
+  :root:not([data-theme='light']) .google-button:hover:enabled { background: #1f1f20; }
+}
+:root[data-theme='dark'] .google-button { border-color: #8e918f; background: #131314; color: #e3e3e3; }
+:root[data-theme='dark'] .google-button:hover:enabled { background: #1f1f20; }
+.welcome-note { max-width: 44ch; margin: 12px 0 0; color: var(--muted); font-size: 13px; }
+.welcome-more { display: flex; flex-wrap: wrap; gap: 20px; margin: 8px 0 0; font-size: 13px; }
 
-.site-links { margin: 40px 0 0; color: var(--muted); font-size: 13px; }
+/* Projects kept in this browser, above the Drive projects. (Signed out, the
+   welcome page offers the latest as "Continue writing".) */
+#projects-signed-in .local-projects { margin: 0 0 28px; }
+#projects-signed-in .local-projects h3 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+#projects-signed-in .local-projects p { margin: -4px 0 10px; color: var(--muted); }
+#project-list, .project-rows { list-style: none; margin: 0; padding: 0; border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; background: var(--raised); }
+.project-rows li { display: flex; align-items: center; }
+.project-rows li + li { border-top: 1px solid var(--rule); }
+.project-rows li:hover { background: var(--hover); }
+
+/* The showcase: Tilde's source pane and PDF pane, side by side, under one bar. */
+.showcase { display: flex; flex-direction: column; height: clamp(300px, 58vh, 400px); margin: 0; border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; background: var(--editor); }
+/* With a project open, "Back to editor" sits under the cover: the showcase makes room for it. */
+.showcase-bar {
+  display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); align-items: center; height: 36px; flex: none;
+  border-bottom: 1px solid var(--rule); background: var(--chrome); color: var(--muted); font-size: 13px;
+}
+.showcase-bar > span { padding: 0 16px; }
+.showcase-state { display: flex; align-items: center; gap: 8px; border-left: 1px solid var(--rule); height: 100%; }
+.showcase-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+.showcase-panes { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
+/* Like the editor: line numbers, commands in teal. */
+.showcase-source {
+  margin: 0; padding: 14px 16px 14px 0; overflow: hidden; font: 12px/1.6 var(--mono);
+  -webkit-mask-image: linear-gradient(to bottom, #000 85%, transparent); mask-image: linear-gradient(to bottom, #000 85%, transparent);
+}
+.showcase-source .line { display: grid; grid-template-columns: 3.2em minmax(0, 1fr); }
+.showcase-source .ln { padding-right: 1em; color: var(--muted); text-align: right; opacity: 0.7; user-select: none; }
+.showcase-source code { font: inherit; white-space: pre; } /* in a narrow window, long lines are cut at the edge, not wrapped */
+.showcase-source .cmd { color: var(--teal); }
+.showcase-source .comment { color: var(--muted); }
+/* The PDF is white, whatever the theme, as in the PDF pane. */
+.showcase-page { min-height: 0; padding: clamp(16px, 3vh, 28px); overflow: hidden; border-left: 1px solid var(--rule); background: #fff; }
+/* The intro, centred, with the same space above and below. */
+.showcase-page img { display: block; width: 100%; height: 100%; object-fit: contain; }
+
+/* The footer, on the welcome page only (signed in, the account menu has the links). */
+.site-links { display: none; flex-wrap: wrap; gap: 6px 20px; color: var(--muted); font-size: 13px; }
+.site-links span { margin-right: auto; } /* who made it on the left, the links on the right */
 .site-links a { color: inherit; }
+#projects-page.welcoming .site-links { display: flex; margin: 0; padding-top: 12px; }
 
+/* Under the ways to start: what Tilde is, in three lines. */
 .welcome-facts {
-  grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px;
-  margin: 0; padding: 28px 0 0; list-style: none; border-top: 1px solid var(--rule);
+  margin: clamp(16px, 3vh, 28px) 0 0; padding: clamp(12px, 2vh, 16px) 0 0; border-top: 1px solid var(--rule);
+  list-style: none; color: var(--muted); font-size: 13px; line-height: 1.8;
 }
-.welcome-facts strong { display: block; margin-bottom: 6px; font-weight: 600; }
-.welcome-facts span { display: block; max-width: 36ch; color: var(--muted); }
+.welcome-facts strong { color: var(--ink); font-weight: 600; }
 
 /* Narrow windows: one pane at a time (see layout.ts), shorter labels */
 
 @media (max-width: 899px) {
-  #welcome { grid-template-columns: 1fr; row-gap: 32px; }
-  .welcome-facts { grid-template-columns: 1fr; gap: 16px; padding-top: 24px; }
-  .tie-figure { margin-bottom: 16px; font-size: 68px; }
-  .tie-mark { width: 100px; height: 40px; }
-  #welcome h1 { font-size: 28px; }
-  .welcome-lead { margin-bottom: 24px; font-size: 17px; }
+  /* A phone or a narrow window: one column, and the page may scroll. */
+  #welcome { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; row-gap: 28px; }
+  .showcase { height: auto; }
+  .showcase-panes { grid-template-columns: minmax(0, 1fr); }
+  .showcase-source { max-height: 200px; }
+  .showcase-page { border-left: 0; border-top: 1px solid var(--rule); }
+  .showcase-page img { height: auto; }
+  #welcome h1 { font-size: 26px; }
   #projects-page.welcoming .inner { padding: 24px 16px; }
   #projects-page .inner { padding: 20px 16px 12px; }
   .projects-head { flex-direction: column; align-items: stretch; }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { macrosIn, mathAt } from './mathPreview';
+import { formulaDocument, macrosIn, mathAt } from './mathPreview';
 
 describe('the maths preview', () => {
   const at = (text: string, marker = '|') => mathAt(text.replace(marker, ''), text.indexOf(marker));
@@ -21,5 +21,13 @@ describe('the maths preview', () => {
   it('collects the document\'s own macros', () => {
     const files = [{ path: 'main.tex', content: '\\newcommand{\\R}{\\mathbb{R}}\n\\newcommand\\norm[1]{\\lVert #1 \\rVert}\n\\DeclareMathOperator*{\\argmax}{arg\\,max}\n% \\newcommand{\\no}{x}' }];
     expect(macrosIn(files)).toEqual({ '\\R': '\\mathbb{R}', '\\norm': '\\lVert #1 \\rVert', '\\argmax': '\\operatorname*{arg\\,max}' });
+  });
+
+  it('wraps maths KaTeX cannot show in a small document with the main file\'s preamble, for TeX', () => {
+    const main = '\\documentclass[11pt]{article}\n\\usepackage{tensor}\n\\newcommand{\\R}{\\mathbb{R}}\n\\begin{document}\nText\n\\end{document}';
+    expect(formulaDocument(main, { from: 0, to: 0, tex: '\\tensor{T}{^a_b}', display: false }))
+      .toBe('\\documentclass[border=3pt,varwidth=40em]{standalone}\n\n\\usepackage{tensor}\n\\newcommand{\\R}{\\mathbb{R}}\n\n\\begin{document}\n$\\tensor{T}{^a_b}$\n\\end{document}\n');
+    expect(formulaDocument(main, { from: 0, to: 0, tex: 'x', display: true })).toContain('\n\\[x\\]\n');
+    expect(formulaDocument(main, { from: 0, to: 0, tex: '\\begin{align*}a &= b\\end{align*}', display: true })).toContain('\n\\begin{align*}a &= b\\end{align*}\n');
   });
 });

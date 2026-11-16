@@ -5,7 +5,7 @@ import type { ProjectFile } from './projects';
 // "Go to anything" (Ctrl/Cmd+K): one search over the project's files,
 // headings, labels, citation keys and text. Each result says where to go.
 
-export type HitKind = 'file' | 'heading' | 'label' | 'citation' | 'text';
+export type HitKind = 'file' | 'heading' | 'label' | 'citation' | 'text' | 'command';
 
 export interface Hit {
   kind: HitKind;
@@ -15,6 +15,11 @@ export interface Hit {
   line?: number; // 1 = first line; none for a file
   match?: [number, number]; // for text: where the match is in `label`
   column?: number; // for text: where the match starts in the line (0 = first character)
+  // For a command (see commands.ts): its group, its keycaps (each combination
+  // a list), and what to run, if Tilde can run it from the list.
+  group?: string;
+  keys?: string[][];
+  command?: string;
 }
 
 const PER_KIND = 8;

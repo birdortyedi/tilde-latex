@@ -13,7 +13,8 @@ const dialog = element<HTMLDialogElement>('#goto-dialog');
 const input = element<HTMLInputElement>('#goto-input');
 const list = element<HTMLUListElement>('#goto-results');
 
-const GROUP: Record<HitKind, string> = { file: 'Files', heading: 'Headings', label: 'Labels', citation: 'Citations', text: 'Text' };
+const GROUP: Record<HitKind, string> = { file: 'Files', heading: 'Headings', label: 'Labels', citation: 'Citations', text: 'Text', command: 'Commands' };
+const groupOf = (hit: Hit | undefined): string | undefined => (hit ? hit.group ?? GROUP[hit.kind] : undefined);
 
 let hits: Hit[] = [];
 let chosen = 0;
@@ -23,11 +24,11 @@ let go: (hit: Hit) => void = () => {};
 function render(): void {
   const rows: HTMLElement[] = [];
   hits.forEach((hit, index) => {
-    if (hit.kind !== hits[index - 1]?.kind) {
+    if (groupOf(hit) !== groupOf(hits[index - 1])) {
       const head = document.createElement('li');
       head.className = 'goto-group';
       head.setAttribute('role', 'presentation');
-      head.textContent = GROUP[hit.kind];
+      head.textContent = groupOf(hit) ?? '';
       rows.push(head);
     }
     const row = document.createElement('li');
@@ -49,6 +50,17 @@ function render(): void {
     detail.className = 'goto-detail';
     detail.textContent = hit.detail;
     row.append(label, detail);
+    if (hit.keys && hit.keys.length > 0) {
+      // Keycaps; alternatives (zoom in or out) side by side.
+      const keys = document.createElement('span');
+      keys.className = 'goto-caps';
+      for (const combo of hit.keys) {
+        const group = document.createElement('span');
+        group.append(...combo.map((cap) => Object.assign(document.createElement('kbd'), { textContent: cap })));
+        keys.append(group);
+      }
+      row.append(keys);
+    }
     row.addEventListener('mousemove', () => {
       if (chosen === index) return;
       chosen = index;
@@ -61,7 +73,9 @@ function render(): void {
   if (hits.length === 0) {
     const empty = document.createElement('li');
     empty.className = 'goto-empty';
-    empty.textContent = input.value.trim() ? `Nothing in this project matches "${input.value.trim()}".` : 'This project has no files yet.';
+    const typed = input.value.trim();
+    empty.textContent = typed.startsWith('?') ? `No command matches "${typed.slice(1).trim()}".`
+      : typed ? `Nothing in this project matches "${typed}".` : 'This project has no files yet.';
     rows.push(empty);
   }
   list.replaceChildren(...rows);
@@ -100,11 +114,12 @@ dialog.addEventListener('click', (event) => {
   if (event.target === dialog) dialog.close();
 });
 
-export function openGoTo(searchWith: (typed: string) => Hit[], goTo: (hit: Hit) => void): void {
+// `typed`: what the box starts with; "?" lists the commands and their keys.
+export function openGoTo(searchWith: (typed: string) => Hit[], goTo: (hit: Hit) => void, typed = ''): void {
   search = searchWith;
   go = goTo;
-  input.value = '';
-  hits = search('');
+  input.value = typed;
+  hits = search(typed);
   chosen = 0;
   render();
   dialog.showModal();

@@ -1,6 +1,6 @@
 import { basicSetup } from 'codemirror';
 import { Compartment, EditorSelection, EditorState, Prec, type Extension, type TransactionSpec } from '@codemirror/state';
-import { EditorView, keymap, scrollPastEnd, tooltips } from '@codemirror/view';
+import { runScopeHandlers, EditorView, keymap, scrollPastEnd, tooltips } from '@codemirror/view';
 import { lintGutter, setDiagnostics, type Diagnostic } from '@codemirror/lint';
 import { HighlightStyle, StreamLanguage, syntaxHighlighting } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
@@ -9,7 +9,7 @@ import { latexEditing, type AddCitation } from './latexEditing';
 import { latexSpellcheck } from './spellcheck';
 import { findPanel } from './findPanel';
 import { cellsFrom, insideTabular, latexTable, tableRows } from './pasteTable';
-import { mathPreview } from './mathPreview';
+import { mathPreview, type TexTypesetter } from './mathPreview';
 import { commentsExtension, openCard, setCommentRanges, type CommentHooks, type CommentRange } from './commentsView';
 import type { ProjectFile } from './projects';
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
@@ -71,9 +71,11 @@ export class Editor {
   // Cells pasted from a spreadsheet became a table (or rows, inside a
   // tabular) from `from` to `to`; `plain` is what was pasted (see main.ts).
   onTablePasted: (from: number, to: number, plain: string, rowsOnly: boolean) => void = () => {};
+  // Maths KaTeX cannot preview, typeset by the TeX engine instead (see main.ts).
+  typesetWithTex: TexTypesetter = () => Promise.reject(new Error('the TeX engine is not ready'));
   // In a shared project, a file's shared text; null in other projects.
   shared: (path: string) => SharedText | null = () => null;
-  // Comments in shared projects: whether this account may add them, and the thread cards (see commentsUi.ts).
+  // Comments: whether this account may add them, and the thread cards (see commentsUi.ts).
   commentHooks: CommentHooks = { canComment: () => false, card: () => document.createElement('div') };
   private view: EditorView;
   private states = new Map<string, EditorState>();
@@ -97,7 +99,7 @@ export class Editor {
     this.language = [
       StreamLanguage.define({ ...stex, languageData: { ...stex.languageData, ...latex.languageData } }),
       latex.extensions,
-      mathPreview(files),
+      mathPreview(files, (math) => this.typesetWithTex(math)),
     ];
     this.commenting = commentsExtension({ canComment: () => this.commentHooks.canComment(), card: (target, close) => this.commentHooks.card(target, close) });
   }
@@ -146,6 +148,18 @@ export class Editor {
     const at = Math.min(Math.max(offset, 0), this.view.state.doc.length);
     this.view.dispatch({ selection: { anchor: at }, effects: EditorView.scrollIntoView(at, { y: 'center' }) });
     this.view.focus();
+  }
+
+  // Runs what a key combination such as "Mod-b" does in the editor, as if it
+  // were pressed there (for the keyboard shortcut list). False if nothing ran.
+  runKey(combo: string, mac: boolean): boolean {
+    const parts = combo.split('-');
+    const key = parts.pop() ?? '';
+    const mod = parts.includes('Mod');
+    this.view.focus();
+    return runScopeHandlers(this.view, new KeyboardEvent('keydown', {
+      key, metaKey: mod && mac, ctrlKey: mod && !mac, shiftKey: parts.includes('Shift'), altKey: parts.includes('Alt'),
+    }), 'editor');
   }
 
   // Selects a line (1 = first) of the open file and scrolls it into the middle.
@@ -321,7 +335,9 @@ export class Editor {
       extensions: [
         // Shared text: typing goes into it, others' edits come out of it, and
         // Ctrl/Cmd+Z undoes only this browser's edits.
-        shared ? [yCollab(shared.text, shared.awareness, { undoManager: shared.undo }), Prec.high(keymap.of(yUndoManagerKeymap)), this.commenting] : [],
+        shared ? [yCollab(shared.text, shared.awareness, { undoManager: shared.undo }), Prec.high(keymap.of(yUndoManagerKeymap))] : [],
+        // Comments, in every project that may change (the first one in a project of one's own turns them on).
+        this.commenting,
         basicSetup,
         EditorState.readOnly.of(this.readOnly),
         syntaxHighlighting(latexColours),

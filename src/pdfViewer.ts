@@ -7,6 +7,30 @@ import { countWords } from './words';
 // PDF.js does its parsing in its own Web Worker.
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
+// The first page of a small PDF (a formula typeset by TeX) as a picture, at
+// `zoom` times its size, drawn sharp on high-resolution screens. At 1.8, 10 pt
+// text is about as large as the quick preview (KaTeX) draws maths.
+export async function pdfToCanvas(pdf: Uint8Array, zoom = 1.8): Promise<HTMLCanvasElement> {
+  const loading = pdfjs.getDocument({ data: pdf.slice() });
+  const loaded = await loading.promise;
+  try {
+    const page = await loaded.getPage(1);
+    const sharp = window.devicePixelRatio || 1;
+    const viewport = page.getViewport({ scale: zoom * sharp });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    canvas.style.width = `${Math.ceil(viewport.width / sharp)}px`;
+    canvas.style.height = `${Math.ceil(viewport.height / sharp)}px`;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('This browser cannot draw the formula.');
+    await page.render({ canvas, canvasContext: context, viewport }).promise;
+    return canvas;
+  } finally {
+    void loading.destroy(); // free the memory PDF.js used for it
+  }
+}
+
 const PADDING = 20; // around and between the pages, as in style.css
 
 export interface PdfViewState {
