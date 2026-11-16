@@ -11,6 +11,8 @@ import type { Project } from './projects';
 //       'text'    a Y.Text, for text files
 //       'driveId' for images and other binary files, which stay ordinary
 //                 Drive files (too big to rewrite with every save)
+//     'deleted', 'deletedBy'  when and by whom it was deleted: it waits in
+//                 "Recently deleted" for 30 days before it goes for good
 //   doc.getMap('project'): 'name', 'mainFile', and the Drive ids of the
 //     project's folder, mailbox file and uploads folder.
 
@@ -41,9 +43,65 @@ function entryOf(id: string, map: Y.Map<unknown>): SharedEntry {
   };
 }
 
-// Every file, sorted by path.
+const isDeleted = (map: Y.Map<unknown>): boolean => map.has('deleted');
+
+// Every file (not the deleted ones), sorted by path.
 export function sharedFiles(doc: Y.Doc): SharedEntry[] {
-  return [...filesMap(doc)].map(([id, map]) => entryOf(id, map)).sort((a, b) => a.path.localeCompare(b.path));
+  return [...filesMap(doc)].filter(([, map]) => !isDeleted(map)).map(([id, map]) => entryOf(id, map)).sort((a, b) => a.path.localeCompare(b.path));
+}
+
+export interface DeletedEntry {
+  id: string;
+  path: string;
+  at: number; // when it was deleted, in milliseconds since 1970
+  by: string; // who deleted it
+}
+
+// Deletes a file for everyone, into "Recently deleted": its text stays in the
+// document, so it can come back. Returns false if there is no such file.
+export function deleteShared(doc: Y.Doc, path: string, by: string, at = Date.now()): boolean {
+  const entry = sharedFileAt(doc, path);
+  const map = entry && filesMap(doc).get(entry.id);
+  if (!map) return false;
+  doc.transact(() => {
+    map.set('deleted', at);
+    map.set('deletedBy', by);
+  });
+  return true;
+}
+
+// The files deleted lately, the newest first.
+export function deletedFiles(doc: Y.Doc): DeletedEntry[] {
+  return [...filesMap(doc)].filter(([, map]) => isDeleted(map))
+    .map(([id, map]) => ({ id, path: String(map.get('path') ?? ''), at: Number(map.get('deleted')), by: String(map.get('deletedBy') ?? '') }))
+    .sort((a, b) => b.at - a.at);
+}
+
+// Brings a deleted file back, under its old path, or "name (restored).tex" if
+// that is taken by now. Returns the path, or null if it is not in the list.
+export function restoreShared(doc: Y.Doc, id: string): string | null {
+  const map = filesMap(doc).get(id);
+  if (!map || !isDeleted(map)) return null;
+  const taken = (path: string): boolean => sharedFiles(doc).some((e) => e.path === path || e.path.startsWith(`${path}/`) || path.startsWith(`${e.path}/`));
+  const old = String(map.get('path'));
+  const dot = old.lastIndexOf('.');
+  const slash = old.lastIndexOf('/');
+  const [base, extension] = dot > slash + 1 ? [old.slice(0, dot), old.slice(dot)] : [old, ''];
+  let path = old;
+  for (let n = 1; taken(path); n++) path = `${base} (restored${n > 1 ? ` ${n}` : ''})${extension}`;
+  doc.transact(() => {
+    map.delete('deleted');
+    map.delete('deletedBy');
+    if (path !== old) map.set('path', path);
+  });
+  return path;
+}
+
+// Files deleted before `before` go for good. Returns how many.
+export function purgeDeleted(doc: Y.Doc, before: number): number {
+  const old = [...filesMap(doc)].filter(([, map]) => isDeleted(map) && Number(map.get('deleted')) < before).map(([id]) => id);
+  if (old.length > 0) doc.transact(() => { for (const id of old) filesMap(doc).delete(id); });
+  return old.length;
 }
 
 export function sharedFileAt(doc: Y.Doc, path: string): SharedEntry | undefined {
@@ -73,6 +131,7 @@ export function addSharedBinary(doc: Y.Doc, path: string, driveId: string): stri
 export function moveShared(doc: Y.Doc, from: string, to: string): void {
   doc.transact(() => {
     for (const [, map] of filesMap(doc)) {
+      if (isDeleted(map)) continue; // a deleted file comes back where it was
       const path = String(map.get('path'));
       if (path === from) map.set('path', to);
       else if (path.startsWith(`${from}/`)) map.set('path', to + path.slice(from.length));
@@ -112,6 +171,12 @@ export function plainFileIds(doc: Y.Doc): Y.Map<string> {
 // wrote them went away before noting their Drive version.
 export function plainHashes(doc: Y.Doc): Y.Map<string> {
   return doc.getMap('plainHashes');
+}
+
+// For files a co-author added (kept in "Tilde uploads"): the upload each copy
+// in the owner's folder was made from, by file id, so a replaced one is copied again.
+export function plainCopies(doc: Y.Doc): Y.Map<string> {
+  return doc.getMap('plainCopies');
 }
 
 // A short fingerprint of a text (FNV-1a, 32 bits, with the length).
@@ -165,7 +230,7 @@ export function docFromProject(project: Project, ids: SharedIds): Y.Doc {
 export function fixDuplicatePaths(doc: Y.Doc): boolean {
   const taken = new Set<string>();
   const renames: [Y.Map<unknown>, string][] = [];
-  const byId = [...filesMap(doc)].sort(([a], [b]) => (a < b ? -1 : 1));
+  const byId = [...filesMap(doc)].filter(([, map]) => !isDeleted(map)).sort(([a], [b]) => (a < b ? -1 : 1));
   for (const [, map] of byId) {
     const path = String(map.get('path'));
     if (!taken.has(path)) {

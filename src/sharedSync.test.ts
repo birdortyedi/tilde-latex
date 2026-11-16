@@ -159,6 +159,72 @@ describe('a shared project', () => {
     expect(syncA.project.files.find((f) => f.path === 'figures/new.png')?.content).toEqual(new Uint8Array([9]));
   });
 
+  it("puts a copy of a collaborator's image where it belongs in the owner's folder, and follows it", async () => {
+    const { drive, syncA, syncB } = await start();
+    await syncB.addFile('figures/new.png', new Uint8Array([9]));
+    await syncA.saveNow();
+    await vi.advanceTimersByTimeAsync(0);
+    drive.grant([...syncA.missing.keys()][0], 'A');
+    await syncA.retryMissing();
+    await settle(syncA);
+    expect(drive.read('LaTeX Projects/Paper/figures/new.png')).toBe('\u0009');
+    expect(drive.read('LaTeX Projects/Paper/Tilde uploads/figures - new.png')).toBe('\u0009'); // co-authors read this one
+    await syncB.addFile('figures/new.png', new Uint8Array([7])); // replaced
+    await syncA.saveNow();
+    await vi.advanceTimersByTimeAsync(0);
+    drive.grant([...syncA.missing.keys()][0], 'A');
+    await syncA.retryMissing();
+    await settle(syncA);
+    expect(drive.read('LaTeX Projects/Paper/figures/new.png')).toBe('\u0007');
+    await syncB.moveFile('figures/new.png', 'img/new.png');
+    await syncA.saveNow();
+    await settle(syncA);
+    expect(drive.read('LaTeX Projects/Paper/img/new.png')).toBe('\u0007');
+    expect(drive.read('LaTeX Projects/Paper/figures/new.png')).toBeUndefined();
+    await syncB.deleteFile('img/new.png');
+    await syncA.saveNow();
+    await settle(syncA);
+    expect(drive.read('LaTeX Projects/Paper/img/new.png')).toBeUndefined();
+    expect(syncA.project.files.map((f) => f.path)).not.toContain('img/new.png'); // the copy is not taken for a new file
+  });
+
+  it('keeps a deleted file for everyone in Recently deleted, and brings it back', async () => {
+    const { drive, syncA, syncB } = await start();
+    await syncB.addFile('notes.tex', 'Remember this.');
+    await syncA.saveNow();
+    await settle(syncA);
+    await syncB.deleteFile('notes.tex');
+    await syncA.saveNow();
+    await settle(syncA);
+    expect(textIn(syncA, 'notes.tex')).toBeUndefined();
+    expect(drive.read('LaTeX Projects/Paper/notes.tex')).toBeUndefined();
+    expect(syncA.recentlyDeleted.map((d) => [d.path, d.by])).toEqual([['notes.tex', 'Bora']]);
+    expect(await syncA.restoreFile(syncA.recentlyDeleted[0].id)).toBe('notes.tex');
+    await syncB.saveNow();
+    expect(textIn(syncB, 'notes.tex')).toBe('Remember this.');
+    await settle(syncA);
+    expect(drive.read('LaTeX Projects/Paper/notes.tex')).toBe('Remember this.');
+    expect(syncA.recentlyDeleted).toEqual([]);
+  });
+
+  it('goes back to a file as it was when editing started, even after a rename', async () => {
+    const { drive, syncA, syncB } = await start();
+    syncA.textFor('main.tex')?.text.insert(0, '% today\n');
+    await syncA.saveNow();
+    const kept = syncA.project.files.find((f) => f.path === 'main.tex')?.safeCopy;
+    expect(kept && drive.keptForever.has(kept.revision)).toBe(true);
+    expect(await syncA.safeCopyText('main.tex')).toBe('\\documentclass{article}');
+    await syncB.moveFile('main.tex', 'paper.tex');
+    await syncA.saveNow();
+    expect(await syncA.safeCopyText('paper.tex')).toBe('\\documentclass{article}');
+    // Once a day: the next session's save keeps no new version, and Tilde in another browser offers the same one.
+    const keptBefore = drive.keptForever.size;
+    syncB.textFor('paper.tex')?.text.insert(0, '% B\n');
+    await syncB.saveNow();
+    expect(drive.keptForever.size).toBe(keptBefore);
+    expect(syncB.project.files.find((f) => f.path === 'paper.tex')?.safeCopy).toEqual(kept);
+  });
+
   it('keeps edits made offline in the browser and saves them on the next visit', async () => {
     const { b, syncB, store, joined } = await start();
     b.offline = true;

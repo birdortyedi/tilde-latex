@@ -1,6 +1,6 @@
 import * as Y from 'yjs';
 import { FOLDER_TYPE, type Drive, type DriveFile, type Role } from './drive';
-import type { Project } from './projects';
+import type { Project, SafeCopy } from './projects';
 import { docFromProject, sharedIds, type SharedIds } from './sharedDoc';
 
 // Sharing a project with co-authors, through Drive alone. With drive.file,
@@ -22,13 +22,20 @@ export interface LoadedShared {
   doc: Y.Doc;
   saved: Uint8Array; // the document as it was in Drive
   revision?: string;
+  safeCopy?: SafeCopy; // the version of the whole project kept forever lately (see SharedSync)
 }
+
+// Tilde's notes on the shared file: its version kept forever, and when that version was saved.
+export const SHARED_SAFE_COPY = 'tildeSafeCopy';
+export const SHARED_SAFE_COPY_TIME = 'tildeSafeCopyTime';
 
 export async function loadShared(drive: Drive, stateId: string): Promise<LoadedShared> {
   const [info, saved] = await Promise.all([drive.get(stateId), drive.download(stateId)]);
   const doc = new Y.Doc();
   if (saved.length > 0) Y.applyUpdate(doc, saved);
-  return { stateId, doc, saved, revision: info.headRevisionId };
+  const kept = info.appProperties?.[SHARED_SAFE_COPY];
+  const keptTime = info.appProperties?.[SHARED_SAFE_COPY_TIME];
+  return { stateId, doc, saved, revision: info.headRevisionId, ...(kept && keptTime ? { safeCopy: { revision: kept, time: keptTime } } : {}) };
 }
 
 // The shared document of a project folder, if the project is shared.

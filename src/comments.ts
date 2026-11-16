@@ -102,8 +102,10 @@ function absolute(doc: Y.Doc, json: unknown): number | null {
 // the order they appear in the text.
 export function threads(doc: Y.Doc, fileId?: string): Thread[] {
   const found: Thread[] = [];
+  const live = new Set(sharedFiles(doc).map((entry) => entry.id)); // a deleted file's comments wait with it
   for (const [id, thread] of commentsMap(doc)) {
     const file = String(thread.get('file'));
+    if (!live.has(file)) continue;
     const replies = thread.get('replies');
     if ((fileId && file !== fileId) || !(replies instanceof Y.Array) || replies.length === 0) continue;
     const from = absolute(doc, thread.get('from'));

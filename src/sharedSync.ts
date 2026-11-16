@@ -2,14 +2,14 @@ import * as Y from 'yjs';
 import { SignInNeededError } from './auth';
 import { OfflineError, type Drive, type Profile } from './drive';
 import type { DraftStore } from './drafts';
-import type { Project, ProjectFile } from './projects';
+import type { Project, ProjectFile, SafeCopy } from './projects';
 import {
-  addSharedBinary, addSharedText, fixDuplicatePaths, moveShared, plainFileIds, plainHashes, plainRevisions, removeShared, savedLacks, setSharedDriveId, textHash,
+  addSharedBinary, addSharedText, deletedFiles, deleteShared, fixDuplicatePaths, moveShared, plainCopies, purgeDeleted, restoreShared, plainFileIds, plainHashes, plainRevisions, removeShared, savedLacks, setSharedDriveId, textHash,
   setSharedMainFile, setSharedName, sharedFileAt,
   sharedFiles, sharedIds, sharedMainFile, sharedName, type SharedEntry, type SharedIds,
 } from './sharedDoc';
 import type { SharedStore } from './sharedStore';
-import type { LoadedShared } from './sharing';
+import { SHARED_SAFE_COPY, SHARED_SAFE_COPY_TIME, type LoadedShared } from './sharing';
 import { colorFor, fromPeer, Live, type MakeLink, type Signals } from './live';
 import { mergeOutside, outsideCopyPath } from './outsideEdits';
 import { AUTOSAVE_DELAY, ProjectSync, RETRY_DELAY, type DriveChanges, type SyncListener, type SyncState } from './sync';
@@ -40,6 +40,10 @@ const MIRROR_DELAY = 3_000;
 const MIRROR_RETRY = 10_000; // after a failed update of the plain files
 const MIRROR_CHECK = 60_000; // how often the tab keeping the plain files reads them again anyway
 const ACCESS_CHECK = 60_000; // how often a viewer's tab asks Drive whether it may edit by now
+// Drive keeps at most 200 versions of a file forever, so a shared project gets
+// at most one such version a day (see keepSafeCopy).
+const SAFE_COPY_EVERY = 24 * 60 * 60 * 1000;
+const KEEP_DELETED = 30 * 24 * 60 * 60 * 1000; // how long deleted files wait in "Recently deleted"
 
 // Marks changes that came from Drive, so they are not mistaken for this browser's edits.
 const FROM_DRIVE = Symbol('from Drive');
@@ -83,6 +87,8 @@ export class SharedSync {
   onCanEdit: () => void = () => {}; // a viewer was allowed to edit meanwhile (main.ts opens the project again)
   private accessChecked = 0;
   private stateId: string;
+  private safeCopy: SafeCopy | undefined; // the whole project as it was, kept forever by Drive
+  private safeCopyTried = false; // once per session
   private myName: string;
   private myPhoto: string | undefined;
   private saved: Uint8Array; // the document as it was in Drive when last read or written
@@ -136,6 +142,7 @@ export class SharedSync {
     this.myName = profile.name;
     this.myPhoto = profile.photo;
     this.stateId = loaded.stateId;
+    this.safeCopy = loaded.safeCopy;
     this.doc = loaded.doc;
     this.saved = loaded.saved;
     this.revision = loaded.revision;
@@ -307,9 +314,23 @@ export class SharedSync {
 
   deleteFile(path: string): Promise<void> {
     return this.action(async () => {
-      removeShared(this.doc, path);
+      deleteShared(this.doc, path, this.myName);
       await this.round();
     });
+  }
+
+  // Files deleted in the last 30 days, which anyone can bring back.
+  get recentlyDeleted() {
+    return deletedFiles(this.doc);
+  }
+
+  // Brings a deleted file back; resolves to its path (renamed if the old one is taken).
+  restoreFile(id: string): Promise<string> {
+    let path = '';
+    return this.action(async () => {
+      path = restoreShared(this.doc, id) ?? '';
+      await this.round();
+    }).then(() => path);
   }
 
   moveFile(from: string, to: string): Promise<void> {
@@ -346,10 +367,30 @@ export class SharedSync {
     });
   }
 
-  // Not offered for shared projects: Drive's version history of the shared
-  // file holds the whole project, not one file.
+  // A file's text in the kept version of the whole project (found by the
+  // file's id, so a file renamed since is still found).
   async safeCopyText(path: string): Promise<string> {
-    throw new Error(`${path} is in a shared project, which has no earlier version per file yet.`);
+    const entry = sharedFileAt(this.doc, path);
+    if (!this.safeCopy || !entry?.text) throw new Error(`${path} has no earlier version to go back to yet.`);
+    const old = new Y.Doc();
+    Y.applyUpdate(old, await this.drive.downloadRevision(this.stateId, this.safeCopy.revision));
+    const before = sharedFiles(old).find((e) => e.id === entry.id)?.text;
+    old.destroy();
+    if (!before) throw new Error(`${path} did not exist yet in that version.`);
+    return before.toString();
+  }
+
+  // Asks Drive to keep the shared file's current version (the whole project)
+  // forever, at most once a day, and notes it on the file for everyone's Tilde.
+  // Drive cannot undo keeping a version, so Tilde never does.
+  private async keepSafeCopy(): Promise<void> {
+    if (!this.revision) return;
+    if (this.safeCopy && Date.now() - new Date(this.safeCopy.time).getTime() < SAFE_COPY_EVERY) return;
+    const kept = await this.drive.keepRevision(this.stateId, this.revision);
+    const time = kept.modifiedTime ?? new Date().toISOString();
+    await this.drive.updateMetadata(this.stateId, { appProperties: { [SHARED_SAFE_COPY]: kept.id, [SHARED_SAFE_COPY_TIME]: time } });
+    this.safeCopy = { revision: kept.id, time };
+    for (const file of this.project.files) if (typeof file.content === 'string') file.safeCopy = this.safeCopy;
   }
 
   async driveVersion(path: string): Promise<Uint8Array> {
@@ -410,6 +451,13 @@ export class SharedSync {
   // back if Drive's lacks anything of it.
   private async round(): Promise<void> {
     const info = await this.drive.get(this.stateId);
+    // The version of the whole project another browser kept lately, if newer than this one's.
+    const kept = info.appProperties?.[SHARED_SAFE_COPY];
+    const keptTime = info.appProperties?.[SHARED_SAFE_COPY_TIME];
+    if (kept && keptTime && kept !== this.safeCopy?.revision && (!this.safeCopy || keptTime > this.safeCopy.time)) {
+      this.safeCopy = { revision: kept, time: keptTime };
+      for (const file of this.project.files) if (typeof file.content === 'string') file.safeCopy = this.safeCopy;
+    }
     if (this.readOnly) {
       if (info.headRevisionId !== this.revision) {
         Y.applyUpdate(this.doc, await this.drive.download(this.stateId), FROM_DRIVE);
@@ -432,11 +480,18 @@ export class SharedSync {
       this.remoteChange = true;
       // Two files made with one name at the same moment: everyone renames the same one.
       fixDuplicatePaths(this.doc);
+      // Files deleted more than 30 days ago go for good.
+      purgeDeleted(this.doc, Date.now() - KEEP_DELETED);
     }
     if (this.localChange || this.remoteChange) {
       this.localChange = false;
       this.remoteChange = false;
       if (savedLacks(this.saved, this.doc)) {
+        // Before this browser's first write in a session: the project as it is now, to go back to.
+        if (!this.safeCopyTried) {
+          this.safeCopyTried = true;
+          await this.keepSafeCopy().catch((error: unknown) => console.warn('Could not keep a safe copy of the shared project', error));
+        }
         this.uploading = true;
         this.update();
         const update = Y.encodeStateAsUpdate(this.doc);
@@ -544,6 +599,7 @@ export class SharedSync {
     }
     file.path = entry.path;
     file.content = content;
+    if (entry.text && this.safeCopy) file.safeCopy = this.safeCopy; // "Go back to the version from …"
     return file;
   }
 
@@ -580,6 +636,7 @@ export class SharedSync {
     }
     this.missing = missing;
     this.rebuild(true);
+    if (this.mirror && wanted.length > missing.size) this.scheduleMirror(MIRROR_DELAY); // new images to copy into the folder
     if (missing.size > 0 && (this.live?.connected().length ?? 0) > 0) {
       // A connected peer likely has them: ask, and ask the user only for those still missing after a moment.
       this.live?.want([...missing.keys()]);
@@ -596,6 +653,7 @@ export class SharedSync {
     this.bytes.set(driveId, bytes);
     this.missing.delete(driveId);
     this.rebuild(true);
+    if (this.mirror) this.scheduleMirror(MIRROR_DELAY); // to copy it into the folder
     this.listener.missingChanged();
   }
 
@@ -783,7 +841,7 @@ export class SharedSync {
       const movedNow = new Set<string>();
       for (const entry of entries) {
         const own = entry.driveId ? plain.files.find((f) => f.driveId === entry.driveId) : undefined;
-        if (entry.driveId && !own) continue; // a collaborator's upload
+        if (entry.driveId && !own && !paths.has(entry.id)) continue; // a collaborator's upload with no copy in the folder yet
         const before = own?.path ?? paths.get(entry.id);
         if (!before || !fileAt(before)) continue;
         paths.set(entry.id, before);
@@ -838,6 +896,30 @@ export class SharedSync {
         // Noted at once, so if this tab goes away, the next one knows whose file it is.
         const made = fileAt(entry.path)?.driveId;
         if (made) fileIds.set(entry.id, made);
+      }
+    }
+    // 4. Images and other files a co-author added stay in "Tilde uploads", where
+    // their Tilde may put them. The folder gets a copy where each belongs, so
+    // it stays a complete LaTeX project; a replaced one is copied again.
+    const copies = plainCopies(this.doc);
+    for (const entry of entries) {
+      if (!entry.driveId || plain.files.some((f) => f.driveId === entry.driveId)) continue; // the owner's own: in place already
+      const bytes = this.bytes.get(entry.driveId);
+      if (!bytes) continue; // not readable here yet ("Allow"), and not sent by a co-author's browser
+      const mine = paths.get(entry.id);
+      const file = mine ? fileAt(mine) : undefined;
+      if (file) {
+        if (mine === entry.path && copies.get(entry.id) !== entry.driveId) {
+          file.content = bytes;
+          file.changed = true; // saved below
+          copies.set(entry.id, entry.driveId);
+        }
+      } else if (!fileAt(entry.path)) {
+        await sync.addFile(entry.path, bytes);
+        paths.set(entry.id, entry.path);
+        const made = fileAt(entry.path)?.driveId;
+        if (made) fileIds.set(entry.id, made); // so it is known as this file's copy, never taken for a new file
+        copies.set(entry.id, entry.driveId);
       }
     }
     const main = sharedMainFile(this.doc);

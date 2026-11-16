@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import {
-  addSharedText, docFromProject, fixDuplicatePaths, moveShared, removeShared, savedLacks, sharedFileAt, sharedFiles,
+  addSharedText, deletedFiles, deleteShared, docFromProject, purgeDeleted, restoreShared, fixDuplicatePaths, moveShared, removeShared, savedLacks, sharedFileAt, sharedFiles,
   sharedIds, sharedMainFile, sharedName,
 } from './sharedDoc';
 
@@ -93,5 +93,20 @@ describe('a shared project document', () => {
     const [a, b] = twoCopies();
     sharedFileAt(b, 'main.tex')?.text?.insert(0, '% B\n');
     expect(savedLacks(Y.encodeStateAsUpdate(b), a)).toBe(false);
+  });
+
+  it('keeps deleted files out of sight, brings one back under a free name, and lets old ones go', () => {
+    const doc = docFromProject(project, ids);
+    deleteShared(doc, 'main.tex', 'Bora', 1000);
+    expect(sharedFiles(doc).map((f) => f.path)).toEqual(['figures/plot.png']);
+    addSharedText(doc, 'main.tex', 'a new one'); // the name is taken meanwhile
+    const [gone] = deletedFiles(doc);
+    expect([gone.path, gone.by, gone.at]).toEqual(['main.tex', 'Bora', 1000]);
+    expect(restoreShared(doc, gone.id)).toBe('main (restored).tex');
+    expect(textOf(doc, 'main (restored).tex')).toBe('\\documentclass{article}');
+    deleteShared(doc, 'main (restored).tex', 'Furkan', 2000);
+    deleteShared(doc, 'main.tex', 'Furkan', 5000);
+    expect(purgeDeleted(doc, 3000)).toBe(1);
+    expect(deletedFiles(doc).map((d) => d.at)).toEqual([5000]);
   });
 });

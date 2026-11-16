@@ -1113,6 +1113,33 @@ async function saveAsStarter(): Promise<void> {
   }
 }
 
+// "Recently deleted…" in a shared project: files deleted in the last 30 days,
+// by anyone; choosing one brings it back for everyone.
+function showRecentlyDeleted(): void {
+  const shared = sync;
+  if (!(shared instanceof SharedSync)) return;
+  const deleted = shared.recentlyDeleted;
+  if (deleted.length === 0) {
+    notify('Nothing was deleted in this project in the last 30 days.', 'info');
+    return;
+  }
+  openMenu(projectActionsButton, [
+    { label: 'Bring back a file deleted in the last 30 days:' },
+    ...deleted.map((file) => ({
+      label: `${file.path} (${file.by ? `${file.by}, ` : ''}${timeAgo(new Date(file.at))})`,
+      action: () => void (async () => {
+        try {
+          const path = await shared.restoreFile(file.id);
+          if (path) openFile(path);
+          notify(path === file.path ? `${path} is back.` : `${file.path} is back, as ${path}: its old name was taken meanwhile.`);
+        } catch (error) {
+          showError(error);
+        }
+      })(),
+    })),
+  ]);
+}
+
 // "Download for arXiv…": compiles once more (for a fresh .bbl), then saves the
 // source files with the bibliography in one .zip, comments taken out if asked.
 const arxivDialog = element<HTMLDialogElement>('#arxiv-dialog');
@@ -2138,7 +2165,7 @@ const fontDialog = element<HTMLDialogElement>('#font-dialog');
 const fontSearch = element<HTMLInputElement>('#font-search');
 const fontList = element<HTMLUListElement>('#font-list');
 
-async function addLocalFont(): Promise<void> {
+async function addLocalFont(wanted = ''): Promise<void> {
   const projectSync = sync;
   if (!projectSync || !window.queryLocalFonts) return;
   const refused = new Error('This browser did not let Tilde read the fonts on this computer. Upload the font file instead: + → Upload from this computer.');
@@ -2170,7 +2197,7 @@ async function addLocalFont(): Promise<void> {
       return item;
     }));
   };
-  fontSearch.value = '';
+  fontSearch.value = wanted; // from a "font cannot be found" problem: that font
   fontSearch.oninput = show;
   show();
   fontDialog.returnValue = '';
@@ -2355,9 +2382,9 @@ async function duplicateFile(original: string): Promise<void> {
 async function deleteFile(path: string): Promise<void> {
   const projectSync = sync;
   if (!projectSync) return;
-  // A shared project's file is deleted for everyone; Drive's trash cannot bring it back.
+  // A shared project's file is deleted for everyone, into "Recently deleted" for 30 days.
   const shared = projectSync instanceof SharedSync;
-  const question = shared ? `Delete ${path} for everyone in this shared project? It cannot be brought back afterwards.`
+  const question = shared ? `Delete ${path} for everyone in this shared project? Anyone can bring it back from ⋯ → Recently deleted for 30 days.`
     : `Delete ${path}? It goes to the trash in your Google Drive, where you can restore it for 30 days.`;
   const done = shared ? `Deleted ${path}.` : `Deleted ${path}. You can restore it from the trash in Google Drive for 30 days.`;
   if (!await askConfirm(question, 'Delete')) return;
@@ -2607,6 +2634,15 @@ function showProblems(problems: LogProblem[]): void {
     button.addEventListener('click', () => jumpTo(problem));
     const item = document.createElement('li');
     item.append(button);
+    // A font the browser could not find by name: copy it from this computer (Chrome and Edge).
+    const font = /The font "([^"]+)" cannot be found/.exec(problem.message)?.[1];
+    if (font && window.queryLocalFonts && canChange()) {
+      const add = document.createElement('button');
+      add.className = 'problem-action';
+      add.textContent = `Add ${font} from this computer`;
+      add.addEventListener('click', () => void addLocalFont(font));
+      item.append(add);
+    }
     return item;
   }));
   problemsPanel.hidden = problems.length === 0;
@@ -2644,6 +2680,7 @@ projectActionsButton.addEventListener('click', () => openMenu(projectActionsButt
   ...(project?.driveId ? [{ label: 'Share…', action: () => void openPeople() }] : []),
   { label: 'Download as .zip', action: () => void downloadProjectZip() },
   { label: 'Download for arXiv…', action: () => void downloadForArxiv() },
+  ...(sync instanceof SharedSync && canChange() ? [{ label: 'Recently deleted…', action: () => showRecentlyDeleted() }] : []),
   ...(rootId ? [
     { label: 'Make a copy…', action: () => void copyProject(project?.driveId) },
     { label: 'Save as a starter…', action: () => void saveAsStarter() },

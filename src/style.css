@@ -342,6 +342,8 @@ body.resizing iframe, body.resizing canvas { pointer-events: none; }
 #page-number { width: 38px; height: 26px; padding: 0 6px; text-align: center; font-variant-numeric: tabular-nums; }
 #pdf .empty { margin: 0; padding: 20px; color: var(--muted); text-align: center; }
 
+/* A problem's own fix, such as adding a font, under it. */
+.problem-action { margin: 0 0 8px 14px; padding: 3px 10px; font-size: 12.5px; }
 #problems-panel { display: flex; flex-direction: column; max-height: 40%; background: var(--editor); border-top: 1px solid var(--rule); }
 .panel-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px 4px 12px; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--rule); }
 .panel-head button { padding: 1px 8px; font-size: 12px; }
