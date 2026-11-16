@@ -1,7 +1,8 @@
 // The three panes: files | editor | PDF. Drag the handles between them to
-// resize, use the buttons in the top bar to hide or show them. The layout is
-// remembered in this browser. In a narrow window there is room for only one
-// pane, so the buttons work like tabs instead.
+// resize. Each pane folds away with the button in its header and becomes a
+// slim strip at its place, which brings it back. The layout is remembered in
+// this browser. In a narrow window there is room for only one pane: the
+// others wait as strips at the sides, like tabs.
 
 export type Pane = 'files' | 'editor' | 'pdf';
 
@@ -20,6 +21,7 @@ const PANES: Pane[] = ['files', 'editor', 'pdf'];
 const SIDE_WIDTH = { min: 140, max: 480 };
 const PDF_SHARE = { min: 0.15, max: 0.85 };
 const HANDLE = 5; // pixels
+const RAIL = 30; // pixels: a folded pane's strip
 const STORAGE_KEY = 'tilde.layout';
 
 const clamp = (value: number, { min, max }: { min: number; max: number }): number => Math.min(max, Math.max(min, value));
@@ -40,17 +42,28 @@ export function isVisible(layout: Layout, pane: Pane, narrow: boolean): boolean 
   return narrow ? layout.narrowPane === pane : layout[pane];
 }
 
-// The CSS grid columns for the visible panes and the handles between them.
+// What goes in the workspace, left to right: panes, the handles between
+// them, and the strips of folded panes, each with its width.
+export type Slot = Pane | 'sideHandle' | 'pdfHandle' | `${Pane}Rail`;
+
+export function slots(layout: Layout, narrow = false): [Slot, string][] {
+  const shown = (pane: Pane): boolean => isVisible(layout, pane, narrow);
+  const out: [Slot, string][] = [];
+  const share = (pane: Pane): string => (narrow || !(layout.editor && layout.pdf) ? 'minmax(0, 1fr)'
+    : `minmax(0, ${pane === 'pdf' ? layout.pdfShare : 1 - layout.pdfShare}fr)`);
+  if (shown('files')) out.push(['files', narrow ? 'minmax(0, 1fr)' : `${layout.sideWidth}px`], ...(narrow ? [] : [['sideHandle', `${HANDLE}px`] as [Slot, string]]));
+  else out.push(['filesRail', `${RAIL}px`]);
+  if (shown('editor')) out.push(['editor', share('editor')]);
+  else out.push(['editorRail', `${RAIL}px`]);
+  if (shown('editor') && shown('pdf')) out.push(['pdfHandle', `${HANDLE}px`]);
+  if (shown('pdf')) out.push(['pdf', share('pdf')]);
+  else out.push(['pdfRail', `${RAIL}px`]);
+  return out;
+}
+
+// The CSS grid columns for the slots.
 export function gridColumns(layout: Layout, narrow = false): string {
-  if (narrow) return 'minmax(0, 1fr)';
-  const columns: string[] = [];
-  if (layout.files) columns.push(`${layout.sideWidth}px`, `${HANDLE}px`);
-  if (layout.editor && layout.pdf) {
-    columns.push(`minmax(0, ${1 - layout.pdfShare}fr)`, `${HANDLE}px`, `minmax(0, ${layout.pdfShare}fr)`);
-  } else {
-    columns.push('minmax(0, 1fr)');
-  }
-  return columns.join(' ');
+  return slots(layout, narrow).map(([, width]) => width).join(' ');
 }
 
 export interface LayoutElements {
@@ -60,7 +73,8 @@ export interface LayoutElements {
   editorPane: HTMLElement;
   pdfHandle: HTMLElement;
   preview: HTMLElement;
-  toggles: Record<Pane, HTMLButtonElement>;
+  rails: Record<Pane, HTMLButtonElement>; // a folded pane's strip; a click brings it back
+  folds: Record<Pane, HTMLButtonElement>; // the button in a pane's header that folds it away
 }
 
 export interface LayoutControl {
@@ -72,20 +86,23 @@ export function initLayout(elements: LayoutElements): LayoutControl {
   let layout = normalize(load());
   const isNarrow = (): boolean => window.innerWidth < NARROW_WIDTH;
 
+  const element: Record<Slot, HTMLElement> = {
+    files: elements.side, sideHandle: elements.sideHandle, editor: elements.editorPane, pdfHandle: elements.pdfHandle, pdf: elements.preview,
+    filesRail: elements.rails.files, editorRail: elements.rails.editor, pdfRail: elements.rails.pdf,
+  };
   const apply = (): void => {
     const narrow = isNarrow();
-    const shown = (pane: Pane): boolean => isVisible(layout, pane, narrow);
-    elements.workspace.style.gridTemplateColumns = gridColumns(layout, narrow);
-    elements.side.hidden = !shown('files');
-    elements.sideHandle.hidden = narrow || !layout.files;
-    elements.editorPane.hidden = !shown('editor');
-    elements.pdfHandle.hidden = narrow || !(layout.editor && layout.pdf);
-    elements.preview.hidden = !shown('pdf');
+    const placed = slots(layout, narrow);
+    elements.workspace.style.gridTemplateColumns = placed.map(([, width]) => width).join(' ');
+    for (const [slot, el] of Object.entries(element) as [Slot, HTMLElement][]) {
+      const at = placed.findIndex(([s]) => s === slot);
+      el.hidden = at < 0;
+      el.style.gridColumn = at < 0 ? '' : String(at + 1);
+      el.style.gridRow = '1'; // all in one row, whatever their order in the page
+    }
     for (const pane of PANES) {
-      const button = elements.toggles[pane];
-      button.setAttribute('aria-pressed', String(shown(pane)));
-      // The last visible one of editor and PDF cannot be hidden.
-      button.disabled = !narrow && pane !== 'files' && layout[pane] && !layout[pane === 'editor' ? 'pdf' : 'editor'];
+      // In a narrow window the strips switch panes; and the last of source and PDF cannot fold.
+      elements.folds[pane].hidden = narrow || (pane !== 'files' && !layout[pane === 'editor' ? 'pdf' : 'editor']);
     }
   };
 
@@ -93,12 +110,14 @@ export function initLayout(elements: LayoutElements): LayoutControl {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(layout)); } catch { /* not remembered */ }
   };
 
+  const set = (pane: Pane, shown: boolean): void => {
+    layout = normalize(isNarrow() ? { ...layout, narrowPane: pane } : { ...layout, [pane]: shown });
+    apply();
+    save();
+  };
   for (const pane of PANES) {
-    elements.toggles[pane].addEventListener('click', () => {
-      layout = normalize(isNarrow() ? { ...layout, narrowPane: pane } : { ...layout, [pane]: !layout[pane] });
-      apply();
-      save();
-    });
+    elements.rails[pane].addEventListener('click', () => set(pane, true));
+    elements.folds[pane].addEventListener('click', () => set(pane, false));
   }
   window.addEventListener('resize', apply);
 

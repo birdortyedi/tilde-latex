@@ -111,12 +111,26 @@ button.quiet:hover:enabled { background: var(--hover); }
 button.danger { color: var(--red); }
 button.large { padding: 8px 18px; font-size: 15px; }
 
-/* "Compiling…": a small spinner in the button, a moving line above the PDF. */
-#compile[aria-busy='true'] { opacity: 1; cursor: progress; }
-#compile[aria-busy='true']::before {
-  content: ''; display: inline-block; width: 10px; height: 10px; margin-right: 7px; vertical-align: -1px;
-  border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%;
-}
+/* Update PDF, above the PDF: a dot says whether the PDF matches the source
+   (green), is behind it (amber), or the last update stopped at an error (red);
+   it spins while updating. The arrow beside it holds "Compile as you type". */
+.compile-box { display: flex; }
+#pdf-toolbar #compile { display: flex; align-items: center; gap: 7px; padding: 0 10px; border-radius: 4px 0 0 4px; color: var(--ink); font-weight: 500; background: var(--editor); }
+#pdf-toolbar #compile-menu { width: 24px; padding: 0; margin-left: -1px; border-radius: 0 4px 4px 0; background: var(--editor); }
+#pdf-toolbar #compile-menu .chevron { margin: 0 0 3px; }
+#compile[aria-busy='true'] { cursor: progress; }
+/* The refresh icon carries the dot at its corner, and turns while updating. */
+.update-icon { position: relative; display: grid; place-items: center; }
+.update-icon svg { display: block; }
+#freshness { position: absolute; right: -3px; bottom: -2px; box-shadow: 0 0 0 2px var(--editor); }
+#freshness, #rail-freshness { display: none; width: 7px; height: 7px; border-radius: 50%; }
+#freshness.fresh, #rail-freshness.fresh { display: block; background: var(--green); }
+#freshness.behind, #rail-freshness.behind { display: block; background: var(--amber); }
+#freshness.error, #rail-freshness.error { display: block; background: var(--red); }
+#rail-freshness.busy { display: block; width: 6px; height: 6px; border: 2px solid currentColor; border-right-color: transparent; }
+/* In a narrow PDF pane, Update PDF is its icon alone. */
+#preview { container-type: inline-size; }
+@container (max-width: 470px) { #compile-label { display: none; } #pdf-toolbar #compile { padding: 0 8px; } }
 #preview { position: relative; }
 #preview.compiling::before {
   content: ''; position: absolute; z-index: 2; top: 0; left: 0; height: 2px; width: 30%; background: var(--teal);
@@ -149,6 +163,9 @@ input {
 #topbar .right { grid-column: 3; justify-content: flex-end; }
 #topbar button { height: 28px; white-space: nowrap; flex-shrink: 0; }
 #topbar #show-projects { flex-shrink: 1; }
+/* Tilde in the middle of the bar: home, to the projects. */
+#home { display: grid; place-items: center; height: 32px; padding: 0 10px; }
+#home .brand-mark { width: 46px; height: 18px; }
 /* Faces: a person's photo, or their initial on their colour. */
 .avatar { display: inline-grid; place-items: center; flex: none; width: 26px; height: 26px; border-radius: 50%; overflow: hidden; color: #fff; font-weight: 600; font-size: 12px; line-height: 1; }
 .avatar img { display: block; width: 100%; height: 100%; object-fit: cover; }
@@ -164,22 +181,21 @@ body.on-projects #faces { display: none; }
 /* The signed-in account: its face, with "Sign out" in its menu. */
 #account { display: grid; place-items: center; width: 32px; padding: 0; border-radius: 50%; }
 #account .avatar { width: 28px; height: 28px; }
-#sign-in .short { display: none; }
+/* Sign in: an icon; words when Google's sign-in ran out and needs the user. */
+#sign-in { display: flex; align-items: center; gap: 6px; padding: 0 6px; }
+#sign-in svg { display: block; }
+#sign-in:not(.expired) { justify-content: center; width: 28px; padding: 0; }
+#sign-in.expired { padding: 0 10px 0 8px; border-color: var(--amber); color: var(--amber); }
 
 .brand-mark { width: 30px; height: 12px; overflow: visible; }
 .brand-mark path, .tie-mark path { fill: none; stroke: var(--teal); stroke-linecap: round; }
 .brand-mark path { stroke-width: 13; }
 
-#show-projects { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0 8px; border-color: transparent; background: none; }
+#show-projects { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 0 8px; border-color: transparent; background: none; }
 #show-projects:hover { background: var(--hover); }
 #project-name { font-size: 14px; font-weight: 600; max-width: 30ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #show-projects .switch { color: var(--muted); }
 
-.pane-toggles { display: flex; }
-.pane-toggles button { border-radius: 0; margin-left: -1px; color: var(--muted); background: none; }
-.pane-toggles button:first-child { border-radius: 4px 0 0 4px; margin-left: 0; }
-.pane-toggles button:last-child { border-radius: 0 4px 4px 0; }
-.pane-toggles button[aria-pressed='true'] { color: var(--ink); background: var(--editor); }
 
 /* Workspace: files | editor | PDF, with drag handles between them */
 
@@ -195,6 +211,22 @@ body.resizing { cursor: col-resize; user-select: none; }
 body.resizing iframe, body.resizing canvas { pointer-events: none; }
 
 #side { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+/* Every pane has a header of the same height, with a button that folds the pane away. */
+#side > .side-head, #editor-head { box-sizing: border-box; min-height: 38px; border-bottom: 1px solid var(--rule); }
+#side > .side-head { padding: 0 6px 0 14px; }
+#editor-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 6px 0 14px; background: var(--chrome); color: var(--muted); font-size: 12.5px; }
+#editor-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#editor-head button, #fold-pdf { display: grid; place-items: center; width: 26px; height: 24px; padding: 0; }
+/* A folded pane: a slim strip with its icon and name; a click brings it back. */
+.rail {
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 10px; align-self: stretch; height: auto; min-width: 0; padding: 12px 0;
+  border: none; border-radius: 0; background: var(--chrome); color: var(--muted); font-size: 12px;
+}
+.rail svg { flex: none; }
+.rail span { writing-mode: vertical-rl; letter-spacing: 0.02em; }
+.rail:hover:enabled { background: var(--hover); color: var(--ink); }
+#files-rail, #editor-rail { border-right: 1px solid var(--rule); }
+#pdf-rail { border-left: 1px solid var(--rule); }
 .side-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 8px 4px 14px; color: var(--muted); }
 .side-head button { padding: 0 7px; font-size: 16px; line-height: 22px; }
 .side-actions { display: flex; align-items: center; gap: 2px; }
@@ -221,7 +253,7 @@ body.resizing iframe, body.resizing canvas { pointer-events: none; }
 #tree .open-file { all: unset; flex: 1; min-width: 0; padding: 3px 8px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #tree .open-file:focus-visible { outline: 2px solid var(--teal); }
 #tree .main-file { color: var(--muted); font-size: 12px; }
-#tree .file-menu { opacity: 0; padding: 0 6px; border: none; background: none; color: var(--muted); }
+#tree .file-menu { display: grid; place-items: center; width: 24px; height: 22px; opacity: 0; padding: 0; border: none; background: none; color: var(--muted); }
 #tree .row:hover .file-menu, #tree .row.active .file-menu, #tree .file-menu:focus-visible { opacity: 1; }
 /* A file someone else added that this browser may not read yet. */
 #tree .row.waiting .open-file { opacity: 0.55; cursor: default; }
@@ -255,8 +287,9 @@ body.resizing iframe, body.resizing canvas { pointer-events: none; }
 #comment-list .text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 #comment-list .meta { color: var(--muted); font-size: 11.5px; }
 
-#editor-pane { min-width: 0; min-height: 0; overflow: hidden; background: var(--editor); }
-#editor, #editor .cm-editor { height: 100%; }
+#editor-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--editor); }
+#editor { flex: 1; min-height: 0; }
+#editor .cm-editor { height: 100%; }
 #image-preview { max-width: 90%; margin: 24px auto; display: block; box-shadow: var(--shadow); }
 
 #preview { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--table); }
@@ -294,19 +327,17 @@ body.resizing iframe, body.resizing canvas { pointer-events: none; }
 #pdf .empty, #pdf .engine { position: absolute; inset: 0; display: grid; place-content: center; }
 
 #pdf-toolbar {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
-  min-height: 38px; padding: 4px 8px; border-bottom: 1px solid var(--rule); background: var(--chrome); font-size: 12.5px;
+  display: flex; align-items: center; justify-content: space-between; gap: 4px 6px; flex-wrap: wrap;
+  min-height: 38px; padding: 4px 6px; border-bottom: 1px solid var(--rule); background: var(--chrome); font-size: 12.5px;
 }
 #pdf-toolbar .group { display: flex; align-items: center; gap: 2px; }
 #pdf-toolbar button { height: 28px; padding: 0 9px; color: var(--muted); }
 #pdf-toolbar button:hover:enabled { color: var(--ink); }
 #pdf-toolbar .square { width: 28px; padding: 0; font-size: 16px; }
 #pdf-toolbar .square svg { display: block; margin: auto; }
-#zoom-menu { min-width: 86px; font-variant-numeric: tabular-nums; }
-.page-nav { display: flex; align-items: center; gap: 6px; color: var(--muted); }
-#page-number { width: 44px; height: 26px; padding: 0 6px; text-align: center; font-variant-numeric: tabular-nums; }
-.toggle { display: flex; align-items: center; gap: 6px; padding: 0 6px 0 2px; color: var(--muted); cursor: pointer; white-space: nowrap; }
-.toggle input { accent-color: var(--teal); margin: 0; }
+#zoom-menu { padding: 0 6px; font-variant-numeric: tabular-nums; }
+.page-nav { display: flex; align-items: center; gap: 5px; color: var(--muted); }
+#page-number { width: 38px; height: 26px; padding: 0 6px; text-align: center; font-variant-numeric: tabular-nums; }
 #pdf .empty { margin: 0; padding: 20px; color: var(--muted); text-align: center; }
 
 #problems-panel { display: flex; flex-direction: column; max-height: 40%; background: var(--editor); border-top: 1px solid var(--rule); }
@@ -355,6 +386,9 @@ body.resizing iframe, body.resizing canvas { pointer-events: none; }
 #statusbar > * { padding: 0 8px; white-space: nowrap; }
 #statusbar button { border: none; background: none; padding: 1px 8px; color: inherit; }
 #statusbar button:hover:enabled { background: var(--hover); }
+#statusbar #toggle-log { display: grid; place-items: center; }
+#statusbar #toggle-log svg { display: block; width: 15px; height: 15px; }
+#close-problems { display: grid; place-items: center; width: 26px; height: 24px; padding: 0; }
 #status { flex: 1; overflow: hidden; text-overflow: ellipsis; text-align: right; }
 
 #sync::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: var(--muted); vertical-align: 1px; }
@@ -532,8 +566,7 @@ dialog.starters { width: min(880px, 94vw); }
    bar or behind the project switcher. */
 body.on-welcome #sign-in, body.on-welcome #show-projects .switch { display: none; }
 body.on-welcome #status, body.on-welcome #toggle-log { visibility: hidden; }
-/* Compile and the pane buttons do not apply on the project page. */
-body.on-projects #topbar .center { display: none; }
+body.on-projects #editor-look { visibility: hidden; } /* text size is for the editor */
 
 /* "Back to editor": a small floating button at the bottom of the page. */
 #back-bar { position: sticky; bottom: 20px; display: flex; justify-content: center; pointer-events: none; }
@@ -596,7 +629,7 @@ button.link:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px;
 .project-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 600; }
 .badge { margin-left: 10px; padding: 1px 8px; border: 1px solid var(--teal); border-radius: 999px; color: var(--teal); font-size: 12px; font-weight: 500; }
 .project-edited { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.project-more { margin-right: 12px; padding: 2px 9px; border-color: transparent; background: none; color: var(--muted); font-size: 16px; line-height: 1.2; }
+.project-more { display: grid; place-items: center; width: 32px; height: 28px; margin-right: 12px; padding: 0; border-color: transparent; background: none; color: var(--muted); }
 .project-more:hover:enabled { border-color: var(--rule); background: var(--editor); }
 
 .empty-state { padding: 44px 24px; border: 1px dashed var(--rule); border-radius: 10px; text-align: center; color: var(--muted); }
@@ -692,23 +725,19 @@ button.link:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px;
   #project-search { width: 100%; }
 
   #topbar { gap: 8px; padding: 0 8px; }
-  #show-projects .switch, #sign-in .long { display: none; }
-  #sign-in .short { display: inline; }
+  #show-projects .switch { display: none; }
   #project-name { max-width: 14ch; }
 }
 
-/* Phones: two rows in the top bar, so nothing overlaps. */
 @media (max-width: 599px) {
-  #topbar { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 44px 40px; height: auto; row-gap: 0; }
-  #topbar .center { grid-column: 1 / -1; grid-row: 2; justify-content: center; padding-bottom: 8px; }
-  #topbar .right { grid-column: 2; grid-row: 1; }
   #busy { inset: 0 0 27px; }
+  #home .brand-mark { width: 38px; height: 15px; }
 }
 
 @media (prefers-reduced-motion: no-preference) {
   .handle::before { transition: background 120ms; }
   .toast { animation: toast-in 160ms ease-out; }
-  .spinner, #compile[aria-busy='true']::before { animation: spin 0.8s linear infinite; }
+  .spinner, #rail-freshness.busy, #compile[aria-busy='true'] .update-icon svg { animation: spin 0.8s linear infinite; }
   #preview.compiling::before { animation: progress-line 1.1s ease-in-out infinite; }
   /* The one welcome moment: the tie draws itself and pulls "Fig." and "3" together. */
   #welcome.first-visit .tie-mark path { stroke-dasharray: 130; stroke-dashoffset: 130; animation: tie-draw 900ms 200ms ease-out forwards; }

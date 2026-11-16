@@ -17,7 +17,7 @@ import { browserDrafts, forgetOtherAccounts, type Draft } from './drafts';
 import { ProjectSync, type DriveChanges, type SyncState } from './sync';
 import { SharedSync, type Face } from './sharedSync';
 import { browserShared, type SharedCopy } from './sharedStore';
-import { sharedFiles } from './sharedDoc';
+import { sharedFiles, textHash } from './sharedDoc';
 import {
   forgetJoined, invite, joinedProjects, joinFromPicked, joinLink, joinTarget, loadShared, makeShared, rememberJoined, sharedStateIn,
   type Joined, type LoadedShared,
@@ -51,6 +51,7 @@ import { MAX_PEOPLE, peopleCount, peopleOf, type Person } from './people';
 import { CommentsUi } from './commentsUi';
 import { colorFor, webrtcLink } from './live';
 import { avatar } from './avatar';
+import { setIcon } from './icons';
 
 // Files that TeX Live's basic bundle lacks (TikZ, pgfplots, ...) are fetched
 // one at a time from TeXlyre's public package server.
@@ -108,6 +109,10 @@ const zipInput = element<HTMLInputElement>('#zip-input');
 const closeProjectsButton = element<HTMLButtonElement>('#close-projects');
 const mainArea = element<HTMLElement>('main');
 const compileButton = element<HTMLButtonElement>('#compile');
+const compileLabel = element<HTMLSpanElement>('#compile-label');
+const freshness = element<HTMLSpanElement>('#freshness');
+const railFreshness = element<HTMLSpanElement>('#rail-freshness'); // the same dot on the folded PDF's strip
+const editorPath = element<HTMLSpanElement>('#editor-path');
 const syncButton = element<HTMLButtonElement>('#sync');
 const facesView = element<HTMLDivElement>('#faces');
 const conflictDialog = element<HTMLDialogElement>('#conflict-dialog');
@@ -213,7 +218,6 @@ const zoomOutButton = element<HTMLButtonElement>('#zoom-out');
 const pageNav = element<HTMLLabelElement>('#page-nav');
 const pageNumber = element<HTMLInputElement>('#page-number');
 const pageCount = element<HTMLSpanElement>('#page-count');
-const autoCompileBox = element<HTMLInputElement>('#auto-compile');
 const downloadPdfButton = element<HTMLButtonElement>('#download-pdf');
 const sharePdfButton = element<HTMLButtonElement>('#share-pdf');
 const showInPdfButton = element<HTMLButtonElement>('#show-in-pdf');
@@ -230,7 +234,7 @@ function showPdfState(state: PdfViewState): void {
   wordCount.textContent = `${state.words.toLocaleString()} ${state.words === 1 ? 'word' : 'words'}`;
   pageNav.hidden = !hasPdf;
   if (document.activeElement !== pageNumber) pageNumber.value = String(state.page);
-  pageCount.textContent = `of ${state.pages}`;
+  pageCount.textContent = `/ ${state.pages}`;
   try { localStorage.setItem(ZOOM_KEY, JSON.stringify(state.zoom)); } catch { /* not remembered */ }
 }
 
@@ -519,6 +523,31 @@ async function stopSharing(folderId: string): Promise<void> {
   }
 }
 
+// Whether the PDF matches the source: a green dot when it does, amber when
+// the source changed since (yours or a co-author's edits), red when the last
+// compile stopped at an error. Compared by a fingerprint of the files.
+let pdfStamp: string | null = null; // the fingerprint of the source of the PDF shown
+let lastCompileFailed = false;
+let autoCompile = false; // "Compile as you type"
+
+function sourceStamp(files: ProjectFile[]): string {
+  return files.map((f) => `${f.path}\u0000${typeof f.content === 'string' ? textHash(f.content) : f.content.length}`).sort().join('\n');
+}
+
+function showFreshness(): void {
+  const state = compiling ? 'busy' : !project ? '' : lastCompileFailed ? 'error' : pdfStamp === null ? ''
+    : sourceStamp(project.files) === pdfStamp ? 'fresh' : 'behind';
+  freshness.className = state;
+  railFreshness.className = state;
+  compileButton.title = {
+    busy: 'Updating the PDF…',
+    fresh: 'The PDF matches the source. Ctrl/Cmd+S updates it again.',
+    behind: 'The source changed since this PDF was made. Update it with this button or Ctrl/Cmd+S.',
+    error: 'The last update stopped at an error (see the problems list). Ctrl/Cmd+S tries again.',
+    '': 'Make the PDF (Ctrl/Cmd+S)',
+  }[state] ?? '';
+}
+
 // Auto-compile: compile by itself a moment after typing stops, quickly (one
 // LaTeX pass with the build files of the last compile). A compile that is
 // asked for while one runs starts right after it.
@@ -527,7 +556,7 @@ let autoCompileTimer: ReturnType<typeof setTimeout> | undefined;
 let compileAgain: CompileKind | null = null;
 let againIsFollowUp = false; // compileAgain was asked for by a quick compile's log, not by typing
 function scheduleAutoCompile(): void {
-  if (!autoCompileBox.checked) return;
+  if (!autoCompile) return;
   clearTimeout(autoCompileTimer);
   autoCompileTimer = setTimeout(() => {
     if (compiling) {
@@ -551,9 +580,11 @@ function showAccount(state: AccountState): void {
     accountButton.title = `Signed in as ${myName}`;
     accountButton.setAttribute('aria-label', `${myName}: account`);
   }
-  const [long, short] = signInButton.querySelectorAll('span');
-  long.textContent = state === 'expired' ? 'Sign in again' : 'Sign in with Google';
-  short.textContent = state === 'expired' ? 'Sign in again' : 'Sign in';
+  // An icon to sign in; words when the sign-in ran out, since that needs the user.
+  const label = signInButton.querySelector('.label');
+  if (label) label.textContent = state === 'expired' ? 'Sign in again' : '';
+  signInButton.classList.toggle('expired', state === 'expired');
+  signInButton.title = state === 'expired' ? 'Google\'s sign-in ran out. Sign in again to keep saving; your edits are kept.' : 'Sign in with Google';
 }
 
 // The status bar shows the current state (the last compile, "Compiling…").
@@ -778,7 +809,7 @@ function renderProjectList(): void {
 
     const more = document.createElement('button');
     more.className = 'project-more';
-    more.textContent = '⋯';
+    setIcon(more, 'more');
     more.title = `Actions for ${row.name}`;
     more.setAttribute('aria-label', more.title); // screen readers would read only "⋯"
     more.setAttribute('aria-haspopup', 'menu');
@@ -1495,7 +1526,11 @@ function showProject(plainProject: Project | null, shared?: SharedOpen): void {
   const newProject = sync?.project ?? plainProject;
   project = newProject;
   collapsedFolders = new Set();
-  projectNameLabel.textContent = newProject?.name ?? 'Tilde';
+  projectNameLabel.textContent = newProject?.name ?? '';
+  projectsButton.hidden = !newProject;
+  pdfStamp = null;
+  lastCompileFailed = false;
+  showFreshness();
   editor.clear();
   editor.setReadOnly(!canChange() && sync !== null);
   activePath = null;
@@ -1503,7 +1538,7 @@ function showProject(plainProject: Project | null, shared?: SharedOpen): void {
   syncTex = null;
   buildFiles = [];
   buildKey = '';
-  showEmptyPdf('Compile to see the PDF here. Ctrl/Cmd+S saves and compiles.');
+  showEmptyPdf('Press Update PDF, or Ctrl/Cmd+S, to see the PDF here.');
   cursorPosition.textContent = '';
   showProblems([]);
   showSyncState();
@@ -1619,6 +1654,7 @@ const SYNC_TEXT: Record<SyncState, string> = {
 // Shows the sync status next to the buttons. In a conflict it becomes a
 // button that opens the conflict dialog.
 function showSyncState(): void {
+  showFreshness(); // others' edits may have arrived
   syncButton.hidden = !sync;
   if (!sync) return;
   const viewOnly = sync instanceof SharedSync && sync.readOnly;
@@ -1832,6 +1868,8 @@ function openFile(path: string): void {
   if (!file) return;
   activePath = path;
   document.title = `${path.split('/').pop()} · Tilde`;
+  editorPath.textContent = path;
+  editorPath.title = path;
 
   if (isTextFile(path) && typeof file.content === 'string') {
     imagePreview.hidden = true;
@@ -1966,6 +2004,7 @@ function scheduleOutline(): void {
 }
 
 function renderOutline(): void {
+  showFreshness();
   // The browser's spell checker follows the document's language (babel, polyglossia).
   const language = project ? documentLanguage(project.files) : null;
   if (language) editorElement.lang = language;
@@ -1991,7 +2030,7 @@ function renderOutline(): void {
 function moreButton(name: string, onClick: () => void): HTMLButtonElement {
   const more = document.createElement('button');
   more.className = 'file-menu';
-  more.textContent = '⋯';
+  setIcon(more, 'more');
   more.title = `Actions for ${name}`;
   more.setAttribute('aria-label', more.title); // screen readers would read only "⋯"
   more.setAttribute('aria-haspopup', 'menu');
@@ -2382,7 +2421,7 @@ function getRunner(): Promise<BusyTexRunner> {
 function preloadEngine(): void {
   getRunner().then(() => {
     if (compiling) return; // the compile takes it from here
-    if (pdfContainer.querySelector('.engine')) showEmptyPdf('The TeX engine is ready. Compile to see the PDF here. Ctrl/Cmd+S saves and compiles.');
+    if (pdfContainer.querySelector('.engine')) showEmptyPdf('The TeX engine is ready. Press Update PDF, or Ctrl/Cmd+S, to see the PDF here.');
     setStatus('');
   }).catch((error: unknown) => console.warn('Could not load the TeX engine yet', error));
 }
@@ -2431,8 +2470,10 @@ async function compile(kind: CompileKind = 'full', followUp = false): Promise<vo
   }
 
   compiling = true;
+  const stamp = sourceStamp(compiled.files); // what this compile's PDF is made from
   compileButton.setAttribute('aria-busy', 'true');
-  compileButton.textContent = 'Compiling…';
+  compileLabel.textContent = 'Updating…';
+  showFreshness();
   preview.classList.add('compiling');
   try {
     const currentRunner = await getRunner();
@@ -2504,8 +2545,11 @@ async function compile(kind: CompileKind = 'full', followUp = false): Promise<vo
       }
       await pdfViewer.show(pdf);
       if (stale()) return;
+      pdfStamp = stamp;
+      lastCompileFailed = false;
       setStatus(`Compiled${withEngine} in ${seconds} s` + (warnings > 0 ? `, ${warnings} warning${warnings > 1 ? 's' : ''}` : ''));
     } else if (problems.some((p) => p.level === 'error')) {
+      lastCompileFailed = true;
       setStatus(`Compile stopped at an error after ${seconds} s`);
       if (!pdfContainer.querySelector('canvas')) showEmptyPdf('The PDF appears here once the error below is fixed.');
     } else {
@@ -2520,7 +2564,8 @@ async function compile(kind: CompileKind = 'full', followUp = false): Promise<vo
   } finally {
     compiling = false;
     compileButton.removeAttribute('aria-busy');
-    compileButton.textContent = 'Compile';
+    compileLabel.textContent = 'Update PDF';
+    showFreshness();
     preview.classList.remove('compiling');
     if (compileAgain) {
       const again = compileAgain;
@@ -2637,12 +2682,18 @@ pageNumber.addEventListener('keydown', (event) => {
   pageNumber.blur();
 });
 pageNumber.addEventListener('focus', () => pageNumber.select());
-autoCompileBox.addEventListener('change', () => {
-  try { localStorage.setItem(AUTO_COMPILE_KEY, String(autoCompileBox.checked)); } catch { /* not remembered */ }
-  if (autoCompileBox.checked) void compile();
-});
+// The arrow next to Update PDF: compiling as you type.
+element<HTMLButtonElement>('#compile-menu').addEventListener('click', (event) => openMenu(event.currentTarget as HTMLElement, [
+  { label: 'Update the PDF now (Ctrl/Cmd+S)', action: () => void compile() },
+  { label: autoCompile ? '✓ Compile as you type' : 'Compile as you type', action: () => {
+    autoCompile = !autoCompile;
+    try { localStorage.setItem(AUTO_COMPILE_KEY, String(autoCompile)); } catch { /* not remembered */ }
+    notify(autoCompile ? 'The PDF now updates a moment after you stop typing.' : 'The PDF updates when you press Update PDF or Ctrl/Cmd+S.');
+    if (autoCompile) void compile();
+  } },
+]));
 try {
-  autoCompileBox.checked = localStorage.getItem(AUTO_COMPILE_KEY) === 'true';
+  autoCompile = localStorage.getItem(AUTO_COMPILE_KEY) === 'true';
   const zoom = JSON.parse(localStorage.getItem(ZOOM_KEY) ?? '"width"') as Zoom;
   if (zoom === 'width' || zoom === 'page' || typeof zoom === 'number') pdfViewer.setZoom(zoom);
 } catch { /* defaults */ }
@@ -2729,10 +2780,15 @@ const layout = initLayout({
   editorPane: element<HTMLElement>('#editor-pane'),
   pdfHandle: element<HTMLElement>('#pdf-handle'),
   preview: element<HTMLElement>('#preview'),
-  toggles: {
-    files: element<HTMLButtonElement>('#toggle-files'),
-    editor: element<HTMLButtonElement>('#toggle-editor'),
-    pdf: element<HTMLButtonElement>('#toggle-pdf'),
+  rails: {
+    files: element<HTMLButtonElement>('#files-rail'),
+    editor: element<HTMLButtonElement>('#editor-rail'),
+    pdf: element<HTMLButtonElement>('#pdf-rail'),
+  },
+  folds: {
+    files: element<HTMLButtonElement>('#fold-files'),
+    editor: element<HTMLButtonElement>('#fold-editor'),
+    pdf: element<HTMLButtonElement>('#fold-pdf'),
   },
 });
 uploadInput.addEventListener('change', () => void uploadFiles([...(uploadInput.files ?? [])], uploadTarget));
@@ -2776,6 +2832,7 @@ side.addEventListener('drop', (event) => {
 syncButton.addEventListener('click', showConflict);
 logButton.addEventListener('click', () => { logView.hidden = !logView.hidden; });
 projectsButton.addEventListener('click', () => showProjectsPage(true));
+element<HTMLButtonElement>('#home').addEventListener('click', () => showProjectsPage(true));
 closeProjectsButton.addEventListener('click', () => showProjectsPage(false));
 // Esc on the project page goes back to the open project (dialogs and menus close first).
 window.addEventListener('keydown', (event) => {

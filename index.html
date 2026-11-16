@@ -23,28 +23,22 @@
   </head>
   <body>
     <header id="topbar">
+      <!-- Left: the open project (click to switch). Centre: Tilde, home. Right: the people. -->
       <div class="left">
-        <button id="show-projects" title="All projects">
-          <svg class="brand-mark" viewBox="0 0 120 48" aria-hidden="true"><path d="M8 32 C 22 8, 44 6, 60 24 S 98 42, 112 16" /></svg>
-          <span id="project-name">Tilde</span>
+        <button id="show-projects" title="Your projects" hidden>
+          <span id="project-name"></span>
           <span class="switch chevron" aria-hidden="true"></span>
         </button>
       </div>
       <div class="center">
-        <button id="compile" class="primary" title="Ctrl/Cmd+S saves and compiles">Compile</button>
-        <label class="toggle" title="Compile by itself a moment after you stop typing">
-          <input type="checkbox" id="auto-compile" /> Auto
-        </label>
-        <div class="pane-toggles" role="group" aria-label="Show or hide panes">
-          <button id="toggle-files" aria-pressed="true" title="Show or hide the files">Files</button>
-          <button id="toggle-editor" aria-pressed="true" title="Show or hide the source">Source</button>
-          <button id="toggle-pdf" aria-pressed="true" title="Show or hide the PDF">PDF</button>
-        </div>
+        <button id="home" class="quiet" title="Your projects" aria-label="Tilde: your projects">
+          <svg class="brand-mark" viewBox="0 0 120 48" aria-hidden="true"><path d="M8 32 C 22 8, 44 6, 60 24 S 98 42, 112 16" /></svg>
+        </button>
       </div>
       <div class="right">
         <div id="faces" role="group" aria-label="Who else has this project open" hidden></div>
         <button id="theme-toggle" class="quiet"></button>
-        <button id="sign-in"><span class="long">Sign in with Google</span><span class="short">Sign in</span></button>
+        <button id="sign-in" class="quiet" title="Sign in with Google" aria-label="Sign in with Google"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2.5h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-3M2.5 8h7.5M7.25 5.25 10 8l-2.75 2.75"/></svg><span class="label"></span></button>
         <button id="account" class="quiet" aria-haspopup="menu" hidden></button>
       </div>
     </header>
@@ -153,6 +147,10 @@
       </div>
     </section>
     <main id="workspace">
+      <!-- A folded pane's strip: a click brings the pane back. -->
+      <button id="files-rail" class="rail" title="Show the files" hidden><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5v8a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1H8L6.5 3.5H3a1 1 0 0 0-1 1z"/></svg><span>Files</span></button>
+      <button id="editor-rail" class="rail" title="Show the source" hidden><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5"/></svg><span>Source</span></button>
+      <button id="pdf-rail" class="rail" title="Show the PDF" hidden><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.5h5.5l3 3v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1zM9.5 1.5v3h3M5.5 9h5M5.5 11.5h3.5"/></svg><span>PDF</span><span id="rail-freshness" aria-hidden="true"></span></button>
       <aside id="side">
         <div class="side-head">
           <span>Files</span>
@@ -162,6 +160,7 @@
             </button>
             <button id="add-files" class="quiet" aria-haspopup="menu" title="Add a file" aria-label="Add a file" hidden><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg></button>
             <button id="project-actions" class="quiet" aria-haspopup="menu" title="Project actions" aria-label="Project actions" hidden><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="currentColor" stroke="none" fill-rule="nonzero"><circle cx="3.5" cy="8" r="1.1"/><circle cx="8" cy="8" r="1.1"/><circle cx="12.5" cy="8" r="1.1"/></svg></button>
+            <button id="fold-files" class="quiet" title="Fold the files away" aria-label="Fold the files away"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 4.5 5 8l3.5 3.5M12.5 4.5 9 8l3.5 3.5"/></svg></button>
           </span>
         </div>
         <nav id="tree" aria-label="Project files"></nav>
@@ -181,18 +180,27 @@
       </aside>
       <div id="side-handle" class="handle" role="separator" aria-orientation="vertical" aria-label="Resize the files" tabindex="0"></div>
       <div id="editor-pane">
+        <div id="editor-head">
+          <span id="editor-path"></span>
+          <button id="fold-editor" class="quiet" title="Fold the source away" aria-label="Fold the source away"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 4.5 5 8l3.5 3.5M12.5 4.5 9 8l3.5 3.5"/></svg></button>
+        </div>
         <div id="editor"></div>
         <img id="image-preview" alt="" hidden />
       </div>
       <div id="pdf-handle" class="handle" role="separator" aria-orientation="vertical" aria-label="Resize the PDF" tabindex="0"></div>
       <section id="preview">
         <div id="pdf-toolbar">
-          <div class="group" role="group" aria-label="Zoom">
-            <button id="zoom-out" class="quiet square" title="Zoom out (Ctrl/Cmd and −)" aria-label="Zoom out">−</button>
-            <button id="zoom-menu" class="quiet" aria-haspopup="menu" title="Choose a size"><span id="zoom-label">Fit width</span><span class="chevron" aria-hidden="true"></span></button>
-            <button id="zoom-in" class="quiet square" title="Zoom in (Ctrl/Cmd and +)" aria-label="Zoom in">+</button>
+          <!-- Update PDF, with a dot that says whether the PDF matches the source. -->
+          <div class="compile-box" role="group" aria-label="Update the PDF">
+            <button id="compile" title="Update the PDF (Ctrl/Cmd+S)" aria-label="Update PDF"><span class="update-icon"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8a5 5 0 0 1-8.6 3.5M3 8a5 5 0 0 1 8.6-3.5M11.75 1.75v2.9h-2.9M4.25 14.25v-2.9h2.9"/></svg><span id="freshness" aria-hidden="true"></span></span><span id="compile-label">Update PDF</span></button>
+            <button id="compile-menu" aria-haspopup="menu" title="Compile options" aria-label="Compile options"><span class="chevron" aria-hidden="true"></span></button>
           </div>
-          <label class="page-nav" id="page-nav" hidden>Page
+          <div class="group" role="group" aria-label="Zoom">
+            <button id="zoom-out" class="quiet square" title="Zoom out (Ctrl/Cmd and −)" aria-label="Zoom out"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8h9"/></svg></button>
+            <button id="zoom-menu" class="quiet" aria-haspopup="menu" title="Choose a size"><span id="zoom-label">Fit width</span><span class="chevron" aria-hidden="true"></span></button>
+            <button id="zoom-in" class="quiet square" title="Zoom in (Ctrl/Cmd and +)" aria-label="Zoom in"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3.5v9M3.5 8h9"/></svg></button>
+          </div>
+          <label class="page-nav" id="page-nav" title="Page: type a number and press Enter to go there" hidden>
             <input id="page-number" inputmode="numeric" autocomplete="off" aria-label="Go to page" />
             <span id="page-count"></span>
           </label>
@@ -200,15 +208,16 @@
             <button id="show-in-pdf" class="quiet square" title="Show the cursor's line in the PDF (Ctrl/Cmd+Shift+Enter). Double-click the PDF to jump back to the source." aria-label="Show the cursor's line in the PDF" disabled>
               <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="4.5"/><circle cx="8" cy="8" r="1" fill="currentColor" stroke="none"/><path d="M8 1v2.5M8 12.5V15M1 8h2.5M12.5 8H15"/></svg>
             </button>
-            <button id="share-pdf" class="quiet" title="Make a link anyone can open to view this PDF" aria-haspopup="menu" disabled hidden>Share PDF</button>
-            <button id="download-pdf" class="quiet" title="Save the PDF to your computer" disabled>Download</button>
+            <button id="share-pdf" class="quiet square" title="Share the PDF by link" aria-label="Share the PDF by link" aria-haspopup="menu" disabled hidden><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6.75 9.25 9.25 6.75M7 4.75l1.25-1.25a2.5 2.5 0 0 1 3.5 3.5L10.5 8.25M9 11.25 7.75 12.5a2.5 2.5 0 0 1-3.5-3.5L5.5 7.75"/></svg></button>
+            <button id="download-pdf" class="quiet square" title="Download the PDF" aria-label="Download the PDF" disabled><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5v7.5M4.75 7 8 10.25 11.25 7M3 12.5v1h10v-1"/></svg></button>
+            <button id="fold-pdf" class="quiet square" title="Fold the PDF away" aria-label="Fold the PDF away"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 4.5 11 8l-3.5 3.5M3.5 4.5 7 8l-3.5 3.5"/></svg></button>
           </div>
         </div>
         <div id="pdf"></div>
         <section id="problems-panel" hidden>
           <div class="panel-head">
             <span id="problems-title">Problems</span>
-            <button id="close-problems" class="quiet" title="Hide the list">Hide</button>
+            <button id="close-problems" class="quiet square" title="Hide the list" aria-label="Hide the list"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
           </div>
           <ul id="problems"></ul>
         </section>
@@ -226,7 +235,7 @@
       <button id="problem-count" hidden title="Show or hide the errors and warnings"></button>
       <span id="status">The first compile downloads the TeX engine (about 125 MB).</span>
       <button id="editor-look" aria-haspopup="menu" title="Text size and line wrapping in the editor">Aa</button>
-      <button id="toggle-log" title="Show or hide the full compile log">Log</button>
+      <button id="toggle-log" title="Show or hide the full compile log" aria-label="Compile log"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5h11v9h-11zM5 6.5l2 1.5-2 1.5M8.5 10h2.5"/></svg></button>
     </footer>
     <dialog id="ask-dialog">
       <form method="dialog">

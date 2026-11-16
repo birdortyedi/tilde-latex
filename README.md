@@ -53,7 +53,7 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - Fold environments and sections with the arrows next to the line numbers
 - Spell checking by your browser, leaving out commands, labels, citation keys, file names and maths. The editor tells the browser the document's language from `babel` or `polyglossia`; Firefox then checks in that language (if its dictionary is installed), while Chrome, Edge and Safari use the languages set in the browser or the system
 - Multi-file projects with folders: new, upload or drag in files, add from Drive, rename or move, duplicate, delete, choose the main file
-- Panes you can resize and hide (files, source, PDF); one at a time in a narrow window
+- Panes you can resize (files, source, PDF), each with a header whose button folds it into a slim strip at the side; click the strip to bring it back. In a narrow window one pane shows at a time and the others wait as strips
 - The editor's text size (Ctrl/Cmd and + or − while typing, or "Aa" in the status bar) and whether long lines wrap, remembered in your browser
 
 **Compiling**
@@ -61,7 +61,8 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - Unicode text with XeLaTeX (Greek, Cyrillic, Arabic with `polyglossia`, Chinese with `xeCJK`), in the OpenType fonts that come with TeX Live (TeX Gyre, Libertinus, Noto, Amiri, Fandol and more) or in your own: upload the `.otf` or `.ttf` file, or in Chrome and Edge use "+" → "Add a font from this computer"
 - TikZ, pgfplots, BibTeX, natbib, biblatex with Biber, and an index with `\makeindex`
 - Packages beyond the basic set are fetched once and kept, so later compiles work offline
-- Optional auto-compile a moment after you stop typing. It is quick: one LaTeX pass, reusing what the last compile learned (labels, page numbers, the bibliography), with a full run by itself when a new citation needs one. Compile and Ctrl/Cmd+S always do the full run
+- Update PDF above the PDF (or Ctrl/Cmd+S), with a dot that tells whether the PDF matches the source: green when it does, amber when someone edited since, red when the last update stopped at an error. The dot shows on the folded PDF's strip too
+- Optional "Compile as you type" (in the arrow next to Update PDF), a moment after you stop typing. It is quick: one LaTeX pass, reusing what the last compile learned (labels, page numbers, the bibliography), with a full run by itself when a new citation needs one. Update PDF and Ctrl/Cmd+S always do the full run
 - Errors and warnings in a list and as icons next to the line numbers; click one to jump to the file and line. Common problems (a font that is not in TeX Live, characters a font lacks, EPS images, `minted`) come with a hint on what to do
 - The TeX engine starts loading as soon as you open a project, so the first compile waits less
 - Jump between source and PDF (SyncTeX): double-click the PDF to go to its line in the source, or press Ctrl/Cmd+Shift+Enter (or the crosshair button) to see the cursor's line in the PDF
@@ -138,8 +139,8 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 | **Fonts installed on your computer are not found by name**, so `\setmainfont{Arial}` fails. | Put the font file in the project and load it by file name: `\setmainfont{Arial.ttf}[Path=fonts/]`. In Chrome and Edge, "+" → "Add a font from this computer" copies a font and its bold and italic files for you. Or use one that comes with TeX Live, such as TeX Gyre Termes (like Times) or TeX Gyre Heros (like Helvetica). |
 | **EPS images** need a converter program, which a browser cannot run. | Convert them to PDF (most drawing and plotting programs export PDF), then add those. |
 | **No shell escape**, so no `minted`. | Use `listings` for code, which needs no shell escape. |
-| **One error at a time.** The engine stops at the first error. | Fix it and compile again; with *Auto* on, that happens by itself. |
-| **Long documents compile more slowly** than with a local TeX Live. | Turn on *Auto*: its quick compiles run LaTeX once instead of three or four times. For very long ones, compile one chapter with `\includeonly{chapters/method}`, or use `\documentclass[draft]{…}`, which skips images. |
+| **One error at a time.** The engine stops at the first error. | Fix it and update the PDF again; with *Compile as you type* on, that happens by itself. |
+| **Long documents compile more slowly** than with a local TeX Live. | Turn on *Compile as you type*: its quick compiles run LaTeX once instead of three or four times. For very long ones, compile one chapter with `\includeonly{chapters/method}`, or use `\documentclass[draft]{…}`, which skips images. |
 | **The first compile downloads the TeX engine** (about 125 MB; about 30 MB more the first time Biber is used). | It happens once per browser, and starts as soon as you open a project; later visits load it from the cache. |
 | **Your Google account's storage**: 15 GB on a free account, shared with Gmail and Photos. | LaTeX projects are small; images are usually what fills it. A safe copy of a `.tex` file takes a few KB. |
 | **Files uploaded on the Google Drive website don't appear in Tilde**, even inside a project's folder. Tilde may only see the files it made itself and the ones you pick (the `drive.file` permission). Renaming or deleting a file on the website does come through. | Use "Add from Google Drive": it opens in the project's own folder, and the files you pick there join the project where they are. Or upload them, or drag them in. |
