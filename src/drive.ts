@@ -19,6 +19,18 @@ export interface DriveFile {
   parents?: string[]; // the folder it is in
 }
 
+// Someone (or everyone with the link) who may open a file or folder.
+export interface Permission {
+  id: string;
+  type: string; // "user", "group", "domain" or "anyone"
+  role: string; // "owner", "writer", "commenter" or "reader"
+  emailAddress?: string;
+  displayName?: string;
+  domain?: string;
+}
+
+export type Role = 'writer' | 'reader';
+
 // Changes to a file's details (not its content).
 export interface MetadataChanges {
   name?: string;
@@ -47,9 +59,17 @@ export interface Drive {
   keepRevision(fileId: string, revisionId: string): Promise<{ id: string; modifiedTime?: string }>;
   // The content of an old version of a file.
   downloadRevision(fileId: string, revisionId: string): Promise<Uint8Array>;
-  // Shares a file or folder Tilde made with someone, who may edit it. Google
-  // emails them, with `message` in the email.
-  share(fileId: string, email: string, message: string): Promise<void>;
+  // Shares a file or folder Tilde made with someone, who may edit it (or
+  // only view it). Google emails them, with `message` in the email.
+  share(fileId: string, email: string, message: string, role?: Role): Promise<void>;
+  // Who may open a file or folder, and changing or taking that away.
+  permissions(fileId: string): Promise<Permission[]>;
+  setRole(fileId: string, permissionId: string, role: Role): Promise<void>;
+  removePermission(fileId: string, permissionId: string): Promise<void>;
+  // Whether the signed-in account may change a file (and not only view it).
+  canEdit(fileId: string): Promise<boolean>;
+  // Lets anyone with the link view a file Tilde made (no Google account needed).
+  shareByLink(fileId: string): Promise<void>;
 }
 
 // Thrown when Drive cannot be reached because the computer is offline.
@@ -62,6 +82,18 @@ export class OfflineError extends Error {
 const API = 'https://www.googleapis.com/drive/v3/files';
 const UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3/files';
 const FIELDS = 'id,name,mimeType,headRevisionId,appProperties,modifiedTime,trashed,parents';
+
+// Drive's error answer is JSON; its reason and message are what a person can read.
+function driveProblem(text: string): string {
+  try {
+    const { error } = JSON.parse(text) as { error?: { message?: string; errors?: { reason?: string }[] } };
+    const reason = error?.errors?.[0]?.reason;
+    if (error?.message) return reason ? `${error.message} (${reason})` : error.message;
+  } catch {
+    // Not JSON: as it is.
+  }
+  return text;
+}
 
 export const RETRIES = 5; // tries again up to this often, waiting 1, 2, 4, 8 and 16 seconds
 
@@ -87,7 +119,7 @@ async function request(url: string, init: { method?: string; headers?: Record<st
     // tried again then, since a change may have gone through after all.
     const slowDown = response.status === 429 || (response.status === 403 && /rateLimitExceeded/i.test(text));
     const readFailed = response.status >= 500 && (init.method ?? 'GET') === 'GET';
-    if (!(slowDown || readFailed) || attempt >= RETRIES) throw new Error(`Google Drive answered ${response.status}: ${text}`);
+    if (!(slowDown || readFailed) || attempt >= RETRIES) throw new Error(`Google Drive answered ${response.status}: ${driveProblem(text)}`);
     await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** attempt + Math.random() * 1000));
   }
 }
@@ -190,12 +222,42 @@ export const googleDrive: Drive = {
     return response.json();
   },
 
-  async share(fileId, email, message) {
+  async share(fileId, email, message, role = 'writer') {
     const params = new URLSearchParams({ sendNotificationEmail: 'true', emailMessage: message });
     await request(`${API}/${fileId}/permissions?${params}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role: 'writer', type: 'user', emailAddress: email }),
+      body: JSON.stringify({ role, type: 'user', emailAddress: email }),
+    });
+  },
+
+  async permissions(fileId) {
+    const fields = 'permissions(id,type,role,emailAddress,displayName,domain)';
+    return ((await (await request(`${API}/${fileId}/permissions?fields=${fields}`)).json()) as { permissions: Permission[] }).permissions;
+  },
+
+  async setRole(fileId, permissionId, role) {
+    await request(`${API}/${fileId}/permissions/${permissionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role }),
+    });
+  },
+
+  async removePermission(fileId, permissionId) {
+    await request(`${API}/${fileId}/permissions/${permissionId}`, { method: 'DELETE' });
+  },
+
+  async canEdit(fileId) {
+    const file = (await (await request(`${API}/${fileId}?fields=capabilities(canEdit)`)).json()) as { capabilities?: { canEdit?: boolean } };
+    return file.capabilities?.canEdit ?? false;
+  },
+
+  async shareByLink(fileId) {
+    await request(`${API}/${fileId}/permissions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: 'reader', type: 'anyone' }),
     });
   },
 

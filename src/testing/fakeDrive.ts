@@ -1,5 +1,5 @@
 import { SignInNeededError } from '../auth';
-import { FOLDER_TYPE, OfflineError, type Drive, type DriveFile, type MetadataChanges } from '../drive';
+import { FOLDER_TYPE, OfflineError, type Drive, type DriveFile, type MetadataChanges, type Permission, type Role } from '../drive';
 
 type FakeItem = DriveFile & {
   parentId: string;
@@ -7,6 +7,7 @@ type FakeItem = DriveFile & {
   trashed?: boolean;
   creator: string; // the account whose Tilde made it
   grants: Set<string>; // accounts that picked it in the Picker
+  readers: Set<string>; // accounts that may only view it
 };
 
 // An in-memory stand-in for Google Drive. Each upload gets a new revision id,
@@ -23,7 +24,9 @@ export class FakeDrive implements Drive {
   // Every version ever saved, by revision id, and the ones kept forever.
   revisions = new Map<string, { content: Uint8Array; time: string }>();
   keptForever = new Set<string>();
-  shares: { fileId: string; email: string; message: string }[] = [];
+  shares: { fileId: string; email: string; message: string; role: Role }[] = [];
+  people = new Map<string, Permission[]>(); // who each file was shared with
+  linkShared = new Set<string>(); // files anyone with the link may view
   private strict = false;
   private counter = { next: 1 }; // shared by all accounts' views
 
@@ -45,7 +48,7 @@ export class FakeDrive implements Drive {
     if (this.strict && parentId !== 'root') this.item(parentId); // a folder it cannot see is "not found"
     const id = `id${this.counter.next++}`;
     const item: FakeItem = {
-      id, name, parentId, mimeType, content, creator: this.account, grants: new Set(),
+      id, name, parentId, mimeType, content, creator: this.account, grants: new Set(), readers: new Set(),
       headRevisionId: content ? `rev${this.counter.next++}` : undefined,
     };
     this.items.set(id, item);
@@ -55,6 +58,16 @@ export class FakeDrive implements Drive {
 
   private visible(item: FakeItem): boolean {
     return !this.strict || item.creator === this.account || item.grants.has(this.account);
+  }
+
+  // What sharing as "can view" does: the account may read the file, not change it.
+  viewOnly(fileId: string, account: string): void {
+    this.items.get(fileId)?.readers.add(account);
+  }
+
+  private writable(item: FakeItem): FakeItem {
+    if (item.readers.has(this.account)) throw new Error('Google Drive answered 403: insufficientFilePermissions');
+    return item;
   }
 
   private check(): void {
@@ -104,7 +117,7 @@ export class FakeDrive implements Drive {
   }
   async updateMetadata(fileId: string, changes: MetadataChanges, move?: { from: string; to: string }) {
     this.check();
-    const item = this.item(fileId);
+    const item = this.writable(this.item(fileId));
     if (move && item.parentId !== move.from) throw new Error(`${item.name} is not in ${move.from}`);
     if (move) item.parentId = move.to;
     if (changes.name !== undefined) item.name = changes.name;
@@ -118,16 +131,45 @@ export class FakeDrive implements Drive {
   }
   async updateFile(fileId: string, content: Uint8Array) {
     this.check();
-    const item = this.item(fileId);
+    const item = this.writable(this.item(fileId));
     item.content = content;
     item.headRevisionId = `rev${this.counter.next++}`;
     this.revisions.set(item.headRevisionId, { content, time: new Date().toISOString() });
     return this.info(fileId);
   }
-  async share(fileId: string, email: string, message: string) {
+  async share(fileId: string, email: string, message: string, role: Role = 'writer') {
     this.check();
     this.item(fileId);
-    this.shares.push({ fileId, email, message });
+    this.shares.push({ fileId, email, message, role });
+    const list = this.people.get(fileId) ?? [];
+    list.push({ id: `perm-${email}`, type: 'user', role, emailAddress: email });
+    this.people.set(fileId, list);
+  }
+  async permissions(fileId: string) {
+    this.check();
+    const item = this.item(fileId);
+    return [{ id: `perm-${item.creator}`, type: 'user', role: 'owner', emailAddress: `${item.creator}@example.org` }, ...(this.people.get(fileId) ?? []),
+      ...(this.linkShared.has(fileId) ? [{ id: 'anyoneWithLink', type: 'anyone', role: 'reader' }] : [])];
+  }
+  async setRole(fileId: string, permissionId: string, role: Role) {
+    this.check();
+    const permission = this.people.get(fileId)?.find((p) => p.id === permissionId);
+    if (!permission) throw new Error('Google Drive answered 404: Permission not found');
+    permission.role = role;
+  }
+  async removePermission(fileId: string, permissionId: string) {
+    this.check();
+    if (permissionId === 'anyoneWithLink') this.linkShared.delete(fileId);
+    this.people.set(fileId, (this.people.get(fileId) ?? []).filter((p) => p.id !== permissionId));
+  }
+  async canEdit(fileId: string) {
+    this.check();
+    return !this.item(fileId).readers.has(this.account);
+  }
+  async shareByLink(fileId: string) {
+    this.check();
+    this.item(fileId);
+    this.linkShared.add(fileId);
   }
   async keepRevision(_fileId: string, revisionId: string) {
     this.check();

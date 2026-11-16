@@ -1,6 +1,7 @@
-// Short notices in the corner ("Deleted refs.bib") that fade after a few
-// seconds, and a "working" overlay for slow steps like opening a project.
-// Errors stay until the user closes them.
+// Short notices in the corner ("Deleted refs.bib") that go after a few
+// seconds (a little longer with a button, like "Undo"; never while the
+// pointer is on one), and a "working" overlay for slow steps like opening a
+// project. Errors stay until the user closes them.
 
 function element<T extends HTMLElement>(selector: string): T {
   const found = document.querySelector<T>(selector);
@@ -14,7 +15,7 @@ const busyText = element<HTMLSpanElement>('#busy-text');
 
 export type NoticeKind = 'success' | 'info' | 'error';
 
-// With `action`, the notice has a button for it and stays until closed.
+// With `action`, the notice has a button for it.
 // Returns the notice, so it can be taken away when it no longer applies.
 export function notify(text: string, kind: NoticeKind = 'success', action?: { label: string; run: () => void }): HTMLElement {
   const toast = document.createElement('div');
@@ -40,7 +41,12 @@ export function notify(text: string, kind: NoticeKind = 'success', action?: { la
   toast.append(message, close);
   toasts.append(toast);
   // Longer texts stay a little longer; errors stay until closed.
-  if (kind !== 'error' && !action) setTimeout(() => toast.remove(), Math.min(4000 + text.length * 40, 10_000));
+  if (kind !== 'error') {
+    const time = action ? 12_000 : Math.min(2500 + text.length * 25, 6000);
+    let timer = setTimeout(() => toast.remove(), time);
+    toast.addEventListener('pointerenter', () => clearTimeout(timer));
+    toast.addEventListener('pointerleave', () => { timer = setTimeout(() => toast.remove(), 2500); });
+  }
   while (toasts.children.length > 4) toasts.firstElementChild?.remove();
   return toast;
 }

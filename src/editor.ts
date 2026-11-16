@@ -1,6 +1,6 @@
 import { basicSetup } from 'codemirror';
 import { EditorSelection, EditorState, Prec, type Extension, type TransactionSpec } from '@codemirror/state';
-import { EditorView, keymap, scrollPastEnd } from '@codemirror/view';
+import { EditorView, keymap, scrollPastEnd, tooltips } from '@codemirror/view';
 import { lintGutter, setDiagnostics, type Diagnostic } from '@codemirror/lint';
 import { HighlightStyle, StreamLanguage, syntaxHighlighting } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
@@ -8,6 +8,9 @@ import { stex } from '@codemirror/legacy-modes/mode/stex';
 import { latexEditing, type AddCitation } from './latexEditing';
 import { latexSpellcheck } from './spellcheck';
 import { findPanel } from './findPanel';
+import { cellsFrom, insideTabular, latexTable, tableRows } from './pasteTable';
+import { mathPreview } from './mathPreview';
+import { commentsExtension, openCard, setCommentRanges, type CommentHooks, type CommentRange } from './commentsView';
 import type { ProjectFile } from './projects';
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
 import type * as Y from 'yjs';
@@ -45,7 +48,8 @@ const look = EditorView.theme({
   '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection':
     { backgroundColor: 'color-mix(in srgb, var(--teal) 28%, transparent)' },
   '.cm-matchingBracket': { backgroundColor: 'color-mix(in srgb, var(--teal) 22%, transparent)', outline: 'none' },
-  '.cm-tooltip': { backgroundColor: 'var(--raised)', color: 'var(--ink)', border: '1px solid var(--rule)' },
+  // Pop-ups in the text (suggestions, maths, comments) look like Tilde's menus.
+  '.cm-tooltip': { backgroundColor: 'var(--raised)', color: 'var(--ink)', border: '1px solid var(--rule)', borderRadius: '6px', boxShadow: '0 6px 20px rgba(0, 0, 0, 0.2)' },
   '.cm-panels': { backgroundColor: 'var(--chrome)', color: 'var(--ink)' },
 });
 
@@ -63,13 +67,21 @@ export class Editor {
   onImages: (files: File[], at: number) => void = () => {};
   // "Add a paper from its DOI…" in the \cite{} suggestions (see main.ts).
   onAddCitation: AddCitation = () => Promise.resolve(null);
+  // Cells pasted from a spreadsheet became a table (or rows, inside a
+  // tabular) from `from` to `to`; `plain` is what was pasted (see main.ts).
+  onTablePasted: (from: number, to: number, plain: string, rowsOnly: boolean) => void = () => {};
   // In a shared project, a file's shared text; null in other projects.
   shared: (path: string) => SharedText | null = () => null;
+  // Comments in shared projects: whether this account may add them, and the thread cards (see commentsUi.ts).
+  commentHooks: CommentHooks = { canComment: () => false, card: () => document.createElement('div') };
   private view: EditorView;
   private states = new Map<string, EditorState>();
   private currentPath: string | null = null;
   private marks = new Map<string, LineMark[]>(); // by file path
   private language: Extension; // LaTeX colours, completion and editing helpers
+  private readOnly = false; // a project this account may only view
+  private comments = new Map<string, CommentRange[]>(); // by file path, in shared projects
+  private commenting: Extension;
 
   constructor(
     parent: HTMLElement,
@@ -82,7 +94,9 @@ export class Editor {
     this.language = [
       StreamLanguage.define({ ...stex, languageData: { ...stex.languageData, ...latex.languageData } }),
       latex.extensions,
+      mathPreview(files),
     ];
+    this.commenting = commentsExtension({ canComment: () => this.commentHooks.canComment(), card: (target, close) => this.commentHooks.card(target, close) });
   }
 
   private reportCursor(state: EditorState): void {
@@ -125,11 +139,14 @@ export class Editor {
   }
 
   // Selects a line (1 = first) of the open file and scrolls it into the middle.
-  goTo(line: number): void {
+  // With `column` and `length`, selects only that part of the line.
+  goTo(line: number, column?: number, length = 0): void {
     const doc = this.view.state.doc;
     const target = doc.line(Math.min(Math.max(line, 1), doc.lines));
+    const from = column === undefined ? target.from : Math.min(target.from + column, target.to);
+    const to = column === undefined ? target.to : Math.min(from + length, target.to);
     this.view.dispatch({
-      selection: { anchor: target.from, head: target.to },
+      selection: { anchor: from, head: to },
       effects: EditorView.scrollIntoView(target.from, { y: 'center' }),
     });
     this.view.focus();
@@ -139,20 +156,56 @@ export class Editor {
   // is empty, else on a new line below it. `make` gets the line's indent and
   // returns the text and where in it the cursor goes. Returns where the block ends.
   insertBlock(at: number, make: (indent: string) => { text: string; cursor: number }): number {
-    const line = this.view.state.doc.lineAt(Math.min(at, this.view.state.doc.length));
+    return this.insertBlockAt(this.view, at, make)[1];
+  }
+
+  // The same, in a given view; returns where the inserted text starts and ends.
+  private insertBlockAt(view: EditorView, at: number, make: (indent: string) => { text: string; cursor: number }): [number, number] {
+    const line = view.state.doc.lineAt(Math.min(at, view.state.doc.length));
     const indent = /^\s*/.exec(line.text)?.[0] ?? '';
     const { text, cursor } = make(indent);
     const blank = line.text.trim() === '';
     const from = blank ? line.from : line.to;
     const insert = blank ? indent + text : `\n${indent}${text}`;
     const start = from + insert.length - text.length;
-    this.view.dispatch({
+    view.dispatch({
       changes: { from, to: line.to, insert },
       selection: { anchor: start + cursor },
       scrollIntoView: true,
     });
+    view.focus();
+    return [from, from + insert.length];
+  }
+
+  // Pasted spreadsheet cells: a whole table, or only its rows inside a tabular.
+  private pasteTable(view: EditorView, rows: string[][], plain: string): void {
+    const { from, to } = view.state.selection.main;
+    const rowsOnly = insideTabular(view.state.sliceDoc(0, from));
+    if (to > from) view.dispatch({ changes: { from, to } });
+    const [start, end] = this.insertBlockAt(view, from, rowsOnly ? (indent) => {
+      const text = tableRows(rows, indent).join('\n').slice(indent.length);
+      return { text, cursor: text.length };
+    } : (indent) => latexTable(rows, indent));
+    this.onTablePasted(start, end, plain, rowsOnly);
+  }
+
+  // Replaces part of the open file, if it still holds `expected` there.
+  // Returns false if it does not (it was edited meanwhile).
+  replaceRange(from: number, to: number, expected: string, insert: string): boolean {
+    if (this.view.state.sliceDoc(from, to) !== expected) return false;
+    this.view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length }, scrollIntoView: true });
     this.view.focus();
-    return from + insert.length;
+    return true;
+  }
+
+  // The text of the open file between two offsets.
+  slice(from: number, to: number): string {
+    return this.view.state.sliceDoc(from, to);
+  }
+
+  // The path of the open file.
+  path(): string | null {
+    return this.currentPath;
   }
 
   // The text of the open file.
@@ -194,8 +247,43 @@ export class Editor {
     return setDiagnostics(state, diagnostics);
   }
 
+  get isReadOnly(): boolean {
+    return this.readOnly;
+  }
+
+  // For a project this account may only view: text can be selected and
+  // copied, not changed. Others' edits still show up.
+  setReadOnly(readOnly: boolean): void {
+    if (this.readOnly === readOnly) return;
+    this.readOnly = readOnly;
+    this.states.clear();
+    const path = this.currentPath;
+    if (!path) return;
+    const shared = this.shared(path);
+    this.view.setState(this.newState(path, this.view.state.doc.toString(), shared ?? undefined, this.view.state.selection.main.head));
+  }
+
+  // The comments of a shared project's file, where they are in its text now.
+  showComments(path: string, ranges: CommentRange[]): void {
+    this.comments.set(path, ranges);
+    const effects = setCommentRanges.of(ranges);
+    if (path === this.currentPath) this.view.dispatch({ effects });
+    else {
+      const state = this.states.get(path);
+      if (state) this.states.set(path, state.update({ effects }).state);
+    }
+  }
+
+  // Opens a comment's thread in the open file, and scrolls to it.
+  openComment(id: string): void {
+    const range = this.comments.get(this.currentPath ?? '')?.find((r) => r.id === id);
+    if (!range) return;
+    this.view.dispatch({ effects: [openCard.of({ id }), EditorView.scrollIntoView(range.from, { y: 'center' })], selection: { anchor: range.from } });
+  }
+
   // Forget all files, for example when another project is opened.
   clear(): void {
+    this.comments.clear();
     this.states.clear();
     this.currentPath = null;
     this.view.setState(EditorState.create());
@@ -208,11 +296,17 @@ export class Editor {
       extensions: [
         // Shared text: typing goes into it, others' edits come out of it, and
         // Ctrl/Cmd+Z undoes only this browser's edits.
-        shared ? [yCollab(shared.text, shared.awareness, { undoManager: shared.undo }), Prec.high(keymap.of(yUndoManagerKeymap))] : [],
+        shared ? [yCollab(shared.text, shared.awareness, { undoManager: shared.undo }), Prec.high(keymap.of(yUndoManagerKeymap)), this.commenting] : [],
         basicSetup,
+        EditorState.readOnly.of(this.readOnly),
         syntaxHighlighting(latexColours),
         look,
         scrollPastEnd(), // the last line can scroll up, away from the bottom edge
+        // Pop-ups stay over the source (not the PDF), a little in from its edges.
+        tooltips({ tooltipSpace: (view) => {
+          const box = view.dom.getBoundingClientRect();
+          return { left: box.left + 6, right: box.right - 6, top: box.top, bottom: box.bottom };
+        } }),
         lintGutter(),
         EditorView.lineWrapping,
         this.language,
@@ -222,7 +316,16 @@ export class Editor {
         // Text and other files are left to the editor as usual.
         EditorView.domEventHandlers({
           paste: (event, view) => {
+            if (view.state.readOnly) return false;
             const data = event.clipboardData;
+            // Cells copied from a spreadsheet become a table in a .tex file.
+            const plain = data?.getData('text/plain') ?? '';
+            const rows = this.currentPath?.endsWith('.tex') && plain ? cellsFrom(plain) : null;
+            if (rows) {
+              event.preventDefault();
+              this.pasteTable(view, rows, plain);
+              return true;
+            }
             const files = [...(data?.files ?? [])];
             if (!data || files.length === 0 || data.types.includes('text/plain')) return false;
             event.preventDefault();
@@ -230,6 +333,7 @@ export class Editor {
             return true;
           },
           drop: (event, view) => {
+            if (view.state.readOnly) return false;
             const files = [...(event.dataTransfer?.files ?? [])].filter((file) => file.type.startsWith('image/') || file.type === 'application/pdf');
             if (files.length === 0) return false;
             event.preventDefault();
@@ -245,6 +349,7 @@ export class Editor {
         }),
       ],
     });
-    return state.update(this.marksFor(path, state)).state;
+    const withMarks = state.update(this.marksFor(path, state)).state;
+    return shared ? withMarks.update({ effects: setCommentRanges.of(this.comments.get(path) ?? []) }).state : withMarks;
   }
 }

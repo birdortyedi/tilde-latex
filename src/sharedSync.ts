@@ -39,6 +39,7 @@ const LEADER_FRESH = 25_000; // an owner's tab heard from within this long can k
 const MIRROR_DELAY = 3_000;
 const MIRROR_RETRY = 10_000; // after a failed update of the plain files
 const MIRROR_CHECK = 60_000; // how often the tab keeping the plain files reads them again anyway
+const ACCESS_CHECK = 60_000; // how often a viewer's tab asks Drive whether it may edit by now
 
 // Marks changes that came from Drive, so they are not mistaken for this browser's edits.
 const FROM_DRIVE = Symbol('from Drive');
@@ -69,6 +70,9 @@ export class SharedSync {
   missing = new Map<string, string>(); // binary files this browser cannot read yet: Drive id → path
   state: SyncState = 'saved';
   errorMessage = '';
+  readOnly = false; // shared with this account as "can view" (see viewOnly)
+  onCanEdit: () => void = () => {}; // a viewer was allowed to edit meanwhile (main.ts opens the project again)
+  private accessChecked = 0;
   private stateId: string;
   private saved: Uint8Array; // the document as it was in Drive when last read or written
   private revision: string | undefined;
@@ -154,6 +158,23 @@ export class SharedSync {
     void this.mailboxRound();
   }
 
+  // The project is shared with this account as "can view": nothing is written
+  // to Drive (not even "I am here", so others do not see this browser), and
+  // others' edits still arrive through Drive.
+  viewOnly(): void {
+    this.readOnly = true;
+    this.accessChecked = Date.now();
+    this.live?.close();
+    this.live = null;
+    this.localChange = false;
+    this.update();
+  }
+
+  // The shared file in Drive, which everyone in the project may open.
+  get stateFileId(): string {
+    return this.stateId;
+  }
+
   // The cursors and names of the people connected directly, for the editor.
   get awareness() {
     return this.live?.awareness ?? null;
@@ -218,6 +239,7 @@ export class SharedSync {
   insertText(path: string, at: number, text: string): boolean {
     const shared = sharedFileAt(this.doc, path)?.text;
     if (!shared) return false;
+    if (this.readOnly) return true; // nothing to change
     shared.insert(Math.min(at, shared.length), text);
     return true;
   }
@@ -358,6 +380,18 @@ export class SharedSync {
   // back if Drive's lacks anything of it.
   private async round(): Promise<void> {
     const info = await this.drive.get(this.stateId);
+    if (this.readOnly) {
+      if (info.headRevisionId !== this.revision) {
+        Y.applyUpdate(this.doc, await this.drive.download(this.stateId), FROM_DRIVE);
+        this.revision = info.headRevisionId;
+      }
+      this.localChange = false;
+      if (Date.now() - this.accessChecked >= ACCESS_CHECK) {
+        this.accessChecked = Date.now();
+        if (await this.drive.canEdit(this.stateId) && !this.closed) this.onCanEdit();
+      }
+      return;
+    }
     // This browser's last write is still Drive's newest version: confirmed.
     if (this.unconfirmed && info.headRevisionId === this.revision) this.confirmed();
     if (info.headRevisionId !== this.revision) {
@@ -424,7 +458,7 @@ export class SharedSync {
     // From Drive or from a peer: someone else's change, which they save themselves.
     const elsewhere = transaction.origin === FROM_DRIVE || fromPeer(transaction.origin);
     if (structure) this.rebuild(true);
-    if (!elsewhere) {
+    if (!elsewhere && !this.readOnly) {
       this.localChange = true;
       this.keepInBrowser();
       // Others connected directly have the edit already; others reach it through Drive.
@@ -812,7 +846,7 @@ export class SharedSync {
         return session === this.session || now - (this.lastSeen.get(session)?.local ?? now) < HERE_FOR;
       }));
       this.here = fresh(box.here);
-      const beat = now - this.lastBeat >= HEARTBEAT || !this.here[this.session];
+      const beat = !this.readOnly && (now - this.lastBeat >= HEARTBEAT || !this.here[this.session]);
       if (beat) this.here[this.session] = { name: this.myName, at: now, account: this.accountId, leads: this.leading };
       const signals = await this.live?.step(Object.keys(this.here), box.signals ?? {}) ?? null;
       if (this.closed) return; // left meanwhile: do not say "here" again
@@ -994,6 +1028,7 @@ export class SharedSync {
 
   // Like enqueue, but the caller also gets the error, to show it.
   private action(task: () => Promise<void>): Promise<void> {
+    if (this.readOnly) return Promise.reject(new Error('You can only view this project, so its files cannot be changed here.'));
     let failure: { error: unknown } | null = null;
     this.enqueue(async () => {
       try {
@@ -1025,6 +1060,13 @@ export class SharedSync {
   private failed(error: unknown): void {
     if (error instanceof SignInNeededError) {
       this.problem = 'signin';
+      return;
+    }
+    // The owner made this account a viewer meanwhile.
+    if (!this.readOnly && error instanceof Error && /403[\s\S]*insufficient(File)?Permissions/i.test(error.message)) {
+      this.viewOnly();
+      this.listener.notice('The owner changed your access to "can view". Edits you made since the last save are only in this browser; '
+        + 'Download as .zip keeps them.');
       return;
     }
     this.problem = error instanceof OfflineError ? 'offline' : 'error';

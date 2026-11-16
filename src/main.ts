@@ -10,13 +10,12 @@ import { Editor, type LineMark } from './editor';
 import { PdfViewer, type PdfViewState } from './pdfViewer';
 import type { Zoom } from './pdfZoom';
 import { forgetToken, restoreSignIn, signIn, SignInNeededError, signOut } from './auth';
-import { FOLDER_TYPE, googleDrive, type DriveFile } from './drive';
+import { FOLDER_TYPE, googleDrive, type DriveFile, type Role } from './drive';
 import { createProject, lastEdited, listProjects, moveProjectsFolder, openProject, projectsFolder, setMainFile as saveMainFile } from './driveProjects';
 import { GROUPS, kitMainFile, STARTERS, type Kit, type StarterGroup } from './starters';
 import { browserDrafts, forgetOtherAccounts, type Draft } from './drafts';
 import { ProjectSync, type DriveChanges, type SyncState } from './sync';
 import { SharedSync } from './sharedSync';
-import { webrtcLink } from './live';
 import { browserShared, type SharedCopy } from './sharedStore';
 import { sharedFiles } from './sharedDoc';
 import {
@@ -26,7 +25,7 @@ import {
 import * as Y from 'yjs';
 import { cachedPackages, REMOTE_DIR, storeNewPackages } from './packageCache';
 import { lastLatexLog, parseLog, type LogProblem } from './logParser';
-import { unzipProject, zipProject } from './zipImport';
+import { unzipProject, zipFiles, zipProject } from './zipImport';
 import { timeAgo, versionTime } from './time';
 import { bibKeysIn, bibliographyTool, loadsPackage, outline, preambleInsertAt, texEngine } from './latex';
 import { SyncTex } from './synctex';
@@ -42,6 +41,15 @@ import { initLayout, type Pane } from './layout';
 import { initTheme } from './theme';
 import { openMenu } from './menu';
 import { hideBusy, notify, showBusy } from './notices';
+import { arxivFiles } from './arxiv';
+import { searchProject } from './goTo';
+import { openGoTo } from './goToDialog';
+import { documentLanguage } from './language';
+import { pdfLink, sharedPdf, sharePdf, stopSharingPdf } from './pdfLink';
+import { ownStarters, removeStarter, saveStarter, starterFiles, type OwnStarter } from './ownStarters';
+import { MAX_PEOPLE, peopleCount, peopleOf, type Person } from './people';
+import { CommentsUi } from './commentsUi';
+import { colorFor, webrtcLink } from './live';
 
 // Files that TeX Live's basic bundle lacks (TikZ, pgfplots, ...) are fetched
 // one at a time from TeXlyre's public package server.
@@ -131,6 +139,7 @@ const imagePreview = element<HTMLImageElement>('#image-preview');
 const logView = element<HTMLPreElement>('#log');
 const addFilesButton = element<HTMLButtonElement>('#add-files');
 const projectActionsButton = element<HTMLButtonElement>('#project-actions');
+const goToButton = element<HTMLButtonElement>('#go-to');
 const cursorPosition = element<HTMLSpanElement>('#cursor-position');
 const wordCount = element<HTMLSpanElement>('#word-count');
 const problemCount = element<HTMLButtonElement>('#problem-count');
@@ -165,6 +174,7 @@ let cursorLine = 1; // in the open file, for "Show in PDF"
 let sync: ProjectSync | SharedSync | null = null; // saves the open project to Drive; null for examples
 let myName = ''; // the signed-in account's name, for "who is here" in shared projects
 let joinedById = new Map<string, Joined>(); // projects others shared with this account, by folder
+let starterList: OwnStarter[] = []; // the user's own starters (see ownStarters.ts)
 let conflictShown = ''; // the file the conflict dialog was last opened for
 let braveHintShown = false;
 let welcomeShown = false;
@@ -181,6 +191,16 @@ const editor = new Editor(editorElement, (path, text) => {
   cursorPosition.textContent = `Ln ${line}, Col ${column}`;
 }, () => project?.files ?? []);
 editor.shared = (path) => (sync instanceof SharedSync ? sync.textFor(path) : null);
+const commentsUi = new CommentsUi({
+  editor,
+  panel: element<HTMLElement>('#comments-panel'),
+  title: element<HTMLElement>('#comments-title'),
+  list: element<HTMLElement>('#comment-list'),
+  openFile: (path) => {
+    if (path !== activePath) openFile(path);
+    reveal('editor');
+  },
+});
 const pdfViewer = new PdfViewer(pdfContainer, showPdfState);
 
 // The toolbar above the PDF: zoom, page number, auto-compile, download.
@@ -193,6 +213,7 @@ const pageNumber = element<HTMLInputElement>('#page-number');
 const pageCount = element<HTMLSpanElement>('#page-count');
 const autoCompileBox = element<HTMLInputElement>('#auto-compile');
 const downloadPdfButton = element<HTMLButtonElement>('#download-pdf');
+const sharePdfButton = element<HTMLButtonElement>('#share-pdf');
 const showInPdfButton = element<HTMLButtonElement>('#show-in-pdf');
 const ZOOM_KEY = 'tilde.pdfZoom';
 const AUTO_COMPILE_KEY = 'tilde.autoCompile';
@@ -201,7 +222,7 @@ const AUTO_COMPILE_DELAY = 1500; // milliseconds after the last edit
 function showPdfState(state: PdfViewState): void {
   zoomLabel.textContent = state.zoom === 'width' ? 'Fit width' : state.zoom === 'page' ? 'Fit page' : `${state.percent}%`;
   const hasPdf = state.pages > 0;
-  for (const button of [zoomInButton, zoomOutButton, downloadPdfButton]) button.disabled = !hasPdf;
+  for (const button of [zoomInButton, zoomOutButton, downloadPdfButton, sharePdfButton]) button.disabled = !hasPdf;
   showInPdfButton.disabled = !hasPdf || !syncTex;
   wordCount.hidden = !hasPdf;
   wordCount.textContent = `${state.words.toLocaleString()} ${state.words === 1 ? 'word' : 'words'}`;
@@ -366,17 +387,42 @@ async function addImages(files: File[], at: number): Promise<void> {
   if (mainPath) notify(`Also added \\usepackage{graphicx} to ${mainPath}, which \\includegraphics needs.`);
 }
 
+// Spreadsheet cells pasted into a .tex file became a table (see editor.ts).
+// The notice offers the plain text instead, for those who wanted that.
+editor.onTablePasted = (from, to, plain, rowsOnly) => {
+  const path = activePath;
+  const table = editor.slice(from, to).replace(/^\n/, ''); // the table goes on a line of its own
+  const text = plain.replace(/\r?\n$/, '');
+  const mainPath = rowsOnly ? null : loadPackage('booktabs');
+  const rows = text.split(/\r?\n/).length;
+  notify(`Pasted ${rows} rows as a ${rowsOnly ? 'part of the table' : 'table'}.`
+    + (mainPath ? ` Also added \\usepackage{booktabs} to ${mainPath}, for its lines.` : ''), 'success', {
+    label: 'Paste as text instead',
+    run: () => {
+      // Found by its text: adding \usepackage{booktabs} above it moved it.
+      const at = activePath === path ? editor.text().indexOf(table) : -1;
+      if (at < 0 || !editor.replaceRange(at, at + table.length, table, text)) notify('The table was changed since, so it stays.', 'info');
+    },
+  });
+};
+
 // \includegraphics needs the graphicx package. If no file of the project
 // loads it, adds it to the main file, right after \documentclass.
 // Returns the main file's path if it did.
 function loadGraphicx(): string | null {
-  if (!project || loadsPackage(project.files, ['graphicx', 'graphics'])) return null;
+  return loadPackage('graphicx', ['graphics']);
+}
+
+// Adds \usepackage{name} to the main file if no file of the project loads
+// it (or one of `instead`). Returns the main file's path if it did.
+function loadPackage(name: string, instead: string[] = []): string | null {
+  if (!project || loadsPackage(project.files, [name, ...instead])) return null;
   const mainPath = findMainFile(project);
   const main = project.files.find((f) => f.path === mainPath);
   if (!main || typeof main.content !== 'string') return null;
   const at = preambleInsertAt(main.content);
   if (at === null) return null;
-  const line = `${main.content[at - 1] === '\n' ? '' : '\n'}\\usepackage{graphicx}\n`;
+  const line = `${main.content[at - 1] === '\n' ? '' : '\n'}\\usepackage{${name}}\n`;
   if (main.path === activePath) {
     editor.insertText(at, line); // through the editor, so Ctrl/Cmd+Z undoes it
   } else {
@@ -406,6 +452,69 @@ pdfViewer.onDoubleClick = (page, x, y) => {
 function downloadPdf(): void {
   const pdf = pdfViewer.current();
   if (pdf && project) downloadFile(`${project.name}.pdf`, pdf);
+}
+
+// "Share" above the PDF: saves the PDF in the project's Drive folder and makes
+// a link anyone can open (see pdfLink.ts). Once shared, the button offers to
+// copy the link, update the PDF behind it, or stop sharing it.
+async function sharePdfMenu(): Promise<void> {
+  const target = project;
+  const pdf = pdfViewer.current();
+  if (!target?.driveId || !pdf) return;
+  const folderId = target.driveId;
+  let existing;
+  try {
+    existing = await sharedPdf(googleDrive, folderId);
+  } catch (error) {
+    showError(error);
+    return;
+  }
+  if (existing) {
+    const link = pdfLink(existing.id);
+    openMenu(sharePdfButton, [
+      { label: 'Copy the link', action: () => void copyLink(link, 'The link to the PDF is copied.') },
+      { label: 'Update it to this PDF', action: () => void publishPdf(target, pdf) },
+      { label: 'Open it in Google Drive', action: () => window.open(link, '_blank', 'noopener') },
+      { label: 'Stop sharing it…', action: () => void stopSharing(folderId), danger: true },
+    ]);
+    return;
+  }
+  if (!await askConfirm(`Share this PDF by link? Tilde saves it in the project's folder in your Google Drive, and anyone with the link can view it, `
+    + 'without a Google account. The link shows this version until you update it here.', 'Make a link')) return;
+  await publishPdf(target, pdf);
+}
+
+async function publishPdf(target: Project, pdf: Uint8Array): Promise<void> {
+  showBusy('Sharing the PDF…');
+  try {
+    const link = await sharePdf(googleDrive, target, pdf);
+    hideBusy();
+    await copyLink(link, 'Anyone with the link can view the PDF. The link is copied; Share PDF → Update puts a newer PDF behind the same link.');
+  } catch (error) {
+    hideBusy();
+    const text = error instanceof Error ? error.message : '';
+    if (/publishOutNotPermitted|cannotShare/i.test(text)) {
+      notify('Your Google account\'s organisation does not allow links that anyone can open. The PDF is in the project\'s folder in Drive; '
+        + 'share it from there with people by name.', 'error');
+    } else {
+      showError(error);
+    }
+  }
+}
+
+async function copyLink(link: string, done: string): Promise<void> {
+  const copied = await navigator.clipboard.writeText(link).then(() => true, () => false);
+  notify(copied ? done : `The link: ${link}`, 'success', copied ? undefined : { label: 'Open', run: () => window.open(link, '_blank', 'noopener') });
+}
+
+async function stopSharing(folderId: string): Promise<void> {
+  if (!await askConfirm('Stop sharing the PDF? It goes to the trash in your Google Drive, and its link stops working.', 'Stop sharing')) return;
+  try {
+    await stopSharingPdf(googleDrive, folderId);
+    notify('The PDF is not shared any more. Its link stops working.');
+  } catch (error) {
+    showError(error);
+  }
 }
 
 // Auto-compile: compile by itself a moment after typing stops, quickly (one
@@ -474,7 +583,8 @@ function chosenKit(): Kit | undefined {
 }
 
 function renderTemplateChoices(): void {
-  starterGroups.replaceChildren(...GROUPS.map((group) => {
+  if (starterGroup === 'yours' && starterList.length === 0) starterGroup = 'blank';
+  starterGroups.replaceChildren(...GROUPS.filter((group) => group.id !== 'yours' || starterList.length > 0).map((group) => {
     const tab = document.createElement('button');
     tab.type = 'button';
     tab.setAttribute('role', 'tab');
@@ -488,6 +598,7 @@ function renderTemplateChoices(): void {
     return tab;
   }));
   const cards: [string, string, string][] = starterGroup === 'blank' ? [['blank', 'Blank', 'One main.tex to start from']]
+    : starterGroup === 'yours' ? starterList.map((s) => [`own:${s.id}`, s.name, s.saved ? `Saved ${timeAgo(s.saved)}` : 'Your starter'])
     : starterGroup === 'examples' ? examples.map((e) => [`example:${e.name}`, e.name, EXAMPLE_NOTES[e.name] ?? 'An example'])
     : STARTERS.filter((s) => s.group === starterGroup).map((s) => [`starter:${s.id}`, s.name, s.note]);
   if (!cards.some(([value]) => value === chosenTemplate)) chosenTemplate = cards[0]?.[0] ?? 'blank';
@@ -510,10 +621,34 @@ function renderTemplateChoices(): void {
     detail.className = 'note';
     detail.textContent = note;
     label.append(radio, title, detail);
+    const own = starterList.find((s) => `own:${s.id}` === value);
+    if (own) {
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'link remove-starter';
+      remove.textContent = 'Remove';
+      remove.title = `Remove the starter "${own.name}"`;
+      remove.addEventListener('click', (event) => {
+        event.preventDefault();
+        void removeOwnStarter(own);
+      });
+      detail.append(' · ', remove);
+    }
     return label;
   };
   templateChoices.replaceChildren(...cards.map(([value, name, note]) => choice(value, name, note)));
   showKitSteps();
+}
+
+async function removeOwnStarter(starter: OwnStarter): Promise<void> {
+  try {
+    await removeStarter(googleDrive, starter);
+    starterList = starterList.filter((s) => s !== starter);
+    renderTemplateChoices();
+    notify(`Removed the starter "${starter.name}". It is in the trash in your Google Drive for 30 days.`);
+  } catch (error) {
+    showError(error);
+  }
 }
 
 // For a conference: the two steps to get its official kit, and Create becomes "Choose the .zip…".
@@ -643,9 +778,12 @@ function renderProjectList(): void {
     // A project shared with this account belongs to someone else: no renaming or deleting it here.
     more.addEventListener('click', () => openMenu(more, joinedById.has(row.id) ? [
       { label: 'Open', action: () => void openProjectById(row.id) },
+      { label: 'Make a copy…', action: () => void copyProject(row.id) },
+      { label: 'Download as .zip', action: () => void downloadProjectZip(row.id) },
       { label: 'Leave…', action: () => void leaveProject(row.id, row.name), danger: true },
     ] : [
       { label: 'Open', action: () => void openProjectById(row.id) },
+      { label: 'Make a copy…', action: () => void copyProject(row.id) },
       { label: 'Download as .zip', action: () => void downloadProjectZip(row.id) },
       { label: 'Rename…', action: () => void renameProject(row.id, row.name) },
       { label: 'Delete…', action: () => void deleteProject(row.id, row.name), danger: true },
@@ -675,7 +813,8 @@ async function openProjectById(id: string): Promise<void> {
     const joined = joinedById.get(id);
     if (joined) {
       // Shared with this account: everything is in the shared document.
-      showProject(null, { loaded: await loadShared(googleDrive, joined.stateId) });
+      const [loaded, editable] = await Promise.all([loadShared(googleDrive, joined.stateId), googleDrive.canEdit(joined.stateId)]);
+      showProject(null, { loaded, viewOnly: !editable });
       const name = project?.name;
       if (rootId && name && name !== joined.name) {
         // The owner renamed it: the project list follows.
@@ -856,23 +995,132 @@ async function importFromDrive(): Promise<void> {
 // from memory (so edits not yet in Drive are included); others are read from Drive.
 async function downloadProjectZip(id?: string): Promise<void> {
   try {
-    let target = project;
-    if (id && project?.driveId !== id) {
-      const folder = driveFolders.find((f) => f.id === id);
-      if (!folder) return;
-      showBusy(`Reading ${folder.name}…`);
-      target = await openProject(googleDrive, folder);
-      // A shared project's newest text is in its shared file; the plain files may lag behind.
-      const stateId = await sharedStateIn(googleDrive, folder.id);
-      if (stateId) target = sharedSnapshot((await loadShared(googleDrive, stateId)).doc, target);
-      hideBusy();
-    }
+    const target = await projectSnapshot(id);
     if (!target) return;
     downloadFile(`${target.name}.zip`, zipProject(target.name, target.files));
     notify(`Saved ${target.name}.zip to your downloads.`);
   } catch (error) {
     showError(error);
   }
+}
+
+// A project as it is now, open or not: the open one from memory (with edits
+// not yet in Drive), others read from Drive.
+async function projectSnapshot(id?: string): Promise<Project | null> {
+  if (!id || project?.driveId === id) return project;
+  const folder = driveFolders.find((f) => f.id === id);
+  if (!folder) return null;
+  showBusy(`Reading ${folder.name}…`);
+  try {
+    const joined = joinedById.get(id);
+    if (joined) {
+      // Shared with this account: the text is in the shared file; images are
+      // read where this account may read them.
+      const doc = (await loadShared(googleDrive, joined.stateId)).doc;
+      const files: ProjectFile[] = [];
+      for (const entry of sharedFiles(doc)) {
+        if (entry.text) files.push({ path: entry.path, content: entry.text.toString() });
+        else if (entry.driveId) {
+          const bytes = await googleDrive.download(entry.driveId).catch(() => null);
+          if (bytes) files.push({ path: entry.path, content: bytes });
+          else notify(`${entry.path} was left out: someone else added it, and Google lets Tilde read it only after you open the project and allow it.`, 'info');
+        }
+      }
+      return { name: joined.name, files, mainFile: doc.getMap<string>('project').get('mainFile') };
+    }
+    const plain = await openProject(googleDrive, folder);
+    // A shared project's newest text is in its shared file; the plain files may lag behind.
+    const stateId = await sharedStateIn(googleDrive, folder.id);
+    return stateId ? sharedSnapshot((await loadShared(googleDrive, stateId)).doc, plain) : plain;
+  } finally {
+    hideBusy();
+  }
+}
+
+// "Make a copy…": a new project of the user's own, with the same files.
+async function copyProject(id?: string): Promise<void> {
+  const name = id ? driveFolders.find((f) => f.id === id)?.name : project?.name;
+  if (!name || !rootId) return;
+  const newName = await askProjectName(`Name for the copy of "${name}":`, `${name} (copy)`);
+  if (!newName) return;
+  try {
+    const source = await projectSnapshot(id);
+    if (!source) return;
+    const files = source.files.map((f) => ({ path: f.path, content: typeof f.content === 'string' ? f.content : f.content.slice() }));
+    await createAndOpen(newName, files, findMainFile(source));
+  } catch (error) {
+    showError(error);
+  }
+}
+
+// "Save as a starter…": the open project becomes one of the user's starters,
+// under "Yours" in the New project dialog (see ownStarters.ts).
+async function saveAsStarter(): Promise<void> {
+  const source = project;
+  const root = rootId;
+  if (!source || !root) return;
+  const name = (await askText('Name for the starter. New project shows it under "Yours", on all your computers. '
+    + 'It keeps the files as they are now, text and all.', source.name))?.trim();
+  if (!name) return;
+  try {
+    starterList = await ownStarters(googleDrive, root);
+    if (starterList.some((s) => s.name === name)
+      && !await askConfirm(`You already have a starter called "${name}". Replace it?`, 'Replace')) return;
+    showBusy(`Saving the starter ${name}…`);
+    await saveStarter(googleDrive, root, name, source, findMainFile(source));
+    hideBusy();
+    notify(`Saved "${name}" as a starter. New project → Yours makes a project from it.`);
+  } catch (error) {
+    showError(error);
+  }
+}
+
+// "Download for arXiv…": compiles once more (for a fresh .bbl), then saves the
+// source files with the bibliography in one .zip, comments taken out if asked.
+const arxivDialog = element<HTMLDialogElement>('#arxiv-dialog');
+const arxivStrip = element<HTMLInputElement>('#arxiv-strip');
+
+async function downloadForArxiv(): Promise<void> {
+  const target = project;
+  if (!target) return;
+  arxivDialog.returnValue = '';
+  arxivDialog.showModal();
+  await new Promise((resolve) => arxivDialog.addEventListener('close', resolve, { once: true }));
+  if (arxivDialog.returnValue !== 'download') return;
+  const strip = arxivStrip.checked;
+  const waitForCompiles = async (): Promise<void> => {
+    while (compiling) await new Promise((resolve) => setTimeout(resolve, 200));
+  };
+  await waitForCompiles();
+  await compile('full');
+  await waitForCompiles();
+  if (project !== target) return;
+  const mainPath = findMainFile(target);
+  if (!mainPath) return;
+  if (!pdfViewer.current() || buildKey.split('|')[0] !== mainPath) {
+    notify('The project did not compile, so there is nothing to send to arXiv yet. Fix the errors first.', 'error');
+    return;
+  }
+  const { files, bbl } = arxivFiles(target.files, buildFiles, mainPath, strip);
+  const tool = bibliographyTool(target.files);
+  if (tool && !bbl) {
+    notify('The bibliography was not made, so arXiv would show [?] for every citation. Look at the problems list, then try again.', 'error');
+    return;
+  }
+  downloadFile(`${target.name}-arxiv.zip`, zipFiles(files));
+  notify(`Saved ${target.name}-arxiv.zip to your downloads${bbl ? `, with ${bbl}` : ''}${strip ? ', without comments' : ''}.`
+    + (tool === 'biber' ? ' With biblatex, arXiv needs a .bbl from the same biblatex version it has; if arXiv reports a .bbl version error, '
+      + 'compile there with BibTeX (natbib) instead.' : ''));
+}
+
+// "Go to anything" (Ctrl/Cmd+K, or the magnifier above the files).
+function showGoTo(): void {
+  if (!project || document.querySelector('dialog[open]')) return;
+  openGoTo((typed) => (project ? searchProject(project.files, findMainFile(project), typed) : []), (hit) => {
+    openFile(hit.file);
+    reveal('editor');
+    if (hit.line && hit.file === activePath) editor.goTo(hit.line, hit.column, hit.kind === 'text' && hit.match ? hit.match[1] - hit.match[0] : 0);
+  });
 }
 
 // A shared project as it is now: the text of its shared file, and its binary
@@ -983,24 +1231,160 @@ async function keepDraftsFromBeforeSharing(shared: SharedSync): Promise<void> {
   }
 }
 
-// "Share…" in the project menu: shares the open project with a co-author.
-// The first time, the project becomes a shared project (see sharing.ts).
-// Google emails the co-author a link that opens the join steps.
-async function shareProject(): Promise<void> {
+// "Share…" in the project menu: the People panel. The owner sees who has
+// access, invites people to edit or to view, changes that, or removes
+// someone; everyone else sees the list. The first invitation makes the
+// project a shared one (see sharing.ts). Google emails the link to join.
+const peopleDialog = element<HTMLDialogElement>('#people-dialog');
+const peopleList = element<HTMLUListElement>('#people-list');
+const peopleNote = element<HTMLParagraphElement>('#people-note');
+const inviteForm = element<HTMLFormElement>('#invite-form');
+const inviteEmail = element<HTMLInputElement>('#invite-email');
+const inviteRole = element<HTMLSelectElement>('#invite-role');
+const copyJoinLinkButton = element<HTMLButtonElement>('#copy-join-link');
+
+// Whether this browser may change the open project's files.
+const canChange = (): boolean => sync !== null && !(sync instanceof SharedSync && sync.readOnly);
+// Whether this browser's account owns the open project (and so manages who has access).
+const ownsProject = (): boolean => sync instanceof ProjectSync || (sync instanceof SharedSync && sync.isOwner);
+
+async function openPeople(): Promise<void> {
   const current = sync;
   if (!current?.project.driveId) return;
-  if (current instanceof SharedSync && !current.isOwner) {
-    notify('Only the owner of this project can invite more people. Ask them to share it.', 'info');
+  element<HTMLElement>('#people-title').textContent = `People in "${current.project.name}"`;
+  const owner = ownsProject();
+  inviteForm.hidden = !owner;
+  copyJoinLinkButton.hidden = !(current instanceof SharedSync);
+  peopleNote.textContent = owner
+    ? current instanceof SharedSync ? 'Changes here change who may open the project\'s folder in your Google Drive.'
+      : 'Inviting someone makes this a shared project: edits from everyone merge by themselves.'
+    : 'Only the owner can invite people or change who has access. Ask them.';
+  peopleList.replaceChildren();
+  inviteEmail.value = '';
+  if (!peopleDialog.open) peopleDialog.showModal();
+  await renderPeople();
+}
+
+async function renderPeople(): Promise<void> {
+  const current = sync;
+  if (!current?.project.driveId) return;
+  const owner = ownsProject();
+  const folderId = current.project.driveId;
+  let people: Person[];
+  try {
+    // The owner's Tilde may read the folder's list; others read it on the shared file, which has the same people.
+    people = await peopleOf(googleDrive, owner || !(current instanceof SharedSync) ? folderId : current.stateFileId);
+  } catch (error) {
+    showError(error);
     return;
   }
-  const email = (await askText('Share this project with whom? Type their Google account\'s email address. '
-    + 'They can then write in it with you, from their own Tilde. Up to 5 people can work in one project.', ''))?.trim();
-  if (!email) return;
+  if (sync !== current) return;
+  peopleList.replaceChildren(...people.map((person) => {
+    const item = document.createElement('li');
+    const avatar = document.createElement('span');
+    avatar.className = 'avatar';
+    avatar.textContent = (person.name.match(/[\p{L}\p{N}]/u)?.[0] ?? '?').toUpperCase();
+    avatar.style.background = colorFor(person.email ?? person.name);
+    avatar.setAttribute('aria-hidden', 'true');
+    const who = document.createElement('span');
+    who.className = 'who';
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = person.name;
+    who.append(name);
+    if (person.email && person.email !== person.name) {
+      const email = document.createElement('span');
+      email.className = 'email';
+      email.textContent = person.email;
+      who.append(email);
+    }
+    item.append(avatar, who);
+    const label = { owner: 'Owner', writer: 'Can edit', commenter: 'Can comment', reader: 'Can view' }[person.role] ?? person.role;
+    if (!owner || person.role === 'owner' || !person.user) {
+      const role = document.createElement('span');
+      role.className = 'role';
+      role.textContent = label;
+      item.append(role);
+    } else {
+      const box = document.createElement('span');
+      box.className = 'select-box';
+      const role = document.createElement('select');
+      role.setAttribute('aria-label', `What ${person.name} may do`);
+      for (const [value, text] of [['writer', 'Can edit'], ['reader', 'Can view']]) role.add(new Option(text, value, false, value === person.role));
+      role.addEventListener('change', () => void changeRole(folderId, person, role.value === 'reader' ? 'reader' : 'writer'));
+      box.append(role);
+      const remove = document.createElement('button');
+      remove.className = 'quiet';
+      remove.textContent = 'Remove';
+      remove.addEventListener('click', () => void removePerson(folderId, person));
+      item.append(box, remove);
+    }
+    return item;
+  }));
+}
+
+// With drive.file, Google changes who may open a folder only while this Tilde
+// may open every file in it. Files co-authors added (images, say) need
+// "Allow" first: if Google names one, the user picks them, and the change is
+// tried again. Resolves false if the user stops.
+async function changeSharing(change: () => Promise<void>): Promise<boolean> {
+  try {
+    await change();
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    const child = /appNotAuthorizedToChild/.test(message) ? /child file ([\w-]+)/.exec(message)?.[1] : undefined;
+    if (!child) throw error;
+    const ids = new Set([child, ...(sync instanceof SharedSync ? sync.missing.keys() : [])]);
+    const count = ids.size === 1 ? 'a file' : `${ids.size} files`;
+    if (!await askConfirm(`Google lets Tilde change who may open this project only once you allow ${count} that a co-author added. `
+      + 'In the next window, select everything shown and click Select.', 'Allow')) return false;
+    peopleDialog.close(); // the picker cannot be used while this window is open
+    if (!await readyForPicker()) return false;
+    const picked = await openPicker('Select these files, then click Select', true, (view) => view.setFileIds([...ids].join(',')));
+    if (sync instanceof SharedSync) void sync.retryMissing();
+    void openPeople();
+    if (picked.length === 0) return false;
+    return changeSharing(change); // a file added another way may still be missing
+  }
+}
+
+async function changeRole(folderId: string, person: Person, role: Role): Promise<void> {
+  try {
+    if (!await changeSharing(() => googleDrive.setRole(folderId, person.permissionId, role))) {
+      await renderPeople();
+      return;
+    }
+    notify(role === 'reader' ? `${person.name} can view the project now, not change it.` : `${person.name} can edit the project now.`);
+  } catch (error) {
+    showError(error);
+  }
+  await renderPeople();
+}
+
+async function removePerson(folderId: string, person: Person): Promise<void> {
+  if (!await askConfirm(`Remove ${person.name}? Their Tilde can no longer open the project. What they wrote stays in it.`, 'Remove')) return;
+  try {
+    if (await changeSharing(() => googleDrive.removePermission(folderId, person.permissionId))) notify(`Removed ${person.name}.`);
+  } catch (error) {
+    showError(error);
+  }
+  await renderPeople();
+}
+
+async function inviteFromPanel(): Promise<void> {
+  const current = sync;
+  const email = inviteEmail.value.trim();
+  const role: Role = inviteRole.value === 'reader' ? 'reader' : 'writer';
+  if (!current?.project.driveId || !email) return;
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     notify(`"${email}" is not an email address.`, 'error');
     return;
   }
   try {
+    const count = peopleCount(await peopleOf(googleDrive, current.project.driveId));
+    if (count >= MAX_PEOPLE && !await askConfirm(`${count} people have access already. Tilde is made for up to ${MAX_PEOPLE} people in one project; `
+      + 'with more, edits may take longer to reach everyone. Invite them anyway?', 'Invite')) return;
     if (current instanceof ProjectSync) {
       if (!await askConfirm(`Sharing makes "${current.project.name}" a shared project: Tilde adds three of its own files to the project's folder `
         + 'in your Drive, and edits from everyone merge by themselves. Your .tex files stay in the folder as before.', 'Share')) return;
@@ -1015,9 +1399,12 @@ async function shareProject(): Promise<void> {
     }
     const shared = project;
     if (!shared?.driveId) return;
-    await invite(googleDrive, shared, email, myName, joinLink(shared.driveId));
+    const driveId = shared.driveId;
     hideBusy();
-    notify(`Shared with ${email}. Google emails them a link to join.`);
+    if (!await changeSharing(() => invite(googleDrive, shared, email, myName, joinLink(driveId), role))) return;
+    inviteEmail.value = '';
+    notify(`Shared with ${email}${role === 'reader' ? ', to view' : ''}. Google emails them a link to join.`);
+    await openPeople();
   } catch (error) {
     showError(error);
   }
@@ -1051,10 +1438,12 @@ async function joinProject(folderId: string): Promise<void> {
     await rememberJoined(googleDrive, id, { folderId: ids.folderId, stateId: loaded.stateId, name });
     driveFolders = await listAllProjects(id);
     await sync?.saveNow();
-    showProject(null, { loaded });
+    const editable = await googleDrive.canEdit(loaded.stateId);
+    showProject(null, { loaded, viewOnly: !editable });
     showProjectsPage(false);
     hideBusy();
-    notify(`Joined ${name}. Edits from everyone show up here within a few seconds.`);
+    notify(editable ? `Joined ${name}. Edits from everyone show up here within a few seconds.`
+      : `Joined ${name}, to view. You can read and compile it; edits from others show up here within a few seconds.`);
   } catch (error) {
     showError(error);
   }
@@ -1064,11 +1453,16 @@ async function joinProject(folderId: string): Promise<void> {
 interface SharedOpen {
   loaded: LoadedShared;
   plain?: Project;
+  viewOnly?: boolean; // shared with this account as "can view"
 }
 
 function showProject(plainProject: Project | null, shared?: SharedOpen): void {
   sync?.close();
   peopleLabel.hidden = true;
+  // An "Allow" notice belongs to the project it was about.
+  missingNotice?.remove();
+  missingNotice = null;
+  missingShown = '';
   if (shared) {
     sync = new SharedSync(googleDrive, browserShared, accountId, myName, shared.loaded, {
       stateChanged: showSyncState,
@@ -1078,7 +1472,14 @@ function showProject(plainProject: Project | null, shared?: SharedOpen): void {
       missingChanged: showMissing,
       notice: (text) => notify(text, 'info'),
     }, shared.plain, typeof RTCPeerConnection === 'undefined' ? undefined : webrtcLink);
-    void keepDraftsFromBeforeSharing(sync);
+    // A viewer (from the start, or since the owner changed it) may be allowed to edit later.
+    const folderId = sync.ids.folderId;
+    sync.onCanEdit = () => {
+      notify('The owner lets you edit this project now.');
+      void openProjectById(folderId);
+    };
+    if (shared.viewOnly) sync.viewOnly();
+    else void keepDraftsFromBeforeSharing(sync);
   } else {
     sync = plainProject?.driveId
       ? new ProjectSync(googleDrive, browserDrafts, accountId, plainProject, {
@@ -1093,6 +1494,7 @@ function showProject(plainProject: Project | null, shared?: SharedOpen): void {
   collapsedFolders = new Set();
   projectNameLabel.textContent = newProject?.name ?? 'Tilde';
   editor.clear();
+  editor.setReadOnly(!canChange() && sync !== null);
   activePath = null;
   pdfViewer.clear();
   syncTex = null;
@@ -1103,6 +1505,7 @@ function showProject(plainProject: Project | null, shared?: SharedOpen): void {
   showProblems([]);
   showSyncState();
   renderTree();
+  commentsUi.attach(sync instanceof SharedSync ? sync : null, { name: myName, account: accountId });
   if (!project) return;
   if (project.driveId) {
     try { localStorage.setItem(LAST_PROJECT_KEY, project.driveId); } catch { /* storage blocked */ }
@@ -1142,7 +1545,7 @@ function showMissing(): void {
   missingShown = key;
   if (!shared || shared.missing.size === 0) return;
   const paths = [...shared.missing.values()];
-  missingNotice = notify(`${paths.join(', ')} ${paths.length === 1 ? 'was' : 'were'} added by someone else. Google lets Tilde read ${paths.length === 1 ? 'it' : 'them'} once you allow it.`,
+  missingNotice = notify(`${paths.join(', ')} ${paths.length === 1 ? 'was' : 'were'} added by someone else. Google lets Tilde read ${paths.length === 1 ? 'it' : 'them'} once you allow it, here or next to ${paths.length === 1 ? 'it' : 'them'} under Files.`,
     'info', { label: 'Allow', run: () => void allowMissing(shared) });
 }
 
@@ -1179,6 +1582,7 @@ function showDriveChanges({ moved, removed, kept }: DriveChanges): void {
   }
   renderTree();
   scheduleOutline();
+  commentsUi.refresh();
 }
 
 const SYNC_TEXT: Record<SyncState, string> = {
@@ -1196,9 +1600,15 @@ const SYNC_TEXT: Record<SyncState, string> = {
 function showSyncState(): void {
   syncButton.hidden = !sync;
   if (!sync) return;
-  syncButton.textContent = SYNC_TEXT[sync.state];
-  syncButton.className = sync.state;
-  syncButton.title = sync.state === 'error' ? sync.errorMessage : '';
+  const viewOnly = sync instanceof SharedSync && sync.readOnly;
+  if (viewOnly !== editor.isReadOnly) {
+    editor.setReadOnly(viewOnly); // the owner changed this account's access meanwhile
+    renderTree();
+  }
+  syncButton.textContent = viewOnly ? 'View only' : SYNC_TEXT[sync.state];
+  syncButton.className = viewOnly ? 'viewonly' : sync.state;
+  syncButton.title = viewOnly ? 'You may read and compile this project. To change it, ask its owner to let you edit.'
+    : sync.state === 'error' ? sync.errorMessage : '';
   syncButton.disabled = sync.state !== 'conflict';
   if (sync.state === 'signin') showAccount('expired');
   // Open the dialog by itself once for each new conflict.
@@ -1359,6 +1769,16 @@ async function createFromDialog(): Promise<void> {
   if (!rootId) return;
   const name = newProjectName.value.trim();
   const [kind, id] = chosenTemplate.split(':');
+  const own = kind === 'own' ? starterList.find((s) => s.id === id) : undefined;
+  if (own) {
+    try {
+      showBusy(`Reading the starter ${own.name}…`);
+      await createAndOpen(name, await starterFiles(googleDrive, own), own.mainFile);
+    } catch (error) {
+      showError(error);
+    }
+    return;
+  }
   const template = kind === 'starter' ? starterProjects.find((p) => p.name === id)
     : kind === 'example' ? examples.find((p) => p.name === id) : undefined;
   await createAndOpen(name, template?.files ?? BLANK_PROJECT);
@@ -1393,6 +1813,7 @@ function openFile(path: string): void {
     imagePreview.hidden = true;
     editorElement.hidden = false;
     editor.open(path, file.content);
+    if (sync instanceof SharedSync) commentsUi.refresh(); // where the comments are in the text now
   } else {
     editorElement.hidden = true;
     imagePreview.hidden = false;
@@ -1431,6 +1852,8 @@ const iconFor = (path: string): string =>
 let collapsedFolders = new Set<string>(); // folders folded in the tree, for the open project
 
 function renderTree(): void {
+  // Files someone else added that this browser may not read yet: shown faded, with "Allow".
+  const waiting = new Set(sync instanceof SharedSync ? [...sync.missing.values()].filter((path) => !project?.files.some((f) => f.path === path)) : []);
   const toList = (nodes: TreeNode[]): HTMLUListElement => {
     const list = document.createElement('ul');
     for (const node of nodes) {
@@ -1454,9 +1877,24 @@ function renderTree(): void {
           renderTree();
         });
         row.append(toggle);
-        if (sync) row.append(moreButton(node.name, () => showFolderMenu(row, node.path)));
+        if (canChange()) row.append(moreButton(node.name, () => showFolderMenu(row, node.path)));
         item.append(row);
         if (!collapsed) item.append(toList(node.children));
+      } else if (waiting.has(node.path)) {
+        // A file someone else added, which this browser may read once allowed.
+        const row = document.createElement('div');
+        row.className = 'row waiting';
+        const name = document.createElement('span');
+        name.className = 'open-file';
+        name.title = `${node.path} was added by someone else. Google lets Tilde read it once you allow it.`;
+        name.append(icon(iconFor(node.path)), node.name);
+        const allow = document.createElement('button');
+        allow.className = 'allow';
+        allow.textContent = 'Allow';
+        allow.title = name.title;
+        allow.addEventListener('click', () => { if (sync instanceof SharedSync) void allowMissing(sync); });
+        row.append(name, allow);
+        item.append(row);
       } else {
         const row = document.createElement('div');
         row.className = 'row';
@@ -1475,7 +1913,7 @@ function renderTree(): void {
           reveal('editor');
         });
         row.append(open);
-        if (sync) {
+        if (canChange()) {
           const more = moreButton(node.name, () => showFileMenu(more, node.path));
           row.append(more);
         }
@@ -1485,11 +1923,13 @@ function renderTree(): void {
     }
     return list;
   };
-  treeView.replaceChildren(toList(buildTree(project?.files.map((f) => f.path) ?? [])));
+  treeView.replaceChildren(toList(buildTree([...(project?.files.map((f) => f.path) ?? []), ...waiting])));
 
   // Adding files is for Drive projects; the examples stay as they are.
-  addFilesButton.hidden = !sync;
+  addFilesButton.hidden = !canChange();
   projectActionsButton.hidden = !project;
+  goToButton.hidden = !project;
+  sharePdfButton.hidden = !project?.driveId;
   renderOutline();
 }
 
@@ -1502,6 +1942,10 @@ function scheduleOutline(): void {
 }
 
 function renderOutline(): void {
+  // The browser's spell checker follows the document's language (babel, polyglossia).
+  const language = project ? documentLanguage(project.files) : null;
+  if (language) editorElement.lang = language;
+  else editorElement.removeAttribute('lang');
   const main = project ? findMainFile(project) : undefined;
   const entries = project && main ? outline(project.files, main) : [];
   outlinePanel.hidden = entries.length === 0;
@@ -2100,7 +2544,7 @@ function showProblems(problems: LogProblem[]): void {
   problemsTitle.textContent = `Problems (${problems.length})`;
   const errors = problems.filter((p) => p.level === 'error').length;
   const warnings = problems.filter((p) => p.level === 'warning').length;
-  const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
+  const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : word.endsWith('x') ? 'es' : 's'}`;
   problemCount.hidden = problems.length === 0;
   problemCount.textContent = [errors && plural(errors, 'error'), warnings && plural(warnings, 'warning'),
     !errors && !warnings && plural(problems.length, 'bad box')].filter(Boolean).join(', ');
@@ -2126,11 +2570,23 @@ function jumpTo(problem: LogProblem): void {
 
 compileButton.addEventListener('click', () => void compile());
 addFilesButton.addEventListener('click', showAddMenu);
+goToButton.addEventListener('click', showGoTo);
 projectActionsButton.addEventListener('click', () => openMenu(projectActionsButton, [
-  ...(project?.driveId ? [{ label: 'Share…', action: () => void shareProject() }] : []),
+  ...(project?.driveId ? [{ label: 'Share…', action: () => void openPeople() }] : []),
   { label: 'Download as .zip', action: () => void downloadProjectZip() },
+  { label: 'Download for arXiv…', action: () => void downloadForArxiv() },
+  ...(rootId ? [
+    { label: 'Make a copy…', action: () => void copyProject(project?.driveId) },
+    { label: 'Save as a starter…', action: () => void saveAsStarter() },
+  ] : []),
   { label: 'All projects', action: () => showProjectsPage(true) },
 ]));
+const commentsToggle = element<HTMLButtonElement>('#comments-toggle');
+commentsToggle.addEventListener('click', () => {
+  const open = commentsToggle.getAttribute('aria-expanded') !== 'true';
+  commentsToggle.setAttribute('aria-expanded', String(open));
+  element<HTMLElement>('#comment-list').hidden = !open;
+});
 outlineToggle.addEventListener('click', () => {
   const open = outlineToggle.getAttribute('aria-expanded') !== 'true';
   outlineToggle.setAttribute('aria-expanded', String(open));
@@ -2149,6 +2605,7 @@ zoomMenuButton.addEventListener('click', showZoomMenu);
 zoomInButton.addEventListener('click', () => pdfViewer.stepZoom(1));
 zoomOutButton.addEventListener('click', () => pdfViewer.stepZoom(-1));
 downloadPdfButton.addEventListener('click', downloadPdf);
+sharePdfButton.addEventListener('click', () => void sharePdfMenu());
 showInPdfButton.addEventListener('click', showInPdf);
 pageNumber.addEventListener('keydown', (event) => {
   if (event.key !== 'Enter') return;
@@ -2282,6 +2739,13 @@ newProjectButton.addEventListener('click', () => {
   renderTemplateChoices();
   newProjectDialog.returnValue = '';
   newProjectDialog.showModal();
+  // The user's own starters, read from Drive each time (another computer may have added one).
+  if (rootId) {
+    ownStarters(googleDrive, rootId).then((list) => {
+      starterList = list;
+      renderTemplateChoices();
+    }).catch((error: unknown) => console.warn('Could not read your starters', error));
+  }
 });
 // "Create project" keeps the dialog open, with a message, while the name is not usable.
 newProjectForm.addEventListener('submit', (event) => {
@@ -2311,6 +2775,14 @@ conflictDialog.addEventListener('close', () => {
   if (conflictDialog.returnValue === 'drive') void sync?.keepDrive(conflictShown);
 });
 downloadBothButton.addEventListener('click', () => void downloadBoth());
+inviteForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  void inviteFromPanel();
+});
+element<HTMLButtonElement>('#people-done').addEventListener('click', () => peopleDialog.close());
+copyJoinLinkButton.addEventListener('click', () => {
+  if (project?.driveId) void copyLink(joinLink(project.driveId), 'The join link is copied. It opens the project for people who already have access.');
+});
 signOutDialog.addEventListener('close', () => {
   const choice = signOutDialog.returnValue;
   if (choice === 'download') {
@@ -2332,6 +2804,10 @@ window.addEventListener('keydown', (event) => {
   if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'Enter') {
     event.preventDefault();
     showInPdf();
+  }
+  if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'k' && project && projectsPage.hidden) {
+    event.preventDefault();
+    showGoTo();
   }
 });
 

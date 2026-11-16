@@ -156,6 +156,9 @@
         <div class="side-head">
           <span>Files</span>
           <span class="side-actions">
+            <button id="go-to" class="quiet" title="Go to a file, heading, label, citation or text (Ctrl/Cmd+K)" aria-label="Go to anything" hidden>
+              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>
+            </button>
             <button id="add-files" class="quiet" aria-haspopup="menu" title="Add a file" aria-label="Add a file" hidden>+</button>
             <button id="project-actions" class="quiet" aria-haspopup="menu" title="Project actions" aria-label="Project actions" hidden>⋯</button>
           </span>
@@ -166,6 +169,12 @@
             <span>Outline</span><span class="chevron" aria-hidden="true"></span>
           </button>
           <nav id="outline" aria-label="Document outline"></nav>
+        </section>
+        <section id="comments-panel" hidden>
+          <button id="comments-toggle" class="side-head" aria-expanded="true" aria-controls="comment-list">
+            <span id="comments-title">Comments</span><span class="chevron" aria-hidden="true"></span>
+          </button>
+          <ul id="comment-list" aria-label="Comments"></ul>
         </section>
         <input id="upload-input" type="file" multiple hidden />
       </aside>
@@ -190,6 +199,7 @@
             <button id="show-in-pdf" class="quiet square" title="Show the cursor's line in the PDF (Ctrl/Cmd+Shift+Enter). Double-click the PDF to jump back to the source." aria-label="Show the cursor's line in the PDF" disabled>
               <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="4.5"/><circle cx="8" cy="8" r="1" fill="currentColor" stroke="none"/><path d="M8 1v2.5M8 12.5V15M1 8h2.5M12.5 8H15"/></svg>
             </button>
+            <button id="share-pdf" class="quiet" title="Make a link anyone can open to view this PDF" aria-haspopup="menu" disabled hidden>Share PDF</button>
             <button id="download-pdf" class="quiet" title="Save the PDF to your computer" disabled>Download</button>
           </div>
         </div>
@@ -235,6 +245,47 @@
         <ul id="font-list"></ul>
         <div class="actions">
           <button value="cancel">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="people-dialog" class="wide">
+      <h2 id="people-title">People</h2>
+      <p id="people-note" class="restore-note"></p>
+      <ul id="people-list" aria-label="Who has access"></ul>
+      <form id="invite-form">
+        <label class="field" for="invite-email">Invite someone</label>
+        <div class="invite-row">
+          <input id="invite-email" type="email" placeholder="Their Google account's email address" autocomplete="off" spellcheck="false" required />
+          <span class="select-box">
+            <select id="invite-role" aria-label="What they may do">
+              <option value="writer">Can edit</option>
+              <option value="reader">Can view</option>
+            </select>
+          </span>
+          <button class="primary" id="invite-button">Invite</button>
+        </div>
+        <p class="invite-hint">Google emails them a link. "Can view" lets them read and compile the project, not change it.</p>
+      </form>
+      <div class="actions">
+        <button id="people-done">Done</button>
+        <button id="copy-join-link" title="The link that opens this project in Tilde, for people who already have access">Copy the join link</button>
+      </div>
+    </dialog>
+    <dialog id="goto-dialog" aria-label="Go to anything">
+      <input id="goto-input" type="search" placeholder="Go to a file, heading, label, citation or text" autocomplete="off" spellcheck="false"
+        role="combobox" aria-expanded="true" aria-controls="goto-results" />
+      <ul id="goto-results" role="listbox" aria-label="Results"></ul>
+      <p class="goto-keys"><span><kbd>↑</kbd> <kbd>↓</kbd> choose</span><span><kbd>Enter</kbd> go there</span><span><kbd>Esc</kbd> close</span></p>
+    </dialog>
+    <dialog id="arxiv-dialog">
+      <form method="dialog">
+        <h2>Download for arXiv</h2>
+        <p>Tilde compiles the project once more, then saves a .zip with your source files and the compiled bibliography,
+          which arXiv and most journals ask for. Build files and the PDF stay out.</p>
+        <label class="check"><input type="checkbox" id="arxiv-strip" checked /> <span>Take out the <code>%</code> comments of the .tex files. arXiv shows your source to everyone.</span></label>
+        <div class="actions">
+          <button value="download" class="primary">Compile and download</button>
+          <button value="cancel" formnovalidate>Cancel</button>
         </div>
       </form>
     </dialog>

@@ -44,11 +44,14 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - Brackets close by themselves, and Enter after `\begin{figure}` adds the `\end{figure}`
 - Ctrl/Cmd+B and +I for `\textbf` and `\textit`, Ctrl/Cmd+/ to comment lines out
 - Paste or drop an image into the text: it is saved in the project's image folder (`figures/` if there is none yet) and a figure for it is written at the cursor (never inside another figure), with `graphicx` loaded if needed. GIF, WebP and SVG images become PNG on the way in
+- Paste cells from Excel, Google Sheets, Numbers or LibreOffice: they become a `booktabs` table (header row, numbers aligned right, special characters escaped), with the package loaded if needed. Inside a `tabular`, only the rows go in. "Paste as text instead" in the notice undoes it
+- Go to anything with Ctrl/Cmd+K (or the magnifier above the files): files, headings, `\label`s, citation keys and text in every file of the project, in one list
+- Maths preview: rest the pointer on maths (`$…$`, `\[…\]`, `equation`, `align` and the like) to see it typeset, with your own `\newcommand` macros. A preview by KaTeX; the PDF stays what counts
 - Citations from a DOI or an arXiv link: type it inside `\cite{}`, or pick "Add a paper from its DOI…" there or in the "+" menu. Tilde fetches the BibTeX from doi.org, tidies it and adds it to your `.bib` file
 - An outline of your chapters and sections, through `\input` and `\include`; click to jump
 - Find and replace in the open file, with match case, whole words and regular expressions, and a count of the matches
 - Fold environments and sections with the arrows next to the line numbers
-- Spell checking by your browser, in its language, leaving out commands, labels, citation keys, file names and maths
+- Spell checking by your browser, leaving out commands, labels, citation keys, file names and maths. The editor tells the browser the document's language from `babel` or `polyglossia`; Firefox then checks in that language (if its dictionary is installed), while Chrome, Edge and Safari use the languages set in the browser or the system
 - Multi-file projects with folders: new, upload or drag in files, add from Drive, rename or move, duplicate, delete, choose the main file
 - Panes you can resize and hide (files, source, PDF); one at a time in a narrow window
 
@@ -64,6 +67,8 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - Select and copy text in the PDF, and find it with your browser's search
 - A word count of the PDF in the status bar
 - PDF zoom (fit width, fit page or a size), page numbers, and Download PDF
+- Share the PDF by link: Share PDF above the PDF saves it in the project's Drive folder and copies a link anyone can open, without an account (a supervisor, a reviewer). Update it to a newer PDF behind the same link, or stop sharing it
+- Download for arXiv: in the project's ⋯ menu. Tilde compiles once more, then saves a `.zip` with your source and the compiled bibliography (`.bbl`), which arXiv and most journals ask for, without build files, and if you like without `%` comments (arXiv shows your source to everyone)
 
 **Saving**
 - Autosave to your Google Drive a few seconds after you stop typing
@@ -74,6 +79,8 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 
 **Writing together**
 - Share a project from its ⋯ menu ("Share…") with up to four co-authors: Tilde shares its folder through Google Drive, and Google emails them a link. Opening it, they choose the project's files once in Google's file picker, and from then on the project is in their own project list ("Shared with you"), on all their computers
+- Invite people to edit, or only to view (a supervisor, say: they read and compile, and see edits come in). The same panel shows who has access; the owner changes what someone may do or removes them there
+- Comments in the margin: select text and click "Comment" (or Ctrl/Cmd+Alt+M). The words are underlined, and a click opens the thread to reply or resolve. Comments stay on their words while anyone edits around them, are listed under the files, and never go into your `.tex` files; a notice tells you when someone else comments
 - Edits from everyone merge by themselves, even made at the same moment or offline: there is no conflict to resolve, and Ctrl/Cmd+Z undoes only your own edits
 - While you are in the project together, your browsers connect directly to each other: typing shows up at once, with each person's cursor and name. On networks that block direct connections, edits arrive through Drive a few seconds later. The status bar shows who else is there ("With Efecan · live")
 - The project stays an ordinary LaTeX folder in its owner's Drive: the owner's Tilde keeps the `.tex` files there up to date, and edits made to them outside Tilde (on the Drive website, with Drive for desktop, in another editor) are merged in. One that clashes with an edit made in Tilde at the same place is kept next to it as a copy, "main (changed outside Tilde).tex"
@@ -86,7 +93,8 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - Start a new project from a blank file, a starter (IEEE, ACM, Springer LNCS, a thesis with a file per chapter, beamer slides, a cover letter, a CV) or an example
 - Conference papers from the official author kit: pick CVPR, ICCV, ECCV, ICIP, NeurIPS or ICML, download the kit from the conference's page (Tilde links to it) and choose the `.zip`. The kit comes from the conference, so it is always that year's version
 - Import a `.zip` or files from your Drive
-- Download any project as a `.zip`
+- Download any project as a `.zip`, or make a copy of it (also of a project shared with you)
+- Your own starters: "Save as a starter…" in the project's ⋯ menu keeps the project as it is; New project offers it under "Yours", on all your computers (a lab's thesis template, say)
 - Search, sort, rename and delete (to Drive's trash, restorable for 30 days)
 
 <p align="center">
@@ -106,6 +114,9 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 | Ctrl/Cmd+B, Ctrl/Cmd+I | `\textbf{…}`, `\textit{…}` around the selection |
 | Ctrl/Cmd+/ | Comment or uncomment the selected lines |
 | Ctrl/Cmd+V with an image copied | Add the image to the project, with a figure for it at the cursor |
+| Ctrl/Cmd+K | Go to a file, heading, label, citation key or text in the project |
+| Ctrl/Cmd+Alt+M with text selected | Comment on it (in a shared project) |
+| Ctrl/Cmd+V with spreadsheet cells copied | Paste them as a table |
 | Ctrl/Cmd+F | Find and replace in the open file; Enter for the next match, Shift+Enter for the previous one, Esc to close |
 | Ctrl/Cmd and + or −, over the PDF | Zoom the PDF (Ctrl/Cmd+0 fits the width) |
 | Esc, on the project page | Back to the open project |
@@ -114,8 +125,10 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 
 | Limit | What to do instead |
 |---|---|
-| **Up to 5 people in a project, and no track changes or comments.** | Share with the co-authors who write; send others the PDF. For notes, `% comments` in the source, or the `todonotes` package. |
-| **In a shared project, only the owner invites people**, and only from Tilde. | Ask the owner to share it with more people. They can also share or stop sharing the folder in Google Drive itself. |
+| **Up to 5 people in a project, and no track changes.** | Share with the co-authors who write; invite others to view, or share the PDF by link. Suggest changes in a comment. |
+| **Comments are for shared projects.** | In a project of your own, use `% comments` in the source or the `todonotes` package; share the project and comments appear. |
+| **In a shared project, only the owner invites people** or changes who has access. | Ask the owner. They can also share or stop sharing the folder in Google Drive itself. |
+| **The maths preview is KaTeX, not LaTeX**: some packages' commands are unknown to it, and it says so. | The PDF is always right; the preview is for checking a formula quickly. |
 | **Some networks block direct connections** between browsers (some company and university Wi-Fi). Then others' edits arrive through Drive, a few seconds behind, and their cursors do not show. | Nothing to do: edits still merge. The status bar says "live" when your browsers are connected. |
 | **Images co-authors add stay in the folder `Tilde uploads`** in the owner's Drive, not next to the project's other images. | Tilde finds them there. For a tidy folder, the owner can download the project as a `.zip`, which has every file where it belongs, once the owner's Tilde can read the images (after "Allow", or sent by a co-author's connected browser). |
 | **Deleting a file in a shared project deletes it for everyone**, and Drive's trash cannot bring it back (Tilde asks first). | Download the project as a `.zip` first if you may want the file again, or keep it and stop using it. |
@@ -137,7 +150,8 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 - Your sign-in stays in the browser tab. Unsaved edits are kept in your browser until they reach Drive, and **signing out deletes them** (after offering to download anything unsaved).
 - TeX packages are downloaded from TeXlyre's public package server, without any of your data.
 - "Add a paper from its DOI" sends only that DOI to doi.org, which answers with the paper's citation.
-- In a shared project, your co-authors see your name and your edits. While you are in the project together, your browsers may connect directly (encrypted, with no server of ours in between), so each sees the other's IP address; Google's free STUN server helps them find each other.
+- Sharing the PDF by link makes that PDF viewable by anyone with the link, until you stop sharing it.
+- In a shared project, your co-authors see your name, your edits and your comments. While you are in the project together, your browsers may connect directly (encrypted, with no server of ours in between), so each sees the other's IP address; Google's free STUN server helps them find each other.
 - The full [privacy policy](public/privacy.html) is also shown in the app ("Privacy" at the bottom of the projects page). Licenses of everything Tilde serves: [public/licenses/NOTICE.txt](public/licenses/NOTICE.txt).
 
 ## Run it yourself

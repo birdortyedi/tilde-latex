@@ -1,5 +1,5 @@
 import * as Y from 'yjs';
-import { FOLDER_TYPE, type Drive, type DriveFile } from './drive';
+import { FOLDER_TYPE, type Drive, type DriveFile, type Role } from './drive';
 import type { Project } from './projects';
 import { docFromProject, sharedIds, type SharedIds } from './sharedDoc';
 
@@ -15,7 +15,7 @@ const JOINED_FILE = 'Tilde joined projects.tilde'; // in a collaborator's own pr
 
 // Tilde's own files in a shared project's folder, which are not part of the LaTeX project.
 export const isTildeFile = (file: DriveFile): boolean =>
-  file.name.endsWith('.tilde') || (file.mimeType === FOLDER_TYPE && file.name === UPLOADS_FOLDER);
+  file.name.endsWith('.tilde') || (file.mimeType === FOLDER_TYPE && file.name === UPLOADS_FOLDER) || file.appProperties?.tilde === 'shared-pdf';
 
 export interface LoadedShared {
   stateId: string;
@@ -60,10 +60,11 @@ export function joinTarget(hash: string): string | null {
 }
 
 // Shares the project's folder with someone; Google emails them the link.
-export async function invite(drive: Drive, project: Project, email: string, from: string, link: string): Promise<void> {
+// With role "reader", they may read and compile it, not change it.
+export async function invite(drive: Drive, project: Project, email: string, from: string, link: string, role: Role = 'writer'): Promise<void> {
   if (!project.driveId) throw new Error(`${project.name} is not in Google Drive.`);
-  await drive.share(project.driveId, email, `${from} shares the LaTeX project "${project.name}" with you in Tilde. `
-    + `To write in it together, open this link and sign in with this Google account: ${link}`);
+  await drive.share(project.driveId, email, `${from} shares the LaTeX project "${project.name}" with you in Tilde`
+    + (role === 'reader' ? ', to read. To open it' : '. To write in it together') + `, open this link and sign in with this Google account: ${link}`, role);
 }
 
 // What a collaborator picked when joining: the shared document, and whether

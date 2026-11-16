@@ -86,6 +86,49 @@ describe('a shared project', () => {
     expect(sharedFileAt((await loadShared(drive, stateId)).doc, 'main.tex')?.text?.toString()).toBe(expected);
   });
 
+  it('lets a viewer read along without writing anything to Drive', async () => {
+    const { drive, syncA, syncB } = await start();
+    for (const item of drive.items.values()) drive.viewOnly(item.id, 'B');
+    syncB.viewOnly();
+    const written = () => [...drive.items.values()].map((i) => i.headRevisionId).join();
+    await vi.advanceTimersByTimeAsync(15_000); // B's mailbox rounds: B must not say "here"
+    expect(syncA.people).toEqual([]);
+    const before = written();
+    syncB.textFor('main.tex')?.text.insert(0, 'x'); // what an edit would do; the editor blocks typing
+    await syncB.saveNow();
+    await expect(syncB.addFile('new.tex', '')).rejects.toThrow('only view');
+    expect(written()).toBe(before);
+    expect(syncB.state).toBe('saved');
+    syncA.textFor('main.tex')?.text.insert(0, '% A\n');
+    await syncA.saveNow();
+    await syncB.saveNow();
+    expect(textIn(syncB, 'main.tex')).toContain('% A\n');
+  });
+
+  it('notices when a viewer may edit again', async () => {
+    const { drive, syncB } = await start();
+    for (const item of drive.items.values()) drive.viewOnly(item.id, 'B');
+    syncB.viewOnly();
+    const canEdit = vi.fn();
+    syncB.onCanEdit = canEdit;
+    await vi.advanceTimersByTimeAsync(70_000);
+    expect(canEdit).not.toHaveBeenCalled();
+    for (const item of drive.items.values()) item.readers.delete('B');
+    await vi.advanceTimersByTimeAsync(70_000);
+    expect(canEdit).toHaveBeenCalled();
+  });
+
+  it('turns into a viewer when the owner changes the access to "can view"', async () => {
+    const { drive, syncB } = await start();
+    const notice = vi.fn();
+    (syncB as unknown as { listener: SharedListener }).listener.notice = notice;
+    for (const item of drive.items.values()) drive.viewOnly(item.id, 'B');
+    syncB.textFor('main.tex')?.text.insert(0, '% B\n');
+    await syncB.saveNow();
+    expect(syncB.readOnly).toBe(true);
+    expect(notice).toHaveBeenCalled();
+  });
+
   it("makes a collaborator's new file a plain file of the owner, and follows renames", async () => {
     const { drive, syncA, syncB } = await start();
     const listener = vi.fn();

@@ -38,3 +38,10 @@ export function zipProject(name: string, files: ProjectFile[]): Uint8Array {
   }
   return zipSync(entries);
 }
+
+// A .zip with the files at its top level, as arXiv wants them.
+export function zipFiles(files: ProjectFile[]): Uint8Array {
+  const entries: Record<string, Uint8Array> = {};
+  for (const file of files) entries[file.path] = typeof file.content === 'string' ? new TextEncoder().encode(file.content) : file.content;
+  return zipSync(entries);
+}

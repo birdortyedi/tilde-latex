@@ -20,6 +20,7 @@ This file lists everything Tilde uses that was written by others.
 | y-protocols | 1.0.7 | MIT | https://github.com/yjs/y-protocols | Messages for keeping shared projects in step and showing who is here |
 | y-codemirror.next | 0.3.6 | MIT | https://github.com/yjs/y-codemirror.next | Connects the editor to the shared text |
 | lib0 | 0.2.119 | MIT | https://github.com/dmonad/lib0 | Small helpers that Yjs and its add-ons use |
+| katex | 0.19.1 | MIT (code); its fonts and the SVG shapes adapted from them are OFL-1.1 (Design Science, Khan Academy), see `public/licenses/katex-fonts.txt` | https://katex.org | The maths preview when the pointer rests on maths in the source. Loaded the first time it is needed |
 | IBM Plex Sans (`@fontsource/ibm-plex-sans`) | 5.3.0 | OFL-1.1 (font); license file in the package | https://github.com/IBM/plex | Font for the interface |
 | IBM Plex Mono (`@fontsource/ibm-plex-mono`) | 5.3.0 | OFL-1.1 (font); license file in the package | https://github.com/IBM/plex | Font for the editor |
 | TeX Live 2026 package files (`texlive-basic.data`) | 2026 | Each package has its own license (mostly LPPL-1.3c, also GPL, OFL, public domain and others); see `LICENSE.TL` inside the bundle | https://tug.org/texlive/ | LaTeX classes, packages and fonts. Served unmodified |
@@ -27,7 +28,8 @@ This file lists everything Tilde uses that was written by others.
 CodeMirror also brings in its own small helper packages, all MIT: `@codemirror/*`,
 `@lezer/*`, `@marijn/find-cluster-break`, `crelt`, `style-mod`, `w3c-keyname`.
 `pdfjs-dist` lists `@napi-rs/canvas` (MIT) as an optional dependency; it is only
-used when PDF.js runs in Node, never in the browser.
+used when PDF.js runs in Node, never in the browser. `katex` depends on `commander`
+(MIT) for its command-line tool, which is never in the page.
 
 ### Programs inside the engine
 

@@ -3,10 +3,11 @@
 // their style files have no license that lets Tilde ship them, so the user
 // downloads the official kit (a .zip) and Tilde makes the project from it.
 
-export type StarterGroup = 'blank' | 'papers' | 'conferences' | 'thesis' | 'letters' | 'examples';
+export type StarterGroup = 'blank' | 'yours' | 'papers' | 'conferences' | 'thesis' | 'letters' | 'examples';
 
 export const GROUPS: { id: StarterGroup; label: string }[] = [
   { id: 'blank', label: 'Blank' },
+  { id: 'yours', label: 'Yours' }, // the user's own starters; shown only when there are some
   { id: 'papers', label: 'Papers' },
   { id: 'conferences', label: 'Conferences' },
   { id: 'thesis', label: 'Thesis and slides' },
