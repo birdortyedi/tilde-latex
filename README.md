@@ -14,6 +14,8 @@
   and keeps your projects in your own Google Drive. No server, no account of ours, no cost.
 </p>
 
+<p align="center"><b><a href="https://tildelatex.app">Open Tilde at tildelatex.app</a></b></p>
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/editor-dark.png">
@@ -21,7 +23,7 @@
   </picture>
 </p>
 
-> **Status:** version 1.0. Tilde runs on your own computer: see [Run it yourself](#run-it-yourself). There is no public website yet.
+> **Status:** version 1.0. Use it at **[tildelatex.app](https://tildelatex.app)**, or run your own copy on your computer: see [Run it yourself](#run-it-yourself).
 
 ## Why Tilde
 
