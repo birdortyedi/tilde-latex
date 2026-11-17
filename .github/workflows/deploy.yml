@@ -1,10 +1,9 @@
 # Builds Tilde and publishes it on GitHub Pages.
 #
-# For now it runs only when started by hand (Actions → Deploy → Run workflow),
-# so nothing goes online by accident. Once the site is set up (Settings → Pages →
-# Source: GitHub Actions), add `push: branches: [main]` under `on:` to publish
-# every change on main. It never runs for pull requests, so strangers' code never
-# sees the secret below.
+# It publishes https://tildelatex.app every time main changes, and can also be
+# started by hand (Actions → Deploy → Run workflow). It never runs for pull
+# requests, so strangers' code never sees the secret below. The custom domain is
+# set in Settings → Pages (Source: GitHub Actions), so no CNAME file is needed.
 #
 # Settings it reads (Settings → Secrets and variables → Actions):
 # - secret VITE_GOOGLE_API_KEY: the Picker key for the public site (restricted to its address)
@@ -12,6 +11,8 @@
 name: Deploy
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
