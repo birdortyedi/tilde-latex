@@ -14,15 +14,18 @@ async function convert(eps: Uint8Array): Promise<Uint8Array> {
   }
   const compiled = await program;
   const messages: string[] = [];
-  const gs = await loadGhostscript({
+  // If Ghostscript cannot start (not enough memory, say), loading it would never end: fail instead.
+  let cannotStart: (error: unknown) => void = () => {};
+  const startFailed = new Promise<never>((_, reject) => { cannotStart = reject; });
+  const gs = await Promise.race([loadGhostscript({
     // Started from the program compiled once, instead of downloading it again.
     instantiateWasm(imports: WebAssembly.Imports, done: (instance: WebAssembly.Instance) => void): WebAssembly.Exports {
-      void WebAssembly.instantiate(compiled, imports).then(done);
+      WebAssembly.instantiate(compiled, imports).then(done, cannotStart);
       return {}; // the real exports arrive through done()
     },
     print: () => {},
     printErr: (line: string) => messages.push(line),
-  });
+  }), startFailed]);
   gs.FS.writeFile('/image.eps', eps);
   const exit = gs.callMain([...GHOSTSCRIPT_ARGS]);
   const failed = (): Error => new Error(messages.find((m) => m.trim()) ?? 'Ghostscript could not read it');

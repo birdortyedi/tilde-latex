@@ -27,6 +27,8 @@ import * as Y from 'yjs';
 import { cachedPackages, REMOTE_DIR, storeNewPackages } from './packageCache';
 import { lastLatexLog, parseLog, type LogProblem } from './logParser';
 import { latexTokens } from './excerpt';
+import { engineQueue } from './engineQueue';
+import { assetBytes } from './assetBytes';
 import showcaseSource from './showcase/main.tex?raw';
 import showcasePicture from './showcase/main.png';
 import { COMMANDS, describe, findCommands, keycaps, type CommandId } from './commands';
@@ -577,8 +579,8 @@ function showFreshness(): void {
 
 // Maths the quick preview (KaTeX) cannot show, typeset by the TeX engine: a
 // one-formula document with the main file's preamble, so the document's own
-// packages and commands work. Never at the same time as a compile.
-let engineFree: Promise<void> = Promise.resolve();
+// packages and commands work. It takes its turn in the engine like a compile.
+const engineTurn = engineQueue();
 const typesetCache = new Map<string, Promise<HTMLCanvasElement>>();
 editor.typesetWithTex = (math) => {
   const target = project;
@@ -589,28 +591,35 @@ editor.typesetWithTex = (math) => {
   const cached = typesetCache.get(source);
   if (cached) return cached;
   const job = (async () => {
-    while (compiling) await new Promise((resolve) => setTimeout(resolve, 200));
-    const currentRunner = await getRunner();
-    const engineName = texEngine(target.files, main.path);
-    const engine = engineName === 'xelatex' ? new XeLatex(currentRunner) : engineName === 'lualatex' ? new LuaLatex(currentRunner) : new PdfLatex(currentRunner);
-    const result = await engine.compile({
-      input: source, mainTexPath: 'tilde-maths-preview.tex', additionalFiles: target.files.filter((f) => f !== main),
-      bibtex: false, biber: false, rerun: false, remoteEndpoint: PACKAGE_SERVER, shellHandlerScripts: engineScript(false),
-    });
-    if (!result.success || !result.pdf || result.pdf.length === 0) {
-      const problem = parseLog(lastLatexLog(result.logs), target.files).find((p) => p.level === 'error');
-      throw new Error(problem?.message ?? 'the formula has an error');
-    }
+    const release = await engineTurn();
     try {
-      await storeNewPackages(PACKAGE_SERVER, await currentRunner.readProjectFiles(REMOTE_DIR));
-    } catch { /* fetched again next time */ }
-    return pdfToCanvas(result.pdf);
+      return await typesetFormula(target, main, source);
+    } finally {
+      release();
+    }
   })();
-  engineFree = job.then(() => {}, () => {});
   typesetCache.set(source, job);
   job.catch(() => typesetCache.delete(source)); // an error may be fixed by the next edit
   return job;
 };
+
+async function typesetFormula(target: Project, main: ProjectFile, source: string): Promise<HTMLCanvasElement> {
+  const currentRunner = await getRunner();
+  const engineName = texEngine(target.files, main.path);
+  const engine = engineName === 'xelatex' ? new XeLatex(currentRunner) : engineName === 'lualatex' ? new LuaLatex(currentRunner) : new PdfLatex(currentRunner);
+  const result = await engine.compile({
+    input: source, mainTexPath: 'tilde-maths-preview.tex', additionalFiles: target.files.filter((f) => f !== main),
+    bibtex: false, biber: false, rerun: false, remoteEndpoint: PACKAGE_SERVER, shellHandlerScripts: engineScript(false),
+  });
+  if (!result.success || !result.pdf || result.pdf.length === 0) {
+    const problem = parseLog(lastLatexLog(result.logs), target.files).find((p) => p.level === 'error');
+    throw new Error(problem?.message ?? 'the formula has an error');
+  }
+  try {
+    await storeNewPackages(PACKAGE_SERVER, await currentRunner.readProjectFiles(REMOTE_DIR));
+  } catch { /* fetched again next time */ }
+  return pdfToCanvas(result.pdf);
+}
 
 // Auto-compile: compile by itself a moment after typing stops, quickly (one
 // LaTeX pass with the build files of the last compile). A compile that is
@@ -667,7 +676,11 @@ function showError(error: unknown): void {
 async function loadExamples(): Promise<void> {
   const binaryFiles: Record<string, Uint8Array> = {};
   for (const [path, url] of Object.entries(binaryFileUrls)) {
-    binaryFiles[path] = new Uint8Array(await (await fetch(url)).arrayBuffer());
+    try {
+      binaryFiles[path] = await assetBytes(url);
+    } catch (error) {
+      console.warn('An example\'s file could not be loaded', error); // the example opens without it
+    }
   }
   examples = groupByProject('/test-docs', { ...textFiles, ...binaryFiles })
     .sort((a, b) => exampleRank(a.name) - exampleRank(b.name));
@@ -1100,7 +1113,7 @@ async function startWriting(): Promise<void> {
 
 async function openLocal(local: LocalProject): Promise<void> {
   await sync?.saveNow();
-  showProject(toProject(local), undefined, local.id);
+  showProject(toProject(local), undefined, local);
   showProjectsPage(false);
 }
 
@@ -1108,6 +1121,16 @@ async function openLocal(local: LocalProject): Promise<void> {
 // Drive project, opens that, and removes it from this browser.
 async function saveLocalToDrive(id?: string): Promise<void> {
   const open = sync instanceof LocalSync && (!id || sync.id === id) ? sync : null;
+  // While the project goes to Drive, the editor waits: what is typed now would be in neither place.
+  if (open) editor.setReadOnly(true);
+  try {
+    await saveToDrive(open, id);
+  } finally {
+    if (open && sync === open) editor.setReadOnly(false); // still here: it did not go to Drive
+  }
+}
+
+async function saveToDrive(open: LocalSync | null, id?: string): Promise<void> {
   await open?.saveNow();
   const local = open ? { id: open.id, ...open.project } : localProjects.find((p) => p.id === id);
   if (!local) return;
@@ -1127,6 +1150,7 @@ async function saveLocalToDrive(id?: string): Promise<void> {
 
 // The projects kept in this browser, listed on the welcome page and above the Drive projects.
 let localProjects: LocalProject[] = [];
+let localErrorShown = ''; // a browser project's problem, said once
 async function refreshLocalProjects(): Promise<void> {
   try {
     localProjects = (await browserLocal.list()).sort((a, b) => b.edited - a.edited);
@@ -1395,7 +1419,7 @@ async function downloadForArxiv(): Promise<void> {
   if (project !== target) return;
   const mainPath = findMainFile(target);
   if (!mainPath) return;
-  if (!pdfViewer.current() || buildKey.split('|')[0] !== mainPath) {
+  if (!pdfViewer.current() || lastCompileFailed || buildKey.split('|')[0] !== mainPath) {
     notify('The project did not compile, so there is nothing to send to arXiv yet. Fix the errors first.', 'error');
     return;
   }
@@ -1805,8 +1829,8 @@ interface SharedOpen {
   viewOnly?: boolean; // shared with this account as "can view"
 }
 
-// `localId`: a project kept in this browser (see localProjects.ts), not in Drive.
-function showProject(plainProject: Project | null, shared?: SharedOpen, localId?: string): void {
+// `local`: a project kept in this browser (see localProjects.ts), not in Drive.
+function showProject(plainProject: Project | null, shared?: SharedOpen, local?: LocalProject): void {
   sync?.close();
   facesView.hidden = true;
   // An "Allow" notice belongs to the project it was about.
@@ -1830,8 +1854,8 @@ function showProject(plainProject: Project | null, shared?: SharedOpen, localId?
     };
     if (shared.viewOnly) sync.viewOnly();
     else void keepDraftsFromBeforeSharing(sync);
-  } else if (localId && plainProject) {
-    sync = new LocalSync(browserLocal, localId, plainProject, showSyncState);
+  } else if (local && plainProject) {
+    sync = new LocalSync(browserLocal, local.id, plainProject, local.edited, showSyncState);
   } else {
     sync = plainProject?.driveId
       ? new ProjectSync(googleDrive, browserDrafts, accountId, plainProject, {
@@ -1978,6 +2002,8 @@ function showSyncState(): void {
   if (sync instanceof LocalSync) {
     // Not in Drive: the button offers to put it there.
     const failed = sync.state === 'error';
+    if (failed && sync.errorMessage !== localErrorShown) notify(sync.errorMessage, 'error');
+    localErrorShown = failed ? sync.errorMessage : '';
     syncButton.textContent = failed ? 'Not kept in this browser' : 'Only in this browser · Save to Google Drive';
     syncButton.className = failed ? 'error' : 'local';
     syncButton.title = failed ? sync.errorMessage : 'This project is kept only in this browser, which may clear it '
@@ -2686,9 +2712,11 @@ async function deleteFile(path: string): Promise<void> {
   if (!projectSync) return;
   // A shared project's file is deleted for everyone, into "Recently deleted" for 30 days.
   const shared = projectSync instanceof SharedSync;
+  const local = projectSync instanceof LocalSync;
   const question = shared ? `Delete ${path}? It waits in ⋯ → Recently deleted for 30 days, where anyone in the project can bring it back.`
-    : `Delete ${path}? It goes to the trash in your Google Drive, where you can restore it for 30 days.`;
-  const done = shared ? `Deleted ${path}.` : `Deleted ${path}. You can restore it from the trash in Google Drive for 30 days.`;
+    : local ? `Delete ${path}? This project is kept only in this browser, so the file cannot be brought back.`
+      : `Delete ${path}? It goes to the trash in your Google Drive, where you can restore it for 30 days.`;
+  const done = shared || local ? `Deleted ${path}.` : `Deleted ${path}. You can restore it from the trash in Google Drive for 30 days.`;
   if (!await askConfirm(question, 'Delete')) return;
   if (await runFileAction(`Deleting ${path}`, done, () => projectSync.deleteFile(path))) {
     editor.forget(path);
@@ -2799,7 +2827,7 @@ async function compile(kind: CompileKind = 'full', followUp = false): Promise<vo
   }
 
   compiling = true;
-  await engineFree; // a formula being typeset for the maths preview finishes first
+  const release = await engineTurn(); // a formula the maths preview is typesetting finishes first
   const stamp = sourceStamp(compiled.files); // what this compile's PDF is made from
   compileButton.setAttribute('aria-busy', 'true');
   compileLabel.textContent = 'Updating…';
@@ -2906,6 +2934,7 @@ async function compile(kind: CompileKind = 'full', followUp = false): Promise<vo
       showError(error);
     }
   } finally {
+    release(); // the engine's turn goes to the next compile or formula
     compiling = false;
     compileButton.removeAttribute('aria-busy');
     compileLabel.textContent = 'Update PDF';
@@ -3391,7 +3420,8 @@ function pendingJoin(): string | null {
   return folderId;
 }
 
-void loadExamples().then(() => {
+// The examples load first; if they cannot, Tilde starts without them.
+void loadExamples().catch((error: unknown) => console.warn('The examples could not be loaded', error)).then(() => {
   if (restoreSignIn()) void startDrive(); // still signed in from before a reload
   else {
     showProjectsPage(true); // the welcome page, with the examples

@@ -18,12 +18,16 @@ export interface LocalProject {
 
 // The operations Tilde needs. Tests use an in-memory fake instead.
 export interface LocalStore {
+  get(id: string): Promise<LocalProject | undefined>;
   put(project: LocalProject): Promise<void>;
   remove(id: string): Promise<void>;
   list(): Promise<LocalProject[]>;
 }
 
 export const browserLocal: LocalStore = {
+  async get(id) {
+    return run(LOCAL, 'readonly', (store) => store.get(id) as IDBRequest<LocalProject | undefined>);
+  },
   async put(project) {
     await run(LOCAL, 'readwrite', (store) => store.put(project));
   },
@@ -69,6 +73,14 @@ export async function createLocal(store: LocalStore, name: string, files: Projec
 
 // Keeps the open project in this browser: like ProjectSync (sync.ts) for a
 // Drive project, with the same file actions, but every save goes to IndexedDB.
+// The project may be open in two tabs: before each save it checks that the
+// stored copy is still the one it last read or wrote, and otherwise stops
+// and says so, so neither tab overwrites the other's work.
+export const CHANGED_ELSEWHERE = 'This project was changed in another tab of this browser, so this tab stopped keeping it. '
+  + 'To keep what you wrote here, download it as a .zip (in the project\'s ⋯ menu), then reload the tab.';
+export const GONE_ELSEWHERE = 'This project was saved to Google Drive or deleted in another tab of this browser, so this tab '
+  + 'stopped keeping it. To keep what you wrote here, download it as a .zip (in the project\'s ⋯ menu).';
+
 export class LocalSync {
   readonly conflicts = new Set<string>(); // never any: only this browser changes the project
   state: SyncState = 'saved';
@@ -76,12 +88,15 @@ export class LocalSync {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private queue: Promise<void> = Promise.resolve();
   private pending = false;
+  private changes = 0; // edits so far; a save counts only for the edits it wrote
+  private stopped = false; // another tab changed or removed the stored copy
   private closed = false;
 
   constructor(
     private store: LocalStore,
     readonly id: string,
     readonly project: Project,
+    private stored: number, // the "edited" time of the copy this tab read or last wrote
     private stateChanged: () => void,
   ) {}
 
@@ -89,6 +104,7 @@ export class LocalSync {
   edited(path: string): void {
     if (!this.file(path)) return;
     this.pending = true;
+    this.changes++;
     clearTimeout(this.timer);
     this.timer = setTimeout(() => void this.saveNow(), SAVE_DELAY);
   }
@@ -170,17 +186,27 @@ export class LocalSync {
 
   private change(): Promise<void> {
     this.pending = true;
+    this.changes++;
     return this.saveNow();
   }
 
   private async save(): Promise<void> {
-    if (!this.pending) return;
-    this.pending = false;
+    if (!this.pending || this.stopped) return;
+    const changes = this.changes;
     try {
-      await this.store.put(toLocal(this.id, this.project));
+      const now = await this.store.get(this.id);
+      if (now?.edited !== this.stored) {
+        this.stopped = true;
+        this.setState('error', now ? CHANGED_ELSEWHERE : GONE_ELSEWHERE);
+        return;
+      }
+      const record = toLocal(this.id, this.project);
+      await this.store.put(record);
+      this.stored = record.edited;
+      if (this.changes === changes) this.pending = false; // edits made during the write wait for the next save
       this.setState('saved', '');
     } catch (error) {
-      this.pending = true; // tried again with the next edit
+      // Tried again with the next edit.
       this.setState('error', `This browser could not keep the project: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -189,5 +215,6 @@ export class LocalSync {
     this.state = state;
     this.errorMessage = message;
     if (!this.closed) this.stateChanged();
+    else if (state === 'error') console.warn(`${this.project.name}: ${message}`); // another project is open now
   }
 }

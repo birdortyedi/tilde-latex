@@ -19,6 +19,9 @@ const waiting = new Map<number, { resolve: (pdf: Uint8Array) => void; reject: (e
 // Each image is converted once; a changed image is a new Uint8Array.
 const converted = new WeakMap<Uint8Array, Promise<Uint8Array>>();
 
+// How long one image may take; then the compile goes on without it.
+export const CONVERT_TIMEOUT = 60_000;
+
 function convertOne(eps: Uint8Array): Promise<Uint8Array> {
   if (!worker) {
     worker = new Worker(new URL('./epsWorker.ts', import.meta.url), { type: 'module' });
@@ -28,9 +31,23 @@ function convertOne(eps: Uint8Array): Promise<Uint8Array> {
       if (data.pdf) job?.resolve(data.pdf);
       else job?.reject(new Error(data.error ?? 'Ghostscript could not read it'));
     };
+    // The converter could not be loaded (offline the first time, say): every image waiting fails, and the next try starts afresh.
+    worker.onerror = (event) => {
+      event.preventDefault();
+      for (const job of waiting.values()) job.reject(new Error('the converter could not be loaded; check the connection and update the PDF again'));
+      waiting.clear();
+      worker?.terminate();
+      worker = undefined;
+    };
   }
   const id = nextId++;
-  const done = new Promise<Uint8Array>((resolve, reject) => waiting.set(id, { resolve, reject }));
+  const done = new Promise<Uint8Array>((resolve, reject) => {
+    waiting.set(id, { resolve, reject });
+    setTimeout(() => {
+      if (!waiting.delete(id)) return;
+      reject(new Error('the converter took too long'));
+    }, CONVERT_TIMEOUT);
+  });
   worker.postMessage({ id, eps });
   return done;
 }

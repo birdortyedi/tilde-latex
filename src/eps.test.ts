@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import loadGhostscript from '@okathira/ghostpdl-wasm';
-import { convertedPath, convertEpsImages, GHOSTSCRIPT_ARGS, isEps } from './eps';
+import { CONVERT_TIMEOUT, convertedPath, convertEpsImages, GHOSTSCRIPT_ARGS, isEps } from './eps';
 
 // A blue box 100 × 60 points, placed at (10, 10) on the page.
 const BOX_EPS = `%!PS-Adobe-3.0 EPSF-3.0
@@ -35,7 +35,9 @@ describe('EPS images', () => {
       onmessage: ((event: { data: unknown }) => void) | null = null;
       postMessage({ id, eps }: { id: number; eps: Uint8Array }): void {
         posted.push(eps);
-        const bad = new TextDecoder().decode(eps) === 'bad';
+        const text = new TextDecoder().decode(eps);
+        if (text === 'never answers') return; // a converter that hangs
+        const bad = text === 'bad';
         setTimeout(() => this.onmessage?.({ data: bad ? { id, error: 'Unrecoverable error' } : { id, pdf: eps.slice().reverse() } }));
       }
     }
@@ -62,6 +64,17 @@ describe('EPS images', () => {
       const result = await convertEpsImages(files);
       expect(result.files).toEqual([]);
       expect(result.failed).toEqual(['b.eps (Unrecoverable error)']);
+    });
+
+    it('gives up on an image after a while, so a compile never waits for ever', async () => {
+      vi.useFakeTimers();
+      try {
+        const result = convertEpsImages([{ path: 'slow.eps', content: new TextEncoder().encode('never answers') }]);
+        await vi.advanceTimersByTimeAsync(CONVERT_TIMEOUT);
+        expect((await result).failed).toEqual(['slow.eps (the converter took too long)']);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

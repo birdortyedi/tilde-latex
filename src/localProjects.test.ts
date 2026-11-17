@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createLocal, LocalSync, SAVE_DELAY, toProject, untitledName, type LocalProject, type LocalStore } from './localProjects';
+import { CHANGED_ELSEWHERE, createLocal, GONE_ELSEWHERE, LocalSync, SAVE_DELAY, toProject, untitledName, type LocalProject, type LocalStore } from './localProjects';
 
 function memoryStore(): LocalStore & { saved: Map<string, LocalProject>; puts: number } {
   const saved = new Map<string, LocalProject>();
   return {
     saved,
     puts: 0,
+    async get(id) { const found = saved.get(id); return found && structuredClone(found); },
     async put(project) {
       this.puts++;
       saved.set(project.id, structuredClone(project));
@@ -28,7 +29,7 @@ describe('projects kept in this browser', () => {
     const store = memoryStore();
     const local = await createLocal(store, 'Untitled', [{ path: 'main.tex', content: 'Hello' }]);
     const changed = vi.fn();
-    const sync = new LocalSync(store, local.id, toProject(local), changed);
+    const sync = new LocalSync(store, local.id, toProject(local), local.edited, changed);
     return { store, local, sync, changed };
   }
 
@@ -75,5 +76,46 @@ describe('projects kept in this browser', () => {
     expect(sync.errorMessage).toContain('QuotaExceededError');
     expect(sync.hasUnsaved()).toBe(true);
     expect(changed).toHaveBeenCalled();
+  });
+
+  it('stops, and says so, when another tab changed the project, instead of overwriting it', async () => {
+    const { store, local, sync } = await opened();
+    // Another tab saves the same project.
+    store.saved.set(local.id, { ...structuredClone(store.saved.get(local.id) as LocalProject), files: [{ path: 'main.tex', content: 'From the other tab' }], edited: local.edited + 1000 });
+    sync.project.files[0].content = 'From this tab';
+    sync.edited('main.tex');
+    await vi.advanceTimersByTimeAsync(SAVE_DELAY);
+    expect(sync.state).toBe('error');
+    expect(sync.errorMessage).toBe(CHANGED_ELSEWHERE);
+    expect(store.saved.get(local.id)?.files[0].content).toBe('From the other tab');
+  });
+
+  it('stops when another tab saved the project to Drive or deleted it, instead of bringing it back', async () => {
+    const { store, local, sync } = await opened();
+    store.saved.delete(local.id);
+    await sync.addFile('notes.tex', 'x');
+    expect(sync.errorMessage).toBe(GONE_ELSEWHERE);
+    expect(store.saved.has(local.id)).toBe(false);
+  });
+
+  it('keeps saving its own writes, and counts an edit made during a write as not saved yet', async () => {
+    const { store, local, sync } = await opened();
+    await sync.addFile('a.tex', 'a');
+    await sync.addFile('b.tex', 'b'); // the second save sees its own first write, not another tab
+    expect(sync.state).toBe('saved');
+    const put = store.put.bind(store);
+    store.put = async (project) => {
+      sync.project.files[0].content = 'typed during the write';
+      sync.edited('main.tex');
+      await put(project);
+    };
+    sync.project.files[0].content = 'first';
+    sync.edited('main.tex');
+    await sync.saveNow();
+    expect(sync.hasUnsaved()).toBe(true);
+    store.put = put;
+    await vi.advanceTimersByTimeAsync(SAVE_DELAY);
+    expect(sync.hasUnsaved()).toBe(false);
+    expect(store.saved.get(local.id)?.files[0].content).toBe('typed during the write');
   });
 });

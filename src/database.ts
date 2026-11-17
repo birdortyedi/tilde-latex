@@ -30,8 +30,23 @@ function openDatabase(): Promise<IDBDatabase> {
       if (event.oldVersion < 4) db.createObjectStore(SHARED, { keyPath: ['accountId', 'projectId'] });
       if (event.oldVersion < 5) db.createObjectStore(LOCAL, { keyPath: 'id' });
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const db = request.result;
+      // A newer Tilde in another tab needs to change the database: let it,
+      // and open it again here the next time it is needed.
+      db.onversionchange = () => {
+        db.close();
+        database = null;
+      };
+      resolve(db);
+    };
     request.onerror = () => reject(request.error);
+    // An older Tilde in another tab keeps the database open, so it cannot be
+    // changed: say so, instead of waiting for ever. The next call tries again.
+    request.onblocked = () => {
+      database = null;
+      reject(new Error('Tilde is open in another tab, in an older version. Close that tab, then reload this one.'));
+    };
   });
   return database;
 }
