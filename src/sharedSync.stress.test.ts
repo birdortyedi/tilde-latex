@@ -82,8 +82,8 @@ async function run(seed: number, live: boolean, steps: number): Promise<void> {
   const open = async (name: string, account: 'A' | 'B', store: MemoryShared): Promise<Tab> => {
     const view = drive.forAccount(account);
     const sync = account === 'A'
-      ? new SharedSync(view, store, 'A', 'Furkan', await loadShared(view, loaded.stateId), quiet(), await openProject(view, folder), makeLink)
-      : new SharedSync(view, store, 'B', 'Bora', (await joinFromPicked(view, [...drive.items.values()].filter((i) => i.grants.has('B')).map((i) => i.id))).loaded,
+      ? new SharedSync(view, store, 'A', 'Furkan', await loadShared(view, loaded.stateId, folder.id), quiet(), await openProject(view, folder), makeLink)
+      : new SharedSync(view, store, 'B', 'Bora', (await joinFromPicked(view, [...drive.items.values()].filter((i) => i.grants.has('B')).map((i) => i.id), folder.id)).loaded,
         quiet(), undefined, makeLink);
     await sync.restoreDrafts();
     return { name, account, drive: view, store, sync };
@@ -164,7 +164,7 @@ async function run(seed: number, live: boolean, steps: number): Promise<void> {
   const context = `seed ${seed}, ${live ? 'live' : 'Drive only'}, steps:\n${log.slice(-40).join('\n')}`;
   const expected = textFiles(tabs[0].sync);
   for (const tab of tabs) expect(textFiles(tab.sync), `${tab.name} differs; ${context}`).toEqual(expected);
-  const inDrive = Object.fromEntries(sharedFiles((await loadShared(drive, loaded.stateId)).doc)
+  const inDrive = Object.fromEntries(sharedFiles((await loadShared(drive, loaded.stateId, folder.id)).doc)
     .filter((e) => e.text).map((e) => [e.path, e.text?.toString() ?? '']).sort(([x], [y]) => x.localeCompare(y)));
   expect(inDrive, `Drive's shared file differs; ${context}`).toEqual(expected);
   const paths = Object.keys(expected);

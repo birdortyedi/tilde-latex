@@ -1,3 +1,4 @@
+import './notFramed'; // first: Tilde does not start inside another site's frame
 import '@fontsource/ibm-plex-sans/400.css';
 import '@fontsource/ibm-plex-sans/500.css';
 import '@fontsource/ibm-plex-sans/600.css';
@@ -20,7 +21,7 @@ import { SharedSync, type Face } from './sharedSync';
 import { browserShared, type SharedCopy } from './sharedStore';
 import { sharedFiles, textHash } from './sharedDoc';
 import {
-  forgetJoined, invite, joinedProjects, joinFromPicked, joinLink, joinTarget, loadShared, makeShared, rememberJoined, sharedStateIn,
+  forgetJoined, inProject, invite, joinedProjects, joinFromPicked, joinLink, joinTarget, loadShared, makeShared, rememberJoined, sharedStateIn,
   type Joined, type LoadedShared,
 } from './sharing';
 import * as Y from 'yjs';
@@ -958,7 +959,7 @@ async function openProjectById(id: string): Promise<void> {
     const joined = joinedById.get(id);
     if (joined) {
       // Shared with this account: everything is in the shared document.
-      const [loaded, editable] = await Promise.all([loadShared(googleDrive, joined.stateId), googleDrive.canEdit(joined.stateId)]);
+      const [loaded, editable] = await Promise.all([loadShared(googleDrive, joined.stateId, joined.folderId), googleDrive.canEdit(joined.stateId)]);
       showProject(null, { loaded, viewOnly: !editable });
       const name = project?.name;
       if (rootId && name && name !== joined.name) {
@@ -968,7 +969,7 @@ async function openProjectById(id: string): Promise<void> {
       }
     } else {
       const [plain, stateId] = await Promise.all([openProject(googleDrive, folder), sharedStateIn(googleDrive, folder.id)]);
-      if (stateId) showProject(null, { loaded: await loadShared(googleDrive, stateId), plain });
+      if (stateId) showProject(null, { loaded: await loadShared(googleDrive, stateId, folder.id), plain });
       else showProject(plain);
     }
     showProjectsPage(false);
@@ -1311,12 +1312,13 @@ async function projectSnapshot(id?: string): Promise<Project | null> {
     if (joined) {
       // Shared with this account: the text is in the shared file; images are
       // read where this account may read them.
-      const doc = (await loadShared(googleDrive, joined.stateId)).doc;
+      const { doc, ids } = await loadShared(googleDrive, joined.stateId, joined.folderId);
       const files: ProjectFile[] = [];
       for (const entry of sharedFiles(doc)) {
         if (entry.text) files.push({ path: entry.path, content: entry.text.toString() });
         else if (entry.driveId) {
-          const bytes = await googleDrive.download(entry.driveId).catch(() => null);
+          const driveId = entry.driveId; // only a file in the project's folder (see inProject)
+          const bytes = await inProject(googleDrive, driveId, ids).then((ok) => (ok ? googleDrive.download(driveId) : null)).catch(() => null);
           if (bytes) files.push({ path: entry.path, content: bytes });
           else notify(`${entry.path} was left out: someone else added it, and Google lets Tilde read it only after you open the project and allow it.`, 'info');
         }
@@ -1326,7 +1328,7 @@ async function projectSnapshot(id?: string): Promise<Project | null> {
     const plain = await openProject(googleDrive, folder);
     // A shared project's newest text is in its shared file; the plain files may lag behind.
     const stateId = await sharedStateIn(googleDrive, folder.id);
-    return stateId ? sharedSnapshot((await loadShared(googleDrive, stateId)).doc, plain) : plain;
+    return stateId ? sharedSnapshot((await loadShared(googleDrive, stateId, folder.id)).doc, plain) : plain;
   } finally {
     hideBusy();
   }
@@ -1802,7 +1804,7 @@ async function joinProject(folderId: string): Promise<void> {
       .setParent(folderId));
     if (picked.length === 0) return;
     showBusy('Opening the shared project…');
-    const { loaded, ids, missing } = await joinFromPicked(googleDrive, picked.map((p) => p.id));
+    const { loaded, ids, missing } = await joinFromPicked(googleDrive, picked.map((p) => p.id), folderId);
     if (missing.length > 0) {
       notify(`${missing.join(' and ')} ${missing.length === 1 ? 'was' : 'were'} not among the chosen files, so you will not see who else is here `
         + 'or be able to add images. Open the link again and select everything.', 'error');
@@ -2151,7 +2153,7 @@ async function sharedDrafts(copy: SharedCopy): Promise<Draft[]> {
   let inDrive: Map<string, string> | null = null;
   try {
     const stateId = joinedById.get(copy.projectId)?.stateId ?? await sharedStateIn(googleDrive, copy.projectId);
-    if (stateId) inDrive = new Map(sharedFiles((await loadShared(googleDrive, stateId)).doc).map((e) => [e.path, e.text?.toString() ?? '']));
+    if (stateId) inDrive = new Map(sharedFiles((await loadShared(googleDrive, stateId, copy.projectId)).doc).map((e) => [e.path, e.text?.toString() ?? '']));
   } catch {
     // Not reachable: list them all.
   }

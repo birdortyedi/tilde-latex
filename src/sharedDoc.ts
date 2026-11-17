@@ -45,9 +45,20 @@ function entryOf(id: string, map: Y.Map<unknown>): SharedEntry {
 
 const isDeleted = (map: Y.Map<unknown>): boolean => map.has('deleted');
 
+// Whether a path in the document can be a project file. Anyone who may write
+// in the project can put any path there: one with empty, "." or ".." parts,
+// or naming Tilde's own files in the folder ("….tilde", "Tilde uploads"),
+// is left out, so the owner's Tilde never makes such a file in the folder.
+export function usablePath(path: string): boolean {
+  const parts = path.split('/');
+  return path.length <= 1000 && parts[0] !== 'Tilde uploads'
+    && parts.every((part) => part !== '' && part !== '.' && part !== '..' && !part.endsWith('.tilde'));
+}
+
 // Every file (not the deleted ones), sorted by path.
 export function sharedFiles(doc: Y.Doc): SharedEntry[] {
-  return [...filesMap(doc)].filter(([, map]) => !isDeleted(map)).map(([id, map]) => entryOf(id, map)).sort((a, b) => a.path.localeCompare(b.path));
+  return [...filesMap(doc)].filter(([, map]) => !isDeleted(map)).map(([id, map]) => entryOf(id, map))
+    .filter((entry) => usablePath(entry.path)).sort((a, b) => a.path.localeCompare(b.path));
 }
 
 export interface DeletedEntry {

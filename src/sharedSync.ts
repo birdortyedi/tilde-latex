@@ -6,10 +6,10 @@ import type { Project, ProjectFile, SafeCopy } from './projects';
 import {
   addSharedBinary, addSharedText, deletedFiles, deleteShared, fixDuplicatePaths, moveShared, plainCopies, purgeDeleted, restoreShared, plainFileIds, plainHashes, plainRevisions, removeShared, savedLacks, setSharedDriveId, textHash,
   setSharedMainFile, setSharedName, sharedFileAt,
-  sharedFiles, sharedIds, sharedMainFile, sharedName, type SharedEntry, type SharedIds,
+  sharedFiles, sharedMainFile, sharedName, type SharedEntry, type SharedIds,
 } from './sharedDoc';
 import type { SharedStore } from './sharedStore';
-import { SHARED_SAFE_COPY, SHARED_SAFE_COPY_TIME, type LoadedShared } from './sharing';
+import { inProject, SHARED_SAFE_COPY, SHARED_SAFE_COPY_TIME, type LoadedShared } from './sharing';
 import { colorFor, fromPeer, Live, type MakeLink, type Signals } from './live';
 import { mergeOutside, outsideCopyPath } from './outsideEdits';
 import { AUTOSAVE_DELAY, ProjectSync, RETRY_DELAY, type DriveChanges, type SyncListener, type SyncState } from './sync';
@@ -58,6 +58,29 @@ interface Mailbox {
   // By tab; leads: it keeps the owner's plain files (see isLeader); photo: the account's Google profile photo.
   here?: Record<string, { name: string; at: number; account?: string; leads?: boolean; photo?: string }>;
   signals?: Signals; // introductions for direct connections (see live.ts)
+}
+
+const MAILBOX_TABS = 20; // tabs heard from at most (5 people, a few tabs each)
+const MAILBOX_SIGNALS = 60; // introductions at most
+
+// The mailbox as read from Drive, with what is not in its shape left out.
+// Anyone in the project can write it: a broken entry must not stop the
+// others' Tilde, and a flood of entries must not make it open many connections.
+export function cleanMailbox(box: unknown): Mailbox {
+  if (box === null || typeof box !== 'object' || Array.isArray(box)) return {};
+  const { here, signals } = box as { here?: unknown; signals?: unknown };
+  const isRecord = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
+  const optional = (value: unknown, type: string) => value === undefined || typeof value === type;
+  const tabs = Object.entries(isRecord(here) ? here : {}).filter((entry): entry is [string, NonNullable<Mailbox['here']>[string]] => {
+    const h = entry[1];
+    return isRecord(h) && typeof h.name === 'string' && h.name.length <= 200 && typeof h.at === 'number' && Number.isFinite(h.at)
+      && optional(h.account, 'string') && optional(h.leads, 'boolean') && optional(h.photo, 'string');
+  }).sort(([, x], [, y]) => y.at - x.at).slice(0, MAILBOX_TABS);
+  const intros = Object.entries(isRecord(signals) ? signals : {}).filter((entry): entry is [string, Signals[string]] => {
+    const signal = entry[1];
+    return isRecord(signal) && typeof signal.at === 'number' && optional(signal.offer, 'string') && optional(signal.answer, 'string');
+  }).sort(([, x], [, y]) => y.at - x.at).slice(0, MAILBOX_SIGNALS);
+  return { here: Object.fromEntries(tabs), signals: Object.fromEntries(intros) };
 }
 
 // Saving changes for the owner's plain files: never kept as drafts, since the
@@ -125,6 +148,7 @@ export class SharedSync {
   private lastSeen = new Map<string, { at: number; local: number }>(); // tabs in the mailbox: their last word, and when this tab saw it
   private unconfirmed = false; // this browser wrote Drive's copy, but no later round has seen it there yet
   private loadingBinaries: Promise<void> | null = null;
+  private refused = new Set<string>(); // binary files named in the document that are not this project's (see inProject)
   private loadAgain = false;
   private missingTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -146,8 +170,7 @@ export class SharedSync {
     this.doc = loaded.doc;
     this.saved = loaded.saved;
     this.revision = loaded.revision;
-    const ids = sharedIds(this.doc);
-    if (!ids) throw new Error('This shared project is damaged: it does not say where its files are.');
+    const ids = loaded.ids; // checked with Drive (see sharing.ts), whatever the document says later
     this.ids = ids;
     this.listener = {
       stateChanged: () => { if (!this.closed) listener.stateChanged(); },
@@ -622,12 +645,18 @@ export class SharedSync {
   }
 
   private async loadBinariesOnce(): Promise<void> {
-    const wanted = sharedFiles(this.doc).filter((e) => e.driveId && !this.bytes.has(e.driveId));
+    const wanted = sharedFiles(this.doc).filter((e) => e.driveId && !this.bytes.has(e.driveId) && !this.refused.has(e.driveId));
     if (wanted.length === 0 && this.missing.size === 0) return;
     const missing = new Map<string, string>();
     for (const entry of wanted) {
       const driveId = entry.driveId as string;
       try {
+        if (!await inProject(this.drive, driveId, this.ids)) {
+          // Someone put a file from elsewhere in the document: it is not read, so not passed on either.
+          this.refused.add(driveId);
+          this.listener.notice(`${entry.path} is not in this project's folder in Google Drive, so Tilde did not open it.`);
+          continue;
+        }
         this.bytes.set(driveId, await this.drive.download(driveId));
       } catch (error) {
         if (error instanceof OfflineError || error instanceof SignInNeededError) return;
@@ -1090,8 +1119,7 @@ export class SharedSync {
 
   private async readMailbox(): Promise<Mailbox> {
     try {
-      const box: unknown = JSON.parse(new TextDecoder().decode(await this.drive.download(this.ids.mailboxId)));
-      return box !== null && typeof box === 'object' && !Array.isArray(box) ? box as Mailbox : {};
+      return cleanMailbox(JSON.parse(new TextDecoder().decode(await this.drive.download(this.ids.mailboxId))));
     } catch (error) {
       if (error instanceof SyntaxError) return {};
       throw error;

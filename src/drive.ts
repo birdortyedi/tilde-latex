@@ -17,6 +17,7 @@ export interface DriveFile {
   modifiedTime?: string; // e.g. "2026-11-02T13:01:14.810Z"
   trashed?: boolean; // in Drive's trash (deleted, restorable for 30 days)
   parents?: string[]; // the folder it is in
+  ownedByMe?: boolean; // made by this account (or given to it), not someone else's
 }
 
 // Someone (or everyone with the link) who may open a file or folder.
@@ -88,7 +89,7 @@ export class OfflineError extends Error {
 
 const API = 'https://www.googleapis.com/drive/v3/files';
 const UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3/files';
-const FIELDS = 'id,name,mimeType,headRevisionId,appProperties,modifiedTime,trashed,parents';
+const FIELDS = 'id,name,mimeType,headRevisionId,appProperties,modifiedTime,trashed,parents,ownedByMe';
 
 // Drive's error answer is JSON; its reason and message are what a person can read.
 function driveProblem(text: string): string {
@@ -131,6 +132,14 @@ async function request(url: string, init: { method?: string; headers?: Record<st
   }
 }
 
+// A Drive id as part of an address. Ids are letters, digits, - and _ only;
+// anything else (an id taken from a shared file someone else wrote, say
+// "../files?q=…") could make the address ask Drive for something else.
+export function at(id: string): string {
+  if (!/^[\w-]+$/.test(id)) throw new Error(`Not a Google Drive id: ${id.slice(0, 40)}`);
+  return id;
+}
+
 export const googleDrive: Drive = {
   async findByProperty(key, value) {
     const params = new URLSearchParams({
@@ -159,7 +168,7 @@ export const googleDrive: Drive = {
     let pageToken = '';
     do {
       const params = new URLSearchParams({
-        q: `'${folderId}' in parents and trashed = false`,
+        q: `'${at(folderId)}' in parents and trashed = false`,
         fields: `nextPageToken,files(${FIELDS})`,
         pageSize: '1000',
       });
@@ -172,11 +181,11 @@ export const googleDrive: Drive = {
   },
 
   async get(fileId) {
-    return (await request(`${API}/${fileId}?fields=${FIELDS}`)).json();
+    return (await request(`${API}/${at(fileId)}?fields=${FIELDS}`)).json();
   },
 
   async download(fileId) {
-    return new Uint8Array(await (await request(`${API}/${fileId}?alt=media`)).arrayBuffer());
+    return new Uint8Array(await (await request(`${API}/${at(fileId)}?alt=media`)).arrayBuffer());
   },
 
   async createFolder(name, parentId) {
@@ -212,7 +221,7 @@ export const googleDrive: Drive = {
       params.set('addParents', move.to);
       params.set('removeParents', move.from);
     }
-    const response = await request(`${API}/${fileId}?${params}`, {
+    const response = await request(`${API}/${at(fileId)}?${params}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(changes),
@@ -221,7 +230,7 @@ export const googleDrive: Drive = {
   },
 
   async keepRevision(fileId, revisionId) {
-    const response = await request(`${API}/${fileId}/revisions/${revisionId}?fields=id,modifiedTime`, {
+    const response = await request(`${API}/${at(fileId)}/revisions/${at(revisionId)}?fields=id,modifiedTime`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ keepForever: true }),
@@ -231,7 +240,7 @@ export const googleDrive: Drive = {
 
   async share(fileId, email, message, role = 'writer') {
     const params = new URLSearchParams({ sendNotificationEmail: 'true', emailMessage: message });
-    await request(`${API}/${fileId}/permissions?${params}`, {
+    await request(`${API}/${at(fileId)}/permissions?${params}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ role, type: 'user', emailAddress: email }),
@@ -240,11 +249,11 @@ export const googleDrive: Drive = {
 
   async permissions(fileId) {
     const fields = 'permissions(id,type,role,emailAddress,displayName,domain,photoLink)';
-    return ((await (await request(`${API}/${fileId}/permissions?fields=${fields}`)).json()) as { permissions: Permission[] }).permissions;
+    return ((await (await request(`${API}/${at(fileId)}/permissions?fields=${fields}`)).json()) as { permissions: Permission[] }).permissions;
   },
 
   async setRole(fileId, permissionId, role) {
-    await request(`${API}/${fileId}/permissions/${permissionId}`, {
+    await request(`${API}/${at(fileId)}/permissions/${at(permissionId)}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ role }),
@@ -252,16 +261,16 @@ export const googleDrive: Drive = {
   },
 
   async removePermission(fileId, permissionId) {
-    await request(`${API}/${fileId}/permissions/${permissionId}`, { method: 'DELETE' });
+    await request(`${API}/${at(fileId)}/permissions/${at(permissionId)}`, { method: 'DELETE' });
   },
 
   async canEdit(fileId) {
-    const file = (await (await request(`${API}/${fileId}?fields=capabilities(canEdit)`)).json()) as { capabilities?: { canEdit?: boolean } };
+    const file = (await (await request(`${API}/${at(fileId)}?fields=capabilities(canEdit)`)).json()) as { capabilities?: { canEdit?: boolean } };
     return file.capabilities?.canEdit ?? false;
   },
 
   async shareByLink(fileId) {
-    await request(`${API}/${fileId}/permissions`, {
+    await request(`${API}/${at(fileId)}/permissions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ role: 'reader', type: 'anyone' }),
@@ -269,12 +278,12 @@ export const googleDrive: Drive = {
   },
 
   async downloadRevision(fileId, revisionId) {
-    return new Uint8Array(await (await request(`${API}/${fileId}/revisions/${revisionId}?alt=media`)).arrayBuffer());
+    return new Uint8Array(await (await request(`${API}/${at(fileId)}/revisions/${at(revisionId)}?alt=media`)).arrayBuffer());
   },
 
   // Replaces a file's content. Drive keeps the old content in its version history.
   async updateFile(fileId, content) {
-    const response = await request(`${UPLOAD_API}/${fileId}?uploadType=media&fields=${FIELDS}`, {
+    const response = await request(`${UPLOAD_API}/${at(fileId)}?uploadType=media&fields=${FIELDS}`, {
       method: 'PATCH',
       body: content.slice(),
     });

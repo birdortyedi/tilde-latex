@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { googleDrive, RETRIES } from './drive';
+import { at, googleDrive, RETRIES } from './drive';
 
 vi.mock('./auth', () => ({
   getAccessToken: async () => 'token',
@@ -66,5 +66,13 @@ describe('Drive requests', () => {
     const fetch = answers(...Array.from({ length: RETRIES + 5 }, (): [number, string] => [429, 'Too many requests']));
     await expect(settle(googleDrive.get('f1'))).rejects.toThrow('429');
     expect(fetch).toHaveBeenCalledTimes(RETRIES + 1);
+  });
+});
+
+describe('Drive ids in addresses', () => {
+  it('lets only real ids into an address, so a shared file cannot make Tilde ask Drive for something else', () => {
+    expect(at('1aB-_x9')).toBe('1aB-_x9');
+    expect(() => at('../files?q=trashed%3Dfalse')).toThrow('Not a Google Drive id');
+    expect(() => at('')).toThrow('Not a Google Drive id');
   });
 });

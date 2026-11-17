@@ -49,6 +49,11 @@ const OFFER_TIMEOUT = 30_000; // an offer not answered and connected by then is 
 const GIVE_UP_AFTER = 3; // failed tries with one tab before it is left to Drive for a while
 const GIVE_UP_FOR = 5 * 60_000;
 const PIECE = 60_000; // bytes per message at most; bigger ones go in pieces
+// A message from another browser in pieces: at most this many pieces (about
+// 200 MB), and this many such messages arriving at once, so a peer cannot
+// make this browser hold more and more pieces that never add up.
+const MAX_PIECES = 3500;
+const MAX_IN_PIECES = 16;
 
 interface Peer {
   session: string;
@@ -311,6 +316,7 @@ export class Live {
         const number = decoding.readVarUint(decoder);
         const index = decoding.readVarUint(decoder);
         const total = decoding.readVarUint(decoder);
+        if (total > MAX_PIECES || index >= total || (!peer.parts.has(number) && peer.parts.size >= MAX_IN_PIECES)) return;
         const pieces = peer.parts.get(number) ?? [];
         pieces[index] = decoding.readVarUint8Array(decoder);
         peer.parts.set(number, pieces);

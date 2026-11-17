@@ -1,9 +1,9 @@
 import * as Y from 'yjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openProject } from './driveProjects';
-import { sharedFileAt } from './sharedDoc';
+import { addSharedBinary, addSharedText, sharedFileAt, sharedFiles } from './sharedDoc';
 import { MemoryShared } from './sharedStore';
-import { SharedSync, type SharedListener } from './sharedSync';
+import { cleanMailbox, SharedSync, type SharedListener } from './sharedSync';
 import { forgetJoined, joinedProjects, joinFromPicked, loadShared, makeShared, rememberJoined, SHARED_FILE } from './sharing';
 import { FakeDrive } from './testing/fakeDrive';
 import { fakeLinks } from './testing/fakeLink';
@@ -32,7 +32,7 @@ async function sharedPaper(makeLink?: MakeLink) {
   await syncA.saveNow();
   for (const item of drive.items.values()) if (item.parentId === folder.id || item.id === png.id) drive.grant(item.id, 'B');
   const picked = [...drive.items.values()].filter((i) => i.grants.has('B')).map((i) => i.id);
-  const joined = await joinFromPicked(b, picked);
+  const joined = await joinFromPicked(b, picked, folder.id);
   const syncB = new SharedSync(b, store, 'B', { name: 'Bora', photo: 'https://lh3.googleusercontent.com/bora' }, joined.loaded, quiet(), undefined, makeLink);
   return { drive, a, b, folder, syncA, syncB, store, joined };
 }
@@ -74,7 +74,7 @@ describe('a shared project', () => {
   });
 
   it('keeps both edits when two people save at the same moment', async () => {
-    const { drive, syncA, syncB } = await start();
+    const { drive, folder, syncA, syncB } = await start();
     syncA.textFor('main.tex')?.text.insert(0, '% A\n');
     syncB.textFor('main.tex')?.text.insert(23, '\n% B');
     await Promise.all([syncA.saveNow(), syncB.saveNow()]); // one write covers the other
@@ -84,7 +84,7 @@ describe('a shared project', () => {
     const expected = '% A\n\\documentclass{article}\n% B';
     expect([textIn(syncA, 'main.tex'), textIn(syncB, 'main.tex')]).toEqual([expected, expected]);
     const stateId = [...drive.items.values()].find((i) => i.name === SHARED_FILE)?.id as string;
-    expect(sharedFileAt((await loadShared(drive, stateId)).doc, 'main.tex')?.text?.toString()).toBe(expected);
+    expect(sharedFileAt((await loadShared(drive, stateId, folder.id)).doc, 'main.tex')?.text?.toString()).toBe(expected);
   });
 
   it('lets a viewer read along without writing anything to Drive', async () => {
@@ -235,7 +235,7 @@ describe('a shared project', () => {
     expect((await store.list()).map((c) => c.accountId)).toEqual(['B']);
     syncB.close();
     b.offline = false;
-    const again = new SharedSync(b, store, 'B', 'Bora', await loadShared(b, joined.loaded.stateId), quiet());
+    const again = new SharedSync(b, store, 'B', 'Bora', await loadShared(b, joined.loaded.stateId, joined.ids.folderId), quiet());
     open.push(again);
     await again.restoreDrafts();
     expect(textIn(again, 'main.tex')).toBe('offline \\documentclass{article}');
@@ -276,7 +276,7 @@ describe('a shared project', () => {
     syncA.close();
     const plainMain = [...drive.items.values()].find((i) => i.name === 'main.tex') as { id: string };
     await drive.updateFile(plainMain.id, bytes('\\documentclass[11pt]{article}'));
-    const again = new SharedSync(a, store, 'A', 'Furkan', await loadShared(a, joined.loaded.stateId), quiet(), await openProject(a, folder));
+    const again = new SharedSync(a, store, 'A', 'Furkan', await loadShared(a, joined.loaded.stateId, joined.ids.folderId), quiet(), await openProject(a, folder));
     open.push(again);
     await settle(again);
     expect(textIn(again, 'main.tex')).toBe('\\documentclass[11pt]{article}');
@@ -299,7 +299,7 @@ describe('a shared project', () => {
 
   it("lets only one of the owner's tabs write the plain files", async () => {
     const { a, drive, folder, store, syncA, syncB, joined } = await start();
-    const second = new SharedSync(a, store, 'A', 'Furkan', await loadShared(a, joined.loaded.stateId), quiet(), await openProject(a, folder));
+    const second = new SharedSync(a, store, 'A', 'Furkan', await loadShared(a, joined.loaded.stateId, joined.ids.folderId), quiet(), await openProject(a, folder));
     open.push(second);
     await settle(second);
     const leading = (sync: SharedSync) => (sync as unknown as { leading: boolean }).leading;
@@ -316,7 +316,7 @@ describe('a shared project', () => {
 
   it("takes over the plain files from an owner's tab that went away without a word", async () => {
     const { a, folder, store, syncA, joined } = await start();
-    const second = new SharedSync(a, store, 'A', 'Furkan', await loadShared(a, joined.loaded.stateId), quiet(), await openProject(a, folder));
+    const second = new SharedSync(a, store, 'A', 'Furkan', await loadShared(a, joined.loaded.stateId, joined.ids.folderId), quiet(), await openProject(a, folder));
     open.push(second);
     await settle(second);
     const inside = (sync: SharedSync) => sync as unknown as { leading: boolean; leaveMailbox: () => Promise<void> };
@@ -353,7 +353,7 @@ describe('a shared project', () => {
     syncA.close();
     await syncB.deleteFile('old.tex');
     await syncB.moveFile('main.tex', 'ch1.tex');
-    const again = new SharedSync(a, store, 'A', 'Furkan', await loadShared(a, joined.loaded.stateId), quiet(), await openProject(a, folder));
+    const again = new SharedSync(a, store, 'A', 'Furkan', await loadShared(a, joined.loaded.stateId, joined.ids.folderId), quiet(), await openProject(a, folder));
     open.push(again);
     await settle(again);
     await settle(again);
@@ -365,7 +365,7 @@ describe('a shared project', () => {
 
   it("does not undo others' edits when another of the owner's tabs takes over the plain files", async () => {
     const { a, folder, store, syncA, syncB, joined } = await start();
-    const second = new SharedSync(a, store, 'A', 'Furkan', await loadShared(a, joined.loaded.stateId), quiet(), await openProject(a, folder));
+    const second = new SharedSync(a, store, 'A', 'Furkan', await loadShared(a, joined.loaded.stateId, joined.ids.folderId), quiet(), await openProject(a, folder));
     open.push(second);
     await settle(second);
     const inside = (sync: SharedSync) => sync as unknown as { leading: boolean; leaveMailbox: () => Promise<void>; listener: SharedListener };
@@ -390,18 +390,18 @@ describe('a shared project', () => {
   });
 
   it('keeps edits in the browser until Drive is seen to have them, even if a write covered them', async () => {
-    const { a, drive, store, syncA, syncB, joined } = await start();
+    const { a, drive, folder, store, syncA, syncB, joined } = await start();
     syncA.textFor('main.tex')?.text.insert(0, '% A\n');
     syncB.textFor('main.tex')?.text.insert(23, '\n% B');
     await vi.advanceTimersByTimeAsync(600); // both keep a copy in the browser
     await Promise.all([syncA.saveNow(), syncB.saveNow()]); // one write covers the other
     syncA.close(); // and A's tab is closed right away
     expect((await store.list()).some((c) => c.accountId === 'A')).toBe(true);
-    const again = new SharedSync(a, store, 'A', 'Furkan', await loadShared(a, joined.loaded.stateId), quiet());
+    const again = new SharedSync(a, store, 'A', 'Furkan', await loadShared(a, joined.loaded.stateId, joined.ids.folderId), quiet());
     open.push(again);
     await again.restoreDrafts();
     const stateId = joined.loaded.stateId;
-    expect(sharedFileAt((await loadShared(drive, stateId)).doc, 'main.tex')?.text?.toString()).toContain('% A');
+    expect(sharedFileAt((await loadShared(drive, stateId, folder.id)).doc, 'main.tex')?.text?.toString()).toContain('% A');
   });
 
   it('replaces an image the owner adds again, without throwing the new one away', async () => {
@@ -436,7 +436,7 @@ describe('a shared project', () => {
 
   it("keeps one browser copy for all of an account's tabs, without one tab dropping another's edits", async () => {
     const { a, b, store, syncB, joined } = await start();
-    const second = new SharedSync(b, store, 'B', 'Bora', await loadShared(a.forAccount('B'), joined.loaded.stateId), quiet());
+    const second = new SharedSync(b, store, 'B', 'Bora', await loadShared(a.forAccount('B'), joined.loaded.stateId, joined.ids.folderId), quiet());
     open.push(second);
     b.offline = true;
     syncB.textFor('main.tex')?.text.insert(0, '% tab 1\n');
@@ -455,7 +455,7 @@ describe('a shared project', () => {
     await syncB.saveNow();
     syncB.close();
     await store.put({ accountId: 'B', projectId: joined.ids.folderId, projectName: 'Paper', update: (await import('yjs')).encodeStateAsUpdate(syncB.doc) });
-    const again = new SharedSync(b, store, 'B', 'Bora', await loadShared(b, joined.loaded.stateId), quiet());
+    const again = new SharedSync(b, store, 'B', 'Bora', await loadShared(b, joined.loaded.stateId, joined.ids.folderId), quiet());
     open.push(again);
     await again.restoreDrafts();
     await vi.advanceTimersByTimeAsync(6_000);
@@ -499,7 +499,7 @@ describe('a shared project', () => {
 
   it("never lists the account's own other tabs, such as the one before a reload", async () => {
     const { b, syncA, syncB, joined } = await start();
-    const again = new SharedSync(b, new MemoryShared(), 'B', 'Bora', await loadShared(b, joined.loaded.stateId), quiet());
+    const again = new SharedSync(b, new MemoryShared(), 'B', 'Bora', await loadShared(b, joined.loaded.stateId, joined.ids.folderId), quiet());
     open.push(again);
     await vi.advanceTimersByTimeAsync(21_000);
     expect(again.people).toEqual(['Furkan']);
@@ -521,13 +521,84 @@ describe('a shared project', () => {
     const { drive, joined } = await start();
     const b2 = drive.forAccount('C');
     drive.grant(joined.loaded.stateId, 'C');
-    const result = await joinFromPicked(b2, [joined.loaded.stateId]);
+    const result = await joinFromPicked(b2, [joined.loaded.stateId], joined.ids.folderId);
     expect(result.missing).toEqual(['Tilde mailbox.tilde', 'Tilde uploads']);
   });
 
   it('never shows its own files as part of the project', async () => {
     const { a, folder } = await start();
     expect((await openProject(a, folder)).files.map((f) => f.path).sort()).toEqual(['figures/plot.png', 'main.tex']);
+  });
+});
+
+// Anyone who may write in a project can write anything into its shared file
+// and its mailbox. Bora (B) is such a co-author here, and means harm.
+describe('a shared project, against a co-author who means harm', () => {
+  let open: SharedSync[] = [];
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => {
+    for (const sync of open) sync.close();
+    open = [];
+    vi.useRealTimers();
+  });
+  const start = async () => {
+    const paper = await sharedPaper();
+    open.push(paper.syncA, paper.syncB);
+    return paper;
+  };
+
+  it("does not read, or copy into the project, a file from another of the owner's projects", async () => {
+    const { a, drive, joined, syncA, syncB } = await start();
+    const other = await a.createFolder('Other', (await a.get(joined.ids.folderId)).parents?.[0] ?? 'root');
+    const secret = await a.createFile('secret.png', other.id, new Uint8Array([4, 2]));
+    const notice = vi.fn();
+    (syncA as unknown as { listener: SharedListener }).listener.notice = notice; // to see what the owner is told
+    addSharedBinary(joined.loaded.doc, 'leak.png', secret.id);
+    await syncB.saveNow();
+    await syncA.saveNow();
+    await vi.advanceTimersByTimeAsync(8_000);
+    await syncA.idle();
+    expect(drive.read('LaTeX Projects/Paper/leak.png')).toBeUndefined();
+    expect(syncA.project.files.find((f) => f.path === 'leak.png')?.content).not.toEqual(new Uint8Array([4, 2]));
+    expect(notice).toHaveBeenCalledWith(expect.stringContaining('leak.png is not in this project'));
+  });
+
+  it("keeps the project's folder as Drive says, and will not write a mailbox outside it", async () => {
+    const { a, drive, folder, joined, syncA, syncB } = await start();
+    const other = await a.createFolder('Other', 'root');
+    const project = joined.loaded.doc.getMap<string>('project');
+    project.set('folderId', other.id);
+    await syncB.saveNow();
+    expect((await loadShared(a, joined.loaded.stateId, folder.id)).ids.folderId).toBe(folder.id);
+    const main = [...drive.items.values()].find((i) => i.name === 'main.tex' && i.parentId === folder.id);
+    project.set('mailboxId', main?.id ?? '');
+    await syncB.saveNow();
+    await syncA.saveNow();
+    await expect(loadShared(a, joined.loaded.stateId, folder.id)).rejects.toThrow('points to files outside');
+    expect(drive.read('LaTeX Projects/Paper/main.tex')).toBe('\\documentclass{article}');
+  });
+
+  it("leaves out paths that name Tilde's own files or leave the folder", async () => {
+    const { drive, joined, syncA, syncB } = await start();
+    for (const path of ['Tilde shared project.tilde', 'Tilde uploads/x.tex', '../up.tex', 'a//b.tex', './c.tex']) {
+      addSharedText(joined.loaded.doc, path, 'x');
+    }
+    await syncB.saveNow();
+    await syncA.saveNow();
+    await vi.advanceTimersByTimeAsync(70_000);
+    await syncA.idle();
+    expect(sharedFiles(joined.loaded.doc).map((e) => e.path)).toEqual(['figures/plot.png', 'main.tex']);
+    expect([...drive.items.values()].filter((i) => i.name === SHARED_FILE && !i.trashed)).toHaveLength(1);
+  });
+
+  it('reads a mailbox with broken or too many entries without stopping', () => {
+    const here = Object.fromEntries(Array.from({ length: 30 }, (_, n) => [`tab${n}`, { name: `T${n}`, at: n }]));
+    const box = cleanMailbox({ here: { ...here, broken: null, odd: { name: 3, at: 1 } }, signals: { 'a>b': { at: 1, offer: 'x' }, bad: 'y' } });
+    expect(Object.keys(box.here ?? {})).toHaveLength(20);
+    expect(box.here?.tab29).toEqual({ name: 'T29', at: 29 }); // the newest are kept
+    expect(box.here?.broken).toBeUndefined();
+    expect(Object.keys(box.signals ?? {})).toEqual(['a>b']);
+    expect(cleanMailbox([1, 2])).toEqual({});
   });
 });
 
@@ -602,7 +673,7 @@ describe('a shared project with direct connections', () => {
   it('connects three browsers with each other', async () => {
     const links = fakeLinks();
     const paper = await sharedPaper(links);
-    const second = new SharedSync(paper.a, new MemoryShared(), 'A', 'Furkan', await loadShared(paper.a, paper.joined.loaded.stateId), quiet(), await openProject(paper.a, paper.folder), links);
+    const second = new SharedSync(paper.a, new MemoryShared(), 'A', 'Furkan', await loadShared(paper.a, paper.joined.loaded.stateId, paper.joined.ids.folderId), quiet(), await openProject(paper.a, paper.folder), links);
     open.push(paper.syncA, paper.syncB, second);
     const connections = (sync: SharedSync) => (sync as unknown as { live: { connected(): string[] } }).live.connected().length;
     for (let i = 0; i < 30 && [paper.syncA, paper.syncB, second].some((s) => connections(s) < 2); i++) await vi.advanceTimersByTimeAsync(2_000);
@@ -620,7 +691,7 @@ describe('a shared project with direct connections', () => {
     paper.syncB.close();
     await vi.advanceTimersByTimeAsync(0);
     expect(paper.syncA.livePeople).toEqual([]);
-    const back = new SharedSync(paper.b, new MemoryShared(), 'B', 'Bora', await loadShared(paper.b, paper.joined.loaded.stateId), quiet(), undefined, links);
+    const back = new SharedSync(paper.b, new MemoryShared(), 'B', 'Bora', await loadShared(paper.b, paper.joined.loaded.stateId, paper.joined.ids.folderId), quiet(), undefined, links);
     open.push(back);
     for (let i = 0; i < 20 && paper.syncA.livePeople.length === 0; i++) await vi.advanceTimersByTimeAsync(2_000);
     expect(paper.syncA.livePeople).toEqual(['Bora']);
