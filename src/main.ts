@@ -29,6 +29,7 @@ import { cachedPackages, REMOTE_DIR, storeNewPackages } from './packageCache';
 import { lastLatexLog, parseLog, type LogProblem } from './logParser';
 import { latexTokens } from './excerpt';
 import { engineQueue } from './engineQueue';
+import { shownPercent } from './engineProgress';
 import { assetBytes } from './assetBytes';
 import showcaseSource from './showcase/main.tex?raw';
 import showcasePicture from './showcase/main.png';
@@ -2786,10 +2787,17 @@ function preloadEngine(): void {
 }
 
 async function startRunner(): Promise<BusyTexRunner> {
+  let shown = 0;
   const newRunner = new BusyTexRunner({
     busytexBasePath: `${import.meta.env.BASE_URL}core/busytex`,
     preloadDataPackages: [`${import.meta.env.BASE_URL}core/busytex/texlive-basic.js`],
-    onDownloadProgress: ({ percent }) => showEngineDownload(percent),
+    // Not the loader's own percentage, which passes 100 when the site sends the data compressed.
+    onDownloadProgress: (progress) => {
+      const percent = shownPercent(shown, progress, __ENGINE_DATA_BYTES__);
+      if (percent === null) return;
+      shown = percent;
+      showEngineDownload(percent);
+    },
   });
   setStatus('Starting the TeX engine…');
   await newRunner.initialize(true); // true = run the engine in a Web Worker
