@@ -778,7 +778,7 @@ button.link:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px;
 .site-links a { color: inherit; }
 #projects-page.welcoming .site-links { display: flex; margin: 0; padding-top: 12px; }
 
-/* Under the ways to start: what Tilde is, in three lines. */
+/* Under the ways to start: what Tilde is, in four lines. */
 .welcome-facts {
   margin: clamp(16px, 3vh, 28px) 0 0; padding: clamp(12px, 2vh, 16px) 0 0; border-top: 1px solid var(--rule);
   list-style: none; color: var(--muted); font-size: 13px; line-height: 1.8;

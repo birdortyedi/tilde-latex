@@ -11,7 +11,8 @@
 
 <p align="center">
   A free, open-source LaTeX editor that runs entirely in your browser<br>
-  and keeps your projects in your own Google Drive. No server, no account of ours, no cost.
+  and keeps your projects in your own Google Drive. Write with up to four co-authors, live.<br>
+  No server, no account of ours, no cost.
 </p>
 
 <p align="center"><b><a href="https://tildelatex.app">Open Tilde at tildelatex.app</a></b></p>
@@ -34,7 +35,7 @@ It covers what a researcher writing a paper, a thesis or TikZ figures needs, wit
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/welcome-dark.png">
-    <img src="docs/screenshots/welcome-light.png" alt="Tilde's welcome page: Fig.~3 and 'Tilde keeps your work together.', the buttons Start writing and Sign in with Google, links to try an example or import from Google Drive, three short facts, and on the right a short intro's LaTeX source next to its PDF, where Figure 3 is a tilde" width="900">
+    <img src="docs/screenshots/welcome-light.png" alt="Tilde's welcome page: Fig.~3 and 'Tilde keeps your work together.', the buttons Start writing and Sign in with Google, links to try an example or import from Google Drive, four short facts, and on the right a short intro's LaTeX source next to its PDF, where Figure 3 is a tilde" width="900">
   </picture>
 </p>
 
